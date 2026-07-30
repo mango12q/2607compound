@@ -11,6 +11,7 @@ import matplotlib.ticker as mticker
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import xarray as xr
+from statsmodels.nonparametric.smoothers_lowess import lowess
 
 from config import INTERMEDIATE_DIR, FIGURES_DIR
 
@@ -125,12 +126,11 @@ def plot_figure1(output_dir=None):
         ax.fill_between(yr, 0, vals, color=color, alpha=0.6, step='mid')
         ax.plot(yr, vals, color=color, linewidth=0.8, marker='.', markersize=2)
 
-        # Linear trend (red dashed line)
+        # LOWESS smooth trend (red curve)
         valid = ~np.isnan(vals)
-        if valid.sum() > 2:
-            p = np.polyfit(yr[valid], vals[valid], 1)
-            trend_line = np.polyval(p, yr)
-            ax.plot(yr, trend_line, 'r--', linewidth=0.6, alpha=0.7)
+        if valid.sum() > 10:
+            trend = lowess(vals[valid], yr[valid], frac=0.25, return_sorted=True)
+            ax.plot(trend[:, 0], trend[:, 1], 'r-', linewidth=0.8, alpha=0.7)
 
         ax.set_ylabel('Days/year', fontsize=7)
         ax.set_title(f'({lbl}) {name}\nCompound MHW-THW Days (1984–2023)', fontsize=7, fontweight='bold')
