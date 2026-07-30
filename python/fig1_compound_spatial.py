@@ -42,20 +42,38 @@ def plot_figure1(output_dir=None):
     da_thw   = ann_thw['compound_mhw_thw']
 
     lat, lon = da_comp.lat.values, da_comp.lon.values
-    prob_map = da_comp.mean(dim='time')
+
+    # Co-occurrence probability (time-mean over 1984-2023)
+    prob_var = list(cooc.data_vars)[0]
+    prob_map = cooc[prob_var].mean(dim='time')
 
     # Specific years matching the paper
     target_years = [2003, 2006, 2010, 2012, 2018, 2019, 2020, 2022, 2023]
     top_idx = [int(np.where(da_comp.time.values == y)[0][0]) for y in target_years]
     top_years = np.array(target_years)
 
-    # Time-series over Europe (lat 30-72, lon -15-45)
-    de = da_comp.sel(lat=slice(30, 72), lon=slice(-15, 45))
-    w = np.cos(np.deg2rad(de.lat))
-    ts_comp = de.weighted(w).mean(dim=['lat', 'lon']).values
-    ts_std  = da_std.sel(lat=slice(30, 72), lon=slice(-15, 45)).weighted(w).mean(dim=['lat', 'lon']).values
-    ts_thw  = da_thw.sel(lat=slice(30, 72), lon=slice(-15, 45)).weighted(w).mean(dim=['lat', 'lon']).values
-    yr_ts = de.time.values
+    # Region definitions for panels j,k,l
+    regions = [
+        ('j', 'Mediterranean &\nBlack Sea', {'lat': (30, 47), 'lon': (5, 42)}),
+        ('k', 'Baltic Sea',                 {'lat': (53, 66), 'lon': (10, 30)}),
+        ('l', 'European Coasts',            {'lat': (30, 72), 'lon': (-15, 45)}),
+    ]
+
+    def coastal_mean(da, region):
+        r = da.sel(lat=slice(*region['lat']), lon=slice(*region['lon']))
+        mask = r.mean(dim='time') > 0
+        if mask.sum() < 5:
+            w = np.cos(np.deg2rad(r.lat))
+            return r.weighted(w).mean(dim=['lat', 'lon'])
+        r_masked = r.where(mask)
+        w = np.cos(np.deg2rad(r_masked.lat))
+        return r_masked.weighted(w).mean(dim=['lat', 'lon'])
+
+    ts_list = []
+    for lbl, name, region in regions:
+        ts = coastal_mean(da_comp, region)
+        ts_list.append((lbl, name, ts, '#d73027'))
+    yr_ts = ts_list[0][2].time.values
 
     fig = plt.figure(figsize=(18, 14))
     gs = fig.add_gridspec(3, 5, hspace=0.3, wspace=0.25,
@@ -89,21 +107,38 @@ def plot_figure1(output_dir=None):
         cbar.set_label('Compound days / year', fontsize=7)
         cbar.ax.tick_params(labelsize=6)
 
-    # ---- j-l: 3 time-series (col 3) ----
-    ts_list = [
-        ('j', 'Compound days', ts_comp, '#d73027'),
-        ('k', 'Standalone days', ts_std, '#4575b4'),
-        ('l', 'Total THW days', ts_thw, '#fdae61'),
-    ]
+    # ---- j-l: 3 time-series (col 3), region-specific compound days ----
+    def _annotate_peaks(ax, years, values, n_peaks=3):
+        order = np.argsort(values)[::-1]
+        peak_idx = order[:n_peaks]
+        y_offset = 0.06 * (np.nanmax(values) - np.nanmin(values))
+        for pi in peak_idx:
+            ax.annotate(str(years[pi]),
+                        xy=(years[pi], values[pi]),
+                        xytext=(0, 6), textcoords='offset points',
+                        fontsize=5, ha='center', fontweight='bold',
+                        arrowprops=dict(arrowstyle='-', color='gray', lw=0.3))
+
     for ti, (lbl, name, ts, color) in enumerate(ts_list):
         ax = fig.add_subplot(gs[ti, 3])
-        ax.fill_between(yr_ts, 0, ts, color=color, alpha=0.6, step='mid')
-        ax.plot(yr_ts, ts, color=color, linewidth=0.7, marker='.', markersize=2)
+        yr = ts.time.values.astype(int)
+        vals = ts.values
+        ax.fill_between(yr, 0, vals, color=color, alpha=0.6, step='mid')
+        ax.plot(yr, vals, color=color, linewidth=0.8, marker='.', markersize=2)
+
+        # Linear trend (red dashed line)
+        valid = ~np.isnan(vals)
+        if valid.sum() > 2:
+            p = np.polyfit(yr[valid], vals[valid], 1)
+            trend_line = np.polyval(p, yr)
+            ax.plot(yr, trend_line, 'r--', linewidth=0.6, alpha=0.7)
+
         ax.set_ylabel('Days/yr', fontsize=7)
         ax.set_title(f'({lbl}) {name}', fontsize=8, fontweight='bold')
         ax.tick_params(labelsize=6)
-        ax.set_xlim(yr_ts[0], yr_ts[-1])
+        ax.set_xlim(yr[0], yr[-1])
         ax.yaxis.set_major_locator(mticker.MaxNLocator(4))
+        _annotate_peaks(ax, yr, vals, n_peaks=3)
         if ti < 2:
             ax.set_xticklabels([])
 
@@ -111,10 +146,12 @@ def plot_figure1(output_dir=None):
     ax = fig.add_subplot(gs[0:2, 4], projection=proj)
     _europe_axes(ax)
     prob_data = prob_map.values.astype(float)
-    prob_mask = prob_data > 0
-    if prob_mask.any():
-        sc2 = ax.scatter(LON[prob_mask], LAT[prob_mask], c=prob_data[prob_mask],
-                         cmap='RdYlBu', vmin=0, vmax=0.3, s=3,
+    prob_valid = ~np.isnan(prob_data) & (prob_data > 0)
+    if prob_valid.any():
+        vmin_p = 0.1
+        vmax_p = min(0.8, float(np.nanpercentile(prob_data, 98)))
+        sc2 = ax.scatter(LON[prob_valid], LAT[prob_valid], c=prob_data[prob_valid],
+                         cmap='RdYlBu_r', vmin=vmin_p, vmax=vmax_p, s=3,
                          transform=ccrs.PlateCarree(), edgecolors='none')
         ax.set_title('(m) Co-occurrence\nprobability', fontsize=8, fontweight='bold', pad=2)
         cbar2 = fig.colorbar(sc2, ax=ax, orientation='horizontal', pad=0.06, aspect=25, shrink=0.85)
