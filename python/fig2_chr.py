@@ -112,16 +112,19 @@ def plot_figure2(output_dir=None):
 
     # ---- d: CHR spatial map ----
     ax = fig.add_subplot(gs[1, :], projection=ccrs.PlateCarree())
+    _europe_axes(ax)
     chr_raw = chr_map.values.astype(float).copy()
     vmax = float(np.nanpercentile(chr_raw[chr_raw > 0], 95))
-    chr_data = np.ma.masked_where(chr_raw <= 0, chr_raw)
-    im = ax.pcolormesh(lon, lat, chr_data, cmap='YlOrRd',
-                       vmin=0, vmax=vmax, transform=ccrs.PlateCarree())
-    _europe_axes(ax)
-    ax.set_title('(d) Mean CHR (1984–2022)', fontsize=10, fontweight='bold', pad=4)
-    cbar = fig.colorbar(im, ax=ax, orientation='horizontal', pad=0.06, aspect=35, shrink=0.8)
-    cbar.set_label('CHR', fontsize=8)
-    cbar.ax.tick_params(labelsize=7)
+    LON, LAT = np.meshgrid(lon, lat)
+    chr_mask = chr_raw > 0
+    if chr_mask.any():
+        sc = ax.scatter(LON[chr_mask], LAT[chr_mask], c=chr_raw[chr_mask],
+                        cmap='YlOrRd', vmin=0, vmax=vmax, s=3,
+                        transform=ccrs.PlateCarree(), edgecolors='none')
+        ax.set_title('(d) Mean CHR (1984–2022)', fontsize=10, fontweight='bold', pad=4)
+        cbar = fig.colorbar(sc, ax=ax, orientation='horizontal', pad=0.06, aspect=35, shrink=0.8)
+        cbar.set_label('CHR', fontsize=8)
+        cbar.ax.tick_params(labelsize=7)
 
     path = os.path.join(output_dir, 'fig2_chr.pdf')
     fig.savefig(path, dpi=300, bbox_inches='tight')

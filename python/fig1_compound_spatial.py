@@ -66,22 +66,28 @@ def plot_figure1(output_dir=None):
     vmax = float(np.percentile(da_comp.values[da_comp.values > 0], 95))
 
     # ---- a-i: 9 spatial maps in 3×3 (left side, cols 0-2) ----
+    LON, LAT = np.meshgrid(lon, lat)
+    sc_handles = []
     for pi in range(9):
         row, col = divmod(pi, 3)
         ax = fig.add_subplot(gs[row, col], projection=proj)
-        data = da_comp.isel(time=top_idx[pi]).values.astype(float)
-        data = np.ma.masked_where(data <= 0, data)
-        im = ax.pcolormesh(lon, lat, data, cmap='YlOrRd',
-                           vmin=0, vmax=vmax, transform=ccrs.PlateCarree())
         _europe_axes(ax)
+        data = da_comp.isel(time=top_idx[pi]).values.astype(float)
+        mask = data > 0
+        if mask.any():
+            sc = ax.scatter(LON[mask], LAT[mask], c=data[mask],
+                            cmap='YlOrRd', vmin=0, vmax=vmax, s=3,
+                            transform=ccrs.PlateCarree(), edgecolors='none')
+            sc_handles.append(sc)
         label = chr(ord('a') + pi)
         ax.set_title(f'({label}) {top_years[pi]}', fontsize=8, fontweight='bold', pad=2)
 
     # colorbar for spatial maps
-    cax = fig.add_axes([0.32, 0.02, 0.35, 0.012])
-    cbar = fig.colorbar(im, cax=cax, orientation='horizontal')
-    cbar.set_label('Compound days / year', fontsize=7)
-    cbar.ax.tick_params(labelsize=6)
+    if sc_handles:
+        cax = fig.add_axes([0.32, 0.02, 0.35, 0.012])
+        cbar = fig.colorbar(sc_handles[0], cax=cax, orientation='horizontal')
+        cbar.set_label('Compound days / year', fontsize=7)
+        cbar.ax.tick_params(labelsize=6)
 
     # ---- j-l: 3 time-series (col 3) ----
     ts_list = [
@@ -103,15 +109,19 @@ def plot_figure1(output_dir=None):
 
     # ---- m: co-occurrence probability (col 4, spans rows 0-1) ----
     ax = fig.add_subplot(gs[0:2, 4], projection=proj)
-    prob_data = prob_map.values.astype(float)
-    prob_data = np.ma.masked_where(prob_data <= 0, prob_data)
-    im2 = ax.pcolormesh(lon, lat, prob_data, cmap='RdYlBu',
-                        vmin=0, vmax=0.3, transform=ccrs.PlateCarree())
     _europe_axes(ax)
-    ax.set_title('(m) Co-occurrence\nprobability', fontsize=8, fontweight='bold', pad=2)
-    cbar2 = fig.colorbar(im2, ax=ax, orientation='horizontal', pad=0.06, aspect=25, shrink=0.85)
-    cbar2.set_label('Probability', fontsize=6)
-    cbar2.ax.tick_params(labelsize=5)
+    prob_data = prob_map.values.astype(float)
+    prob_mask = prob_data > 0
+    if prob_mask.any():
+        sc2 = ax.scatter(LON[prob_mask], LAT[prob_mask], c=prob_data[prob_mask],
+                         cmap='RdYlBu', vmin=0, vmax=0.3, s=3,
+                         transform=ccrs.PlateCarree(), edgecolors='none')
+        ax.set_title('(m) Co-occurrence\nprobability', fontsize=8, fontweight='bold', pad=2)
+        cbar2 = fig.colorbar(sc2, ax=ax, orientation='horizontal', pad=0.06, aspect=25, shrink=0.85)
+        cbar2.set_label('Probability', fontsize=6)
+        cbar2.ax.tick_params(labelsize=5)
+    else:
+        ax.set_title('(m) Co-occurrence\nprobability (no data)', fontsize=8, fontweight='bold', pad=2)
 
     # ---- 3rd row col 4: empty or note ----
     ax = fig.add_subplot(gs[2, 4])
