@@ -33,7 +33,7 @@ EOBS_RAW_FILES = [
     os.path.join(EOBS_DIR, "tg_ens_mean_0.25deg_reg_1995-2010_v33.0e.nc"),
     os.path.join(EOBS_DIR, "tg_ens_mean_0.25deg_reg_2011-2023_v29.0e.nc"),
 ]
-EOBS_MERGED_FILE = os.path.join(EOBS_DIR, "EOBS_tg_1984_2023.nc")
+EOBS_MERGED_FILE = os.path.join(EOBS_DIR, "EOBS_tg_1983_2023.nc")
 
 SST_CLIM_FILE = os.path.join(INTERMEDIATE_DIR, "sst_climatology_1983_2012.nc")
 T2M_CLIM_FILE = os.path.join(INTERMEDIATE_DIR, "t2m_climatology_1983_2012.nc")
@@ -95,7 +95,7 @@ EUROPEAN_COASTS = {
 # ──────────────────────────────────────────────
 EOBS_VERSION_NOTE = (
     "Mixed versions: v33.0e (1980-2010) + v29.0e (2011-2023). "
-    "Analysis subset to 1984-2023."
+    "Analysis subset to 1983-2023."
 )
 
 # ──────────────────────────────────────────────

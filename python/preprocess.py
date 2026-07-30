@@ -1,7 +1,7 @@
 """
 preprocess.py — 原始数据合并为规范文件
 - merge_oisst(): 15340 个日文件 → 单文件 oisst_v2.1_1982_2023.nc
-- merge_eobs(): 三个版本文件 → 合并 + 裁剪 → EOBS_tg_1984_2023.nc
+- merge_eobs(): 三个版本文件 → 合并 + 裁剪 → EOBS_tg_1983_2023.nc
 """
 import os
 import glob
@@ -84,7 +84,7 @@ def merge_eobs(output_path=None):
     print(f"Combined time range: {ds.time.values[0]} to {ds.time.values[-1]}")
     print(f"Original shape: {dict(ds.sizes)}")
 
-    ds_subset = ds.sel(time=slice('1984-01-01', '2023-12-31'))
+    ds_subset = ds.sel(time=slice('1983-01-01', '2023-12-31'))
     print(f"Subset time range: {ds_subset.time.values[0]} to {ds_subset.time.values[-1]}")
     print(f"Subset shape: {dict(ds_subset.sizes)}")
 
