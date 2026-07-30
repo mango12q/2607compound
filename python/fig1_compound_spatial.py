@@ -45,7 +45,7 @@ def plot_figure1(output_dir=None):
     prob_map = da_comp.mean(dim='time')
 
     # Specific years matching the paper
-    target_years = [2003, 2006, 2010, 2012, 2018, 2019, 2020, 2021, 2022]
+    target_years = [2003, 2006, 2010, 2012, 2018, 2019, 2020, 2022, 2023]
     top_idx = [int(np.where(da_comp.time.values == y)[0][0]) for y in target_years]
     top_years = np.array(target_years)
 

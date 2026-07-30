@@ -121,7 +121,7 @@ def plot_figure2(output_dir=None):
         sc = ax.scatter(LON[chr_mask], LAT[chr_mask], c=chr_raw[chr_mask],
                         cmap='YlOrRd', vmin=0, vmax=vmax, s=3,
                         transform=ccrs.PlateCarree(), edgecolors='none')
-        ax.set_title('(d) Mean CHR (1984–2022)', fontsize=10, fontweight='bold', pad=4)
+        ax.set_title('(d) Mean CHR (1984–2023)', fontsize=10, fontweight='bold', pad=4)
         cbar = fig.colorbar(sc, ax=ax, orientation='horizontal', pad=0.06, aspect=35, shrink=0.8)
         cbar.set_label('CHR', fontsize=8)
         cbar.ax.tick_params(labelsize=7)
