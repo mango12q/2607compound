@@ -1,0 +1,21 @@
+# ── 数据（430 GB 原始数据，不上传） ──
+data/
+
+# ── 中间结果与最终图像 ──
+results/
+
+# ── Python 缓存 ──
+__pycache__/
+*.pyc
+
+# ── 论文 PDF / Word 翻译（非代码） ──
+*.pdf
+*.docx
+*.doc
+
+# ── 系统文件 ──
+.DS_Store
+Thumbs.db
+
+# ── 日志 ──
+logs/
