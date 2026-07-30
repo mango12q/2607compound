@@ -143,15 +143,10 @@ def detect_mhw_at_points(
     tracker_list = list(trackers.values())
     nc = Dataset(OISST_MERGED_FILE, 'r')
     sst_var = nc.variables['sst']
-    has_scale = hasattr(sst_var, 'scale_factor')
-    scale = sst_var.scale_factor if has_scale else 1.0
-    offset = sst_var.add_offset if hasattr(sst_var, 'add_offset') else 0.0
 
     last_report = 0
     for t_idx in range(ntime):
         sst_slice = sst_var[t_idx, :, :].astype(np.float64)
-        if has_scale:
-            sst_slice = sst_slice * scale + offset
         doy = time_doy[t_idx]
         safe_doy = min(doy, clim_values.shape[0])
         clim_slice = clim_values[safe_doy - 1]

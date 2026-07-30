@@ -71,8 +71,10 @@ def find_coastal_grid_pairs(
 
     ocean_lats = ocean_lat[ocean_rows]
     ocean_lons = ocean_lon[ocean_cols]
+    # OISST 用 0-360°，E-OBS 用 -180-180°，统一到 [-180, 180)
+    ocean_lons_unified = np.where(ocean_lons > 180, ocean_lons - 360, ocean_lons)
     cos_factors = np.cos(np.deg2rad(ocean_lats))
-    ocean_coords = np.column_stack([ocean_lats, ocean_lons * cos_factors])
+    ocean_coords = np.column_stack([ocean_lats, ocean_lons_unified * cos_factors])
     tree = cKDTree(ocean_coords)
 
     pairs = []
