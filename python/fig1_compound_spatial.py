@@ -111,11 +111,10 @@ def plot_figure1(output_dir=None):
     def _annotate_peaks(ax, years, values, n_peaks=3):
         order = np.argsort(values)[::-1]
         peak_idx = order[:n_peaks]
-        y_offset = 0.06 * (np.nanmax(values) - np.nanmin(values))
         for pi in peak_idx:
             ax.annotate(str(years[pi]),
                         xy=(years[pi], values[pi]),
-                        xytext=(0, 6), textcoords='offset points',
+                        xytext=(0, 7), textcoords='offset points',
                         fontsize=5, ha='center', fontweight='bold',
                         arrowprops=dict(arrowstyle='-', color='gray', lw=0.3))
 
@@ -133,11 +132,14 @@ def plot_figure1(output_dir=None):
             trend_line = np.polyval(p, yr)
             ax.plot(yr, trend_line, 'r--', linewidth=0.6, alpha=0.7)
 
-        ax.set_ylabel('Days/yr', fontsize=7)
-        ax.set_title(f'({lbl}) {name}', fontsize=8, fontweight='bold')
+        ax.set_ylabel('Days/year', fontsize=7)
+        ax.set_title(f'({lbl}) {name}\nCompound MHW-THW Days (1984–2023)', fontsize=7, fontweight='bold')
         ax.tick_params(labelsize=6)
-        ax.set_xlim(yr[0], yr[-1])
-        ax.yaxis.set_major_locator(mticker.MaxNLocator(4))
+        ax.set_xlim(1984, 2023)
+        ax.set_ylim(0, 90)
+        ax.set_xticks(range(1984, 2024, 5))
+        ax.grid(True, alpha=0.3, linestyle=':', linewidth=0.3)
+        ax.yaxis.set_major_locator(mticker.MaxNLocator(5))
         _annotate_peaks(ax, yr, vals, n_peaks=3)
         if ti < 2:
             ax.set_xticklabels([])
@@ -148,17 +150,16 @@ def plot_figure1(output_dir=None):
     prob_data = prob_map.values.astype(float)
     prob_valid = ~np.isnan(prob_data) & (prob_data > 0)
     if prob_valid.any():
-        vmin_p = 0.1
-        vmax_p = min(0.8, float(np.nanpercentile(prob_data, 98)))
         sc2 = ax.scatter(LON[prob_valid], LAT[prob_valid], c=prob_data[prob_valid],
-                         cmap='RdYlBu_r', vmin=vmin_p, vmax=vmax_p, s=3,
-                         transform=ccrs.PlateCarree(), edgecolors='none')
-        ax.set_title('(m) Co-occurrence\nprobability', fontsize=8, fontweight='bold', pad=2)
+                         cmap='RdYlBu_r', vmin=0, vmax=0.8, s=6,
+                         transform=ccrs.PlateCarree(), edgecolors='none',
+                         linewidths=0.1, alpha=0.85)
+        ax.set_title('(m) Co-occurrence Probability\n(mean over 1984–2023)', fontsize=7, fontweight='bold', pad=2)
         cbar2 = fig.colorbar(sc2, ax=ax, orientation='horizontal', pad=0.06, aspect=25, shrink=0.85)
-        cbar2.set_label('Probability', fontsize=6)
+        cbar2.set_label('Probability (Fraction)', fontsize=6)
         cbar2.ax.tick_params(labelsize=5)
     else:
-        ax.set_title('(m) Co-occurrence\nprobability (no data)', fontsize=8, fontweight='bold', pad=2)
+        ax.set_title('(m) Co-occurrence Probability\n(no data)', fontsize=7, fontweight='bold', pad=2)
 
     # ---- 3rd row col 4: empty or note ----
     ax = fig.add_subplot(gs[2, 4])
