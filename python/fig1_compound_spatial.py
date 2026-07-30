@@ -44,10 +44,10 @@ def plot_figure1(output_dir=None):
     lat, lon = da_comp.lat.values, da_comp.lon.values
     prob_map = da_comp.mean(dim='time')
 
-    # Top 9 years by total compound days
-    totals = da_comp.sum(dim=['lat', 'lon']).values
-    top_idx = np.argsort(totals)[-9:][::-1]
-    top_years = da_comp.time.values[top_idx]
+    # Specific years matching the paper
+    target_years = [2003, 2006, 2010, 2012, 2018, 2019, 2020, 2021, 2022]
+    top_idx = [int(np.where(da_comp.time.values == y)[0][0]) for y in target_years]
+    top_years = np.array(target_years)
 
     # Time-series over Europe (lat 30-72, lon -15-45)
     de = da_comp.sel(lat=slice(30, 72), lon=slice(-15, 45))
@@ -127,8 +127,12 @@ def plot_figure1(output_dir=None):
     ax = fig.add_subplot(gs[2, 4])
     ax.axis('off')
 
+    import shutil, tempfile
     path = os.path.join(output_dir, 'fig1_compound_spatial.pdf')
-    fig.savefig(path, dpi=300, bbox_inches='tight')
+    tmp = os.path.join(tempfile.gettempdir(), 'fig1_temp.pdf')
+    fig.savefig(tmp, dpi=300, bbox_inches='tight')
     plt.close(fig)
+    shutil.copy2(tmp, path)
+    os.remove(tmp)
     print(f"Saved Figure 1 to: {path}")
     return path

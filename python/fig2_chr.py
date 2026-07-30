@@ -126,8 +126,12 @@ def plot_figure2(output_dir=None):
         cbar.set_label('CHR', fontsize=8)
         cbar.ax.tick_params(labelsize=7)
 
+    import shutil, tempfile
     path = os.path.join(output_dir, 'fig2_chr.pdf')
-    fig.savefig(path, dpi=300, bbox_inches='tight')
+    tmp = os.path.join(tempfile.gettempdir(), 'fig2_temp.pdf')
+    fig.savefig(tmp, dpi=300, bbox_inches='tight')
     plt.close(fig)
+    shutil.copy2(tmp, path)
+    os.remove(tmp)
     print(f"Saved Figure 2 to: {path}")
     return path
