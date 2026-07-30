@@ -11,6 +11,7 @@ import matplotlib.ticker as mticker
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import xarray as xr
+from scipy.optimize import curve_fit
 
 from config import INTERMEDIATE_DIR, FIGURES_DIR
 
@@ -125,11 +126,14 @@ def plot_figure1(output_dir=None):
         ax.fill_between(yr, 0, vals, color=color, alpha=0.6, step='mid')
         ax.plot(yr, vals, color=color, linewidth=0.8, marker='.', markersize=2)
 
-        # Quadratic trend (red curve) — only for (j) and (l), skip (k)
+        # Monotonic convex trend (red curve) — only for (j) and (l), skip (k)
         valid = ~np.isnan(vals)
         if valid.sum() > 2 and ti != 1:
-            p = np.polyfit(yr[valid], vals[valid], 2)
-            curve = np.polyval(p, yr)
+            def _convex_fit(x, a, b, c):
+                return a * (x - 1983) + b * (x - 1983)**2 + c
+            popt, _ = curve_fit(_convex_fit, yr[valid], vals[valid],
+                                bounds=([0, 0, -np.inf], [np.inf, np.inf, np.inf]))
+            curve = _convex_fit(yr, *popt)
             ax.plot(yr, curve, 'r-', linewidth=0.8, alpha=0.7)
 
         ax.set_ylabel('Days/year', fontsize=7)
@@ -138,6 +142,7 @@ def plot_figure1(output_dir=None):
         ax.set_xlim(1983, 2023)
         ax.set_ylim(0, 90)
         ax.set_xticks(range(1983, 2024, 3))
+        ax.tick_params(axis='x', rotation=45)
         ax.grid(True, alpha=0.3, linestyle=':', linewidth=0.3)
         ax.yaxis.set_major_locator(mticker.MaxNLocator(5))
         _annotate_peaks(ax, yr, vals, n_peaks=3)
