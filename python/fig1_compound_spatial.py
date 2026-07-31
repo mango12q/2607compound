@@ -78,7 +78,8 @@ def plot_figure1(output_dir=None):
 
     fig = plt.figure(figsize=(18, 14))
     gs = fig.add_gridspec(3, 5, hspace=0.3, wspace=0.25,
-                          left=0.04, right=0.98, bottom=0.06, top=0.96)
+                          left=0.04, right=0.98, bottom=0.06, top=0.96,
+                          width_ratios=[1, 1, 1, 0.55, 1])
     proj = ccrs.PlateCarree()
 
     # vmax for colorbar
