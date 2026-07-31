@@ -17,7 +17,7 @@ def is_event_contained(
     mhw_start: pd.Timestamp,
     mhw_end: pd.Timestamp,
 ) -> bool:
-    return not (mhw_end < thw_start or mhw_start > thw_end)
+    return (mhw_start <= thw_start) and (mhw_end >= thw_end)
 
 
 def _build_lookup_tables(grid_pairs: pd.DataFrame, mhw_events: pd.DataFrame):
