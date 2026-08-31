@@ -21,3 +21,6 @@ Thumbs.db
 
 # ── 日志 ──
 logs/
+
+# Python 代码备份压缩包（不入库）
+*.zip
