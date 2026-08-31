@@ -41,13 +41,16 @@ def find_coastal_grid_pairs(
     land_mask: xr.DataArray,
     ocean_mask: xr.DataArray,
     max_dist_deg: float = MAX_GRID_DIST_DEG,
+    method: str = 'kdtree',
     save_path: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     跨网格沿海配对：E-OBS（陆地）与 OISST（海洋）可能分辨率/范围不同。
     1. 对陆地掩码做形态学腐蚀，提取陆地边缘格点
     2. 为 OISST 海洋格点构建 KDTree（经度用 cos(lat) 加权处理纬度收敛）
-    3. 对每个 E-OBS 陆地边缘格点，查询最近 OISST 海洋格点
+    3. 对每个 E-OBS 陆地边缘格点，按 method 查找配对海洋格点：
+       - 'kdtree': 全局最近邻（原逻辑）
+       - '4connectivity': 在 4 个_cardinal_方向各查询一次，取最近的有效海洋格点
     """
     land_arr = land_mask.values.astype(np.int8)
     ocean_arr = ocean_mask.values.astype(np.int8)
@@ -61,7 +64,7 @@ def find_coastal_grid_pairs(
     land_edge = land_arr & ~land_eroded
 
     edge_indices = np.argwhere(land_edge == 1)
-    print(f"Finding coastal pairs across grids...")
+    print(f"Finding coastal pairs across grids (method={method})...")
     print(f"  Land grid (E-OBS): {len(land_lat)} lat x {len(land_lon)} lon")
     print(f"  Ocean grid (OISST): {len(ocean_lat)} lat x {len(ocean_lon)} lon")
     print(f"  Land edge points: {len(edge_indices)}")
@@ -71,7 +74,6 @@ def find_coastal_grid_pairs(
 
     ocean_lats = ocean_lat[ocean_rows]
     ocean_lons = ocean_lon[ocean_cols]
-    # OISST 用 0-360°，E-OBS 用 -180-180°，统一到 [-180, 180)
     ocean_lons_unified = np.where(ocean_lons > 180, ocean_lons - 360, ocean_lons)
     cos_factors = np.cos(np.deg2rad(ocean_lats))
     ocean_coords = np.column_stack([ocean_lats, ocean_lons_unified * cos_factors])
@@ -80,29 +82,49 @@ def find_coastal_grid_pairs(
     pairs = []
     matched = 0
 
+    # Estimate grid spacing for directional offsets
+    dlat = float(np.abs(np.diff(land_lat[:2]).mean())) if len(land_lat) > 1 else 0.25
+    dlon = float(np.abs(np.diff(land_lon[:2]).mean())) if len(land_lon) > 1 else 0.25
+
     for idx, (i, j) in enumerate(edge_indices):
         land_lat_val = float(land_lat[i])
         land_lon_val = float(land_lon[j])
 
-        cos_w = np.cos(np.deg2rad(land_lat_val))
-        query_pt = np.array([[land_lat_val, land_lon_val * cos_w]])
-        dist, pos = tree.query(query_pt, k=1)
+        if method == '4connectivity':
+            # Query from 4 cardinal directions; pick the closest valid ocean point
+            candidates = []
+            for dy, dx in [(dlat, 0), (-dlat, 0), (0, dlon), (0, -dlon)]:
+                qlat = land_lat_val + dy
+                qlon = land_lon_val + dx
+                cos_w = np.cos(np.deg2rad(qlat))
+                query_pt = np.array([[qlat, qlon * cos_w]])
+                dist, pos = tree.query(query_pt, k=1)
+                if dist[0] <= max_dist_deg:
+                    candidates.append((dist[0], pos[0]))
+            if not candidates:
+                continue
+            dist, pos = min(candidates, key=lambda x: x[0])
+        else:
+            cos_w = np.cos(np.deg2rad(land_lat_val))
+            query_pt = np.array([[land_lat_val, land_lon_val * cos_w]])
+            dist, pos = tree.query(query_pt, k=1)
+            if dist[0] > max_dist_deg:
+                continue
 
-        if dist[0] <= max_dist_deg:
-            oi = ocean_rows[pos[0]]
-            oj = ocean_cols[pos[0]]
-            pairs.append({
-                'land_lat_idx': i,
-                'land_lon_idx': j,
-                'ocean_lat_idx': int(oi),
-                'ocean_lon_idx': int(oj),
-                'land_lat': land_lat_val,
-                'land_lon': land_lon_val,
-                'ocean_lat': float(ocean_lat[oi]),
-                'ocean_lon': float(ocean_lon[oj]),
-                'dist_deg': float(dist[0]),
-            })
-            matched += 1
+        oi = ocean_rows[pos]
+        oj = ocean_cols[pos]
+        pairs.append({
+            'land_lat_idx': i,
+            'land_lon_idx': j,
+            'ocean_lat_idx': int(oi),
+            'ocean_lon_idx': int(oj),
+            'land_lat': land_lat_val,
+            'land_lon': land_lon_val,
+            'ocean_lat': float(ocean_lat[oi]),
+            'ocean_lon': float(ocean_lon[oj]),
+            'dist_deg': float(dist),
+        })
+        matched += 1
 
         if (idx + 1) % 5000 == 0:
             print(f"  Progress: {idx + 1}/{len(edge_indices)}, matched: {matched}")

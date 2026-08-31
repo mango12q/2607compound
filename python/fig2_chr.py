@@ -63,9 +63,12 @@ def plot_figure2(output_dir=None):
     chr_map   = da_chr.sel(time=slice(2003, 2023)).mean(dim='time').values.astype(float)
 
     # Europe-wide mean CHR time-series (1983-2023)
-    de = da_chr.sel(lat=slice(30, 72), lon=slice(-15, 45))
-    w = np.cos(np.deg2rad(de.lat))
-    chr_ts = de.weighted(w).mean(dim=['lat', 'lon']).values
+    # Paper definition: sum(compound) / sum(standalone) per year, not mean(C/S)
+    c_ts = ann_comp['compound_mhw_thw'].sel(lat=slice(30, 72), lon=slice(-15, 45))
+    s_ts = ann_std['standalone_thw'].sel(lat=slice(30, 72), lon=slice(-15, 45))
+    w = np.cos(np.deg2rad(c_ts.lat))
+    chr_ts = (c_ts * w).sum(dim=['lat', 'lon']) / (s_ts * w).sum(dim=['lat', 'lon'])
+    chr_ts = chr_ts.values
 
     # Fixed vmax to match paper color scales
     vmax_comp = 20   # compound days: paper shows >20 in some regions
