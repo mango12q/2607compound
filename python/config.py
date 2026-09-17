@@ -7,7 +7,7 @@ import os
 # ──────────────────────────────────────────────
 # 路径配置
 # ──────────────────────────────────────────────
-BASE_DIR = r"E:\2607compound"
+BASE_DIR = r"D:\2607compound"
 
 DATA_DIR = os.path.join(BASE_DIR, "data")
 OISST_DIR = os.path.join(DATA_DIR, "OISST")
