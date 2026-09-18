@@ -39,6 +39,7 @@ import os
 import re
 import sys
 import time
+import urllib.request
 from collections import defaultdict
 from urllib.parse import unquote
 from urllib.request import Request, urlopen
@@ -86,6 +87,26 @@ CASE_PREFIXES = {
 def _ensure_dirs():
     os.makedirs(C.CESM_RAW_DIR, exist_ok=True)
     os.makedirs(C.CESM_PROC_DIR, exist_ok=True)
+
+
+def _setup_proxy():
+    """探测系统代理(Windows 注册表)或环境变量并写入环境变量。
+
+    背景: s3fs/aiobotocore 不读 Windows 系统代理, netCDF4-DAP(libcurl) 只认
+    环境变量。实测本机 127.0.0.1:6789 代理 2.24 MB/s vs 直连 <0.02 MB/s,
+    差 100 倍以上, 因此所有通道必须显式走代理。返回代理 URL(无则 None)。
+    """
+    px = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
+    if not px:
+        try:
+            g = urllib.request.getproxies()  # Windows 下自动读注册表
+            px = g.get("https") or g.get("http")
+        except Exception:
+            px = None
+    if px:
+        for k in ("https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"):
+            os.environ[k] = px
+    return px
 
 
 def _pick(d, names, what):
@@ -169,10 +190,15 @@ def cmd_probe(args):
 # aws — ALL 日值 TREFHT
 # ──────────────────────────────────────────────
 def _open_zarr(url):
+    opts = dict(AWS_STORAGE_OPTS)
+    px = _setup_proxy()
+    if px:
+        # botocore Config(proxies=...) → aiobotocore/aiohttp 走代理
+        opts["config_kwargs"] = {**opts.get("config_kwargs", {}), "proxies": {"http": px, "https": px}}
     try:
-        return xr.open_zarr(url, storage_options=AWS_STORAGE_OPTS, consolidated=True)
+        return xr.open_zarr(url, storage_options=opts, consolidated=True)
     except Exception:
-        return xr.open_zarr(url, storage_options=AWS_STORAGE_OPTS, consolidated=False)
+        return xr.open_zarr(url, storage_options=opts, consolidated=False)
 
 
 def _load_with_retry(ds, retries=4):
@@ -200,6 +226,7 @@ def _select_members(ds, mdim, n_members):
 
 def cmd_aws(args):
     _ensure_dirs()
+    print(f"代理: {_setup_proxy() or '未检测到(将直连, 可能极慢)'}")
     n = args.members
     parts = {}
     for tag, url in AWS_TREFHT.items():
@@ -318,6 +345,7 @@ def _mask_sst_box(ds):
 def cmd_gdex(args):
     """OPeNDAP 服务端切片: 只传输 2000-2021(大气再裁欧洲框), 直接产出 proc 文件。"""
     _ensure_dirs()
+    print(f"代理: {_setup_proxy() or '未检测到(将直连, 可能极慢)'}")
     members = C.CESM_ALL_MEMBERS[: args.members]
     rows = _resolve_gdex(members, ("ALL", "XGHG"))
     if not rows:
@@ -373,12 +401,18 @@ def cmd_gdex(args):
 # download — 吃 URL 清单 / RDA wget 脚本
 # ──────────────────────────────────────────────
 def _extract_urls(path):
+    if path.lower().endswith(".csv"):
+        df = pd.read_csv(path)
+        if "file_url" in df.columns:
+            return [u for u in df["file_url"].dropna().astype(str) if u.startswith("http")]
+        raise SystemExit(f"{path} 缺少 file_url 列")
     text = open(path, "r", encoding="utf-8", errors="replace").read()
-    urls = re.findall(r"https?://[^\s'\"<>]+", text)
+    urls = re.findall(r"https?://[^\s'\",<>]+", text)
     seen, out = set(), []
     for u in urls:
         u = u.rstrip("\\")
-        if u not in seen and re.search(r"\.nc(\?|$)", u):
+        if u not in seen and re.search(r"\.nc(\?|$)", u) and "/dodsC/" not in u:
+            # 只保留 fileServer 直链; dodsC 整文件走 OPeNDAP 反而更慢(服务端逐记录抽取)
             seen.add(u)
             out.append(u)
     return out
@@ -414,6 +448,7 @@ def _download_one(url, dest, retries=3):
 
 def cmd_download(args):
     _ensure_dirs()
+    print(f"代理: {_setup_proxy() or '未检测到(将直连, 可能极慢)'}")
     urls = _extract_urls(args.urls)
     if not urls:
         raise SystemExit("提供的文件里没有找到 .nc 的 http(s) URL")
