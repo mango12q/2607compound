@@ -100,6 +100,21 @@ CESM_ALL_MEMBERS = [f"{i:03d}" for i in range(1, 21)]
 CESM_FIXGHG_MEMBERS = [f"{i:03d}" for i in range(1, 21)]
 
 # ──────────────────────────────────────────────
+# CESM1-LE (Phase 6 归因) 下载与处理参数 — download_cesm1le.py
+# 数据源: AWS 镜像 s3://ncar-cesm-lens (仅 ALL 日值 TREFHT, 匿名)
+#         NCAR GDEX d651027 (SST 日值 + XGHG 全部, 需 RDA 账号取 URL)
+# ──────────────────────────────────────────────
+CESM_DIR = os.path.join(DATA_DIR, "CESM1-LE")
+CESM_RAW_DIR = os.path.join(CESM_DIR, "raw")    # RDA 下载的全时段原始文件
+CESM_PROC_DIR = os.path.join(CESM_DIR, "proc")  # 裁剪到分析时段后的文件
+CESM_PERIOD = ("2000-01-01", "2021-12-31")      # 论文 L522: 2000-2021
+CESM_P0_MEMBERS = 3                             # P0 先跑通用前 N 个成员
+CESM_EUROPE_LAT = (28.0, 74.0)                  # f09 大气网格裁剪框
+CESM_EUROPE_LON = (-17.0, 47.0)                 # 脚本内自动做 0-360 换算
+AWS_LENS_BUCKET = "s3://ncar-cesm-lens"
+GDEX_D651027_BASE = "https://data.gdex.ucar.edu/d651027"
+
+# ──────────────────────────────────────────────
 # 欧洲沿海区域定义（用于裁剪和分析）
 # ──────────────────────────────────────────────
 EUROPEAN_COASTS = {
