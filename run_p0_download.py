@@ -40,8 +40,25 @@ def list_proc():
         print(f"  {f}  ({os.path.getsize(p)/1e6:.0f} MB)")
 
 
+def ensure_urls():
+    """下载清单被 gitignore, 缺失时自动重建: manifest 实爬 → 剔除 ALL-atm(AWS 覆盖)。"""
+    if os.path.exists(URLS):
+        return
+    print(f"清单缺失, 自动重建: {URLS}")
+    rc = subprocess.run([sys.executable, TOOL, "manifest", "--members", "3"]).returncode
+    if rc != 0:
+        raise SystemExit("manifest 生成失败, 无法继续")
+    import pandas as pd
+    src = os.path.join(BASE, "results", "tables", "cesm1le_download_manifest.csv")
+    df = pd.read_csv(src)
+    keep = ~((df.experiment == "ALL") & (df.component == "atm"))
+    df[keep].to_csv(URLS, index=False, encoding="utf-8-sig")
+    print(f"已重建: {int(keep.sum())} 个整文件 (ALL-atm {int((~keep).sum())} 个由 AWS 覆盖)")
+
+
 def main():
     os.chdir(BASE)
+    ensure_urls()
     print("=" * 62)
     print("CESM1-LE P0 下载  (成员 001-003, ALL + XGHG, 2000-2021)")
     print(f"输出: {PROC}")
