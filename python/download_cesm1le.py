@@ -418,26 +418,54 @@ def _extract_urls(path):
     return out
 
 
+def _head_size(url):
+    req = Request(url, method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(req, timeout=60) as r:
+        return int(r.headers.get("Content-Length", 0))
+
+
 def _download_one(url, dest, retries=3):
     part = dest + ".part"
-    done = os.path.exists(dest)
-    if done:
-        return dest, 0
+    if os.path.exists(dest):
+        # 自愈: 已存在的成品也要校验长度(此前出现过代理断流导致的截断文件)
+        try:
+            cl = _head_size(url)
+            if cl and abs(os.path.getsize(dest) - cl) > 1024:
+                print(f"    已有文件不完整 ({os.path.getsize(dest)/1e9:.2f}/{cl/1e9:.2f} GB), 删除重下")
+                os.remove(dest)
+            else:
+                return dest, 0
+        except Exception:
+            return dest, 0  # HEAD 失败时保留原文件, 视为已完成
     for attempt in range(1, retries + 1):
         try:
-            headers = {"User-Agent": "Mozilla/5.0"}
             have = os.path.getsize(part) if os.path.exists(part) else 0
+            headers = {"User-Agent": "Mozilla/5.0"}
             if have:
                 headers["Range"] = f"bytes={have}-"
             req = Request(url, headers=headers)
-            with urlopen(req, timeout=120) as r, open(part, "ab" if have else "wb") as f:
-                total = r.headers.get("Content-Length")
-                mode = "续传" if have else "下载"
-                while True:
-                    chunk = r.read(8 << 20)
-                    if not chunk:
-                        break
-                    f.write(chunk)
+            with urlopen(req, timeout=120) as r:
+                status = getattr(r, "status", 200)
+                if have and status != 206:
+                    print("    服务器不支持断点续传, 从头下载")
+                    have = 0
+                cl = r.headers.get("Content-Length")
+                expected = (have + int(cl)) if cl else None
+                got = 0
+                last_gb = -1
+                with open(part, "ab" if have else "wb") as f:
+                    while True:
+                        chunk = r.read(8 << 20)
+                        if not chunk:
+                            break
+                        got += len(chunk)
+                        f.write(chunk)
+                        if got >> 30 > last_gb:  # 每过 1 GB 报一次进度
+                            last_gb = got >> 30
+                            exp = f"/{expected/1e9:.1f} GB" if expected else ""
+                            print(f"    {got/1e9:.1f}{exp}", flush=True)
+                if expected is not None and got != expected:
+                    raise RuntimeError(f"传输不完整: 收到 {got/1e9:.2f} / 应为 {expected/1e9:.2f} GB")
             os.replace(part, dest)
             return dest, attempt
         except Exception as e:
