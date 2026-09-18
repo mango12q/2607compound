@@ -10,10 +10,6 @@ logs/
 __pycache__/
 *.pyc
 
-# 早期翻译脚本与文档（非复现代码）
-translate_to_word.py
-*.docx
-*.doc
 # 排除根目录 PDF（论文原文/翻译），保留 results/figures/ 下的出图
 /*.pdf
 

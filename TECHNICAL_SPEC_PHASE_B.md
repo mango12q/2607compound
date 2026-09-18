@@ -1,4 +1,4 @@
-# 阶段 B 技术规范：归因分析（图 3、图 4）
+﻿# 阶段 B 技术规范：归因分析（图 3、图 4）
 
 ## B.1 阶段目标
 
@@ -8,8 +8,8 @@
 
 | 数据集 | 路径 | 大小 | 格式 |
 |--------|------|------|------|
-| CESM1-LE ALL | `F:\2607compound\data\CESM1-LE\ALL\`（20 个 .nc 文件） | ~200 GB | NetCDF |
-| CESM1-LE FixGHG | `F:\2607compound\data\CESM1-LE\FixGHG\`（20 个 .nc 文件） | ~200 GB | NetCDF |
+| CESM1-LE ALL | `E:\2607compound\data\CESM1-LE\ALL\`（20 个 .nc 文件） | ~200 GB | NetCDF |
+| CESM1-LE FixGHG | `E:\2607compound\data\CESM1-LE\FixGHG\`（20 个 .nc 文件） | ~200 GB | NetCDF |
 
 **注意**: 本阶段是磁盘压力最大的环节，开始前请确认磁盘空闲空间 ≥ 420 GB。
 
@@ -189,8 +189,8 @@ function fig4_return_period(return_thresholds, return_period_ALL, return_period_
 **⚠️ 数据清理由用户手动执行，必须用户确认当前阶段完成才能进入下一阶段。**
 
 画完图 3、图 4 并与原文目视比对一致后，**由用户手动删除**以下原始数据：
-- `F:\2607compound\data\CESM1-LE\ALL\` 下全部 20 个 `.nc` 文件（释放 ~200 GB）
-- `F:\2607compound\data\CESM1-LE\FixGHG\` 下全部 20 个 `.nc` 文件（释放 ~200 GB）
+- `E:\2607compound\data\CESM1-LE\ALL\` 下全部 20 个 `.nc` 文件（释放 ~200 GB）
+- `E:\2607compound\data\CESM1-LE\FixGHG\` 下全部 20 个 `.nc` 文件（释放 ~200 GB）
 
 **必须保留**:
 - `results/intermediate/bootstrap_results.mat`（< 1 GB）

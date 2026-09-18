@@ -1,4 +1,4 @@
-# 技术规范文档：论文复现项目
+﻿# 技术规范文档：论文复现项目
 
 ## 文档信息
 
@@ -73,7 +73,7 @@
 ## 2. 项目目录结构
 
 ```
-F:\2607compound\
+E:\2607compound\
 ├── README.md                    # 项目说明
 ├── TECHNICAL_SPEC.md            # 本文档（技术规范）
 ├── DATA_REQUIREMENTS.md         # 数据下载要求（单独文件）
@@ -167,7 +167,7 @@ import os
 # ──────────────────────────────────────────────
 # 路径配置
 # ──────────────────────────────────────────────
-BASE_DIR = r"F:\2607compound"
+BASE_DIR = r"E:\2607compound"
 
 DATA_DIR = os.path.join(BASE_DIR, "data")
 OISST_DIR = os.path.join(DATA_DIR, "OISST")
@@ -2328,7 +2328,7 @@ python verify_data.py
 
 ```bash
 # 全量运行（含归因分析，预计 2-4 周）
-cd F:\2607compound
+cd E:\2607compound
 python python/run_all.py
 
 # 跳过归因（仅测试数据流程）

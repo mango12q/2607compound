@@ -1,0 +1,125 @@
+{
+    if (missing(climatologyPeriod)) 
+        stop("Oops! Please provide a period (two dates) for calculating the climatology.")
+    if (length(climatologyPeriod) != 2) 
+        stop("Bummer! Please provide BOTH start and end dates for the climatology period.")
+    if (maxPadLength != FALSE & !is.numeric(maxPadLength)) 
+        stop("Please ensure that 'maxPadLength' is either FALSE or a numeric/integer value.")
+    if (!(is.numeric(pctile))) 
+        stop("Please ensure that 'pctile' is a numeric/integer value.")
+    if (!(is.numeric(windowHalfWidth))) 
+        stop("Please ensure that 'windowHalfWidth' is a numeric/integer value.")
+    if (!(is.logical(smoothPercentile))) 
+        stop("Please ensure that 'smoothPercentile' is either TRUE or FALSE.")
+    if (!(is.numeric(smoothPercentileWidth))) 
+        stop("Please ensure that 'smoothPercentileWidth' is a numeric/integer value.")
+    if (!(is.logical(clmOnly))) 
+        stop("Please ensure that 'clmOnly' is either TRUE or FALSE.")
+    if (!(is.numeric(roundClm))) {
+        if (!roundClm == FALSE) {
+            stop("Please ensure that 'roundClm' is either a numeric value or FALSE.")
+        }
+    }
+    clim_start <- climatologyPeriod[1]
+    clim_end <- climatologyPeriod[2]
+    temp <- doy <- hoy <- .SD <- NULL
+    ts_x <- eval(substitute(x), data)
+    if (is.null(ts_x) | is.function(ts_x)) 
+        stop("Please ensure that a column named 't' is present in your data.frame or that you have assigned a column to the 'x' argument.")
+    ts_y <- eval(substitute(y), data)
+    if (is.null(ts_y) | is.function(ts_y)) 
+        stop("Please ensure that a column named 'temp' is present in your data.frame or that you have assigned a column to the 'y' argument.")
+    if (!inherits(ts_x[1], "Date")) 
+        if (!inherits(ts_x[1], "POSIXct")) 
+            stop("Please ensure your date values are either type 'Date' or 'POSIXct'.\n           This may be done with either 'as.Date()' or 'as.POSIXct()'.")
+    if (inherits(ts_x[1], "POSIXct")) {
+        ts_x_hourly <- round(ts_x, units = "hours")
+        if (any(!ts_x == ts_x_hourly)) 
+            stop("Please ensure that timesteps are even hours.\n           E.g. data$x <- round(data$x, units = 'hours')")
+    }
+    if (!is.numeric(ts_y[1])) 
+        stop("Please ensure the temperature values you are providing are type 'num' for numeric.")
+    ts_xy <- data.table::data.table(ts_x = ts_x, ts_y = ts_y)[base::order(ts_x)]
+    rm(list = c("ts_x", "ts_y"))
+    ts_whole <- make_whole_fast(ts_xy)
+    if (length(stats::na.omit(ts_whole$ts_y)) < length(ts_whole$ts_y) & 
+        is.numeric(maxPadLength)) {
+        if ("hoy" %in% colnames(ts_whole)) {
+            hoy_col <- ts_whole$hoy
+            ts_whole <- na_interp(doy = ts_whole$doy, x = ts_whole$ts_x, 
+                y = ts_whole$ts_y, maxPadLength = maxPadLength)
+            ts_whole$hoy <- hoy_col
+            rm(hoy_col)
+            data.table::setcolorder(ts_whole, c("doy", "hoy", 
+                "ts_x", "ts_y"))
+        }
+        else {
+            ts_whole <- na_interp(doy = ts_whole$doy, x = ts_whole$ts_x, 
+                y = ts_whole$ts_y, maxPadLength = maxPadLength)
+        }
+    }
+    if (ts_whole$ts_x[1] > clim_start) 
+        stop(paste("The specified start date precedes the first day of series, which is", 
+            ts_whole$ts_x[1]))
+    if (clim_end > utils::tail(ts_whole$ts_x, 1)) 
+        stop(paste("The specified end date follows the last day of series, which is", 
+            ts_whole$ts_x[nrow(ts_whole)]))
+    if (as.Date(clim_end) - as.Date(clim_start) < 1095) 
+        stop("The climatologyPeriod must be at least three years to calculate thresholds")
+    ts_wide <- clim_spread(ts_whole, clim_start, clim_end, windowHalfWidth)
+    if (any(nrow(stats::na.omit(ts_wide)) < nrow(ts_wide) | var | 
+        nrow(ts_wide) > 400)) {
+        ts_mat <- clim_calc(ts_wide, windowHalfWidth, pctile)
+        ts_mat[is.nan(ts_mat)] <- NA
+    }
+    else {
+        ts_mat <- clim_calc_cpp(ts_wide, windowHalfWidth, pctile)
+    }
+    rm(ts_wide)
+    if (smoothPercentile) {
+        ts_clim <- smooth_percentile(ts_mat, smoothPercentileWidth, 
+            var)
+    }
+    else {
+        ts_clim <- data.table::data.table(ts_mat)
+    }
+    cols <- names(ts_clim)
+    if (is.numeric(roundClm)) {
+        ts_clim[, `:=`((cols), round(.SD, roundClm)), .SDcols = cols]
+    }
+    rm(ts_mat)
+    if (clmOnly) {
+        if (returnDF) 
+            data.table::setDF(ts_clim)
+        return(ts_clim)
+    }
+    else {
+        if ("hoy" %in% colnames(ts_whole)) {
+            data.table::setkey(ts_whole, doy, hoy)
+            data.table::setkey(ts_clim, doy, hoy)
+        }
+        else {
+            data.table::setkey(ts_whole, doy)
+            data.table::setkey(ts_clim, doy)
+        }
+        ts_res <- merge(ts_whole, ts_clim, all = TRUE)
+        rm(ts_whole)
+        rm(ts_clim)
+        data.table::setorder(ts_res, ts_x)
+        if ("hoy" %in% colnames(ts_res)) {
+            names(ts_res)[3] <- paste(substitute(x))
+            names(ts_res)[4] <- paste(substitute(y))
+        }
+        else {
+            names(ts_res)[2] <- paste(substitute(x))
+            names(ts_res)[3] <- paste(substitute(y))
+        }
+        if (ncol(data) > 2) {
+            ts_res <- merge(data, ts_res, all = TRUE)
+        }
+        rm(data)
+        if (returnDF) 
+            data.table::setDF(ts_res)
+        return(ts_res)
+    }
+}

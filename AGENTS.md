@@ -6,22 +6,25 @@
 
 ## 当前可运行文件
 
-- `translate_to_word.py` — 唯一可执行的 Python 脚本，读取 `D:\work\2607\extracted_images\` 下的图片，生成中文翻译 Word 文档。依赖 `python-docx`。**Windows 硬编码路径**：`IMG_DIR = r"D:\work\2607\extracted_images"`，`OUT_DIR = r"D:\work\2607"`。
+- `translate_to_word.py` — 唯一可执行的 Python 脚本，读取 `D:\2607compound\pdf_extract\` 下的图片，生成中文翻译 Word 文档。依赖 `python-docx`。**Windows 硬编码路径**：`IMG_DIR = r"D:\2607compound\pdf_extract"`，`OUT_DIR = r"D:\2607compound\results"`。
 
 ## 计划目录结构（尚未全部创建）
 
 ```
-F:\2607compound\        ← 数据根目录（硬编码在 config.py 中）
-├── data/                # ~430 GB 原始数据
+D:\2607compound\        ← 工作区根目录（代码、文档、结果）
+├── data/                # NTFS Junction → E:\2607compound\data（~430 GB 原始数据）
 │   ├── OISST/
 │   ├── E-OBS/
 │   ├── ERA5/
 │   ├── OAFlux/
-│   └── CESM1-LE/        # ~400 GB，ALL + FixGHG 各 20 成员
-├── python/              # 数据处理代码（尚未创建）
-├── matlab/              # 绘图代码（尚未创建）
+│   └── CESM1-LE/
+├── python/              # 数据处理代码
+├── matlab/              # 绘图代码
 ├── results/             # 中间结果 + 图表
-└── logs/
+├── logs/
+├── pdf_extract/         # 从 PDF 提取的图片
+├── scripts/             # 工具脚本（如 translate_to_word.py）
+└── docs/                # 文档
 ```
 
 ## 技术栈（全量）
@@ -34,7 +37,7 @@ F:\2607compound\        ← 数据根目录（硬编码在 config.py 中）
 ## 关键约束与陷阱
 
 1. **数据依赖极重**：总数据量 ~430 GB，CESM1-LE 归因部分 ~200 GB 且计算密集（1000 bootstrap × 40 成员）。先跑 P0/P1 数据验证观测流程，再下载 CESM1-LE。
-2. **路径硬编码**：计划中所有 Python 代码使用 `F:\2607compound` 作为 `BASE_DIR`；当前 `translate_to_word.py` 使用 `D:\work\2607`。迁移时需统一。
+2. **路径硬编码**：`config.py` 中 `BASE_DIR = D:\2607compound`，`DATA_DIR = D:\2607compound\data`（NTFS Junction → `E:\2607compound\data`）；`translate_to_word.py` 使用工作区内的 `pdf_extract` 和 `results` 目录。已统一。
 3. **混合语言调用**：陆地热浪检测必须走 R (`heatwaveR`)，通过 `subprocess.run(["Rscript", ...])` 调用，`detect_thw.R` 路径在 `python/detect_thw.R`。
 4. **海洋-陆地网格对齐**：OISST 与 E-OBS 格点不对齐，需要重采样到统一网格后再做沿海配对。
 5. **WBT 公式未定**：论文用的是 ERA5 提供变量还是手工公式尚未确认（`TECHNICAL_SPEC.md` 提供了两种实现）。
@@ -45,7 +48,7 @@ F:\2607compound\        ← 数据根目录（硬编码在 config.py 中）
 
 | 任务 | 命令/说明 |
 |------|----------|
-| 生成 Word 翻译文档 | `python translate_to_word.py`（需 `extracted_images/` 就位）|
+| 生成 Word 翻译文档 | `python translate_to_word.py`（需 `pdf_extract/` 就位）|
 | 检查数据完整性 | 复制 `DATA_REQUIREMENTS.md` 中 `verify_data.py` 代码后运行 |
 | 环境搭建 | conda 创建 env，手动 `pip install` 列出的依赖 |
 

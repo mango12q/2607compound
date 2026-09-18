@@ -8,8 +8,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml.ns import qn
 from docx.enum.style import WD_STYLE_TYPE
 
-IMG_DIR = r"D:\work\2607\extracted_images"
-OUT_DIR = r"D:\work\2607"
+IMG_DIR = r"D:\2607compound\pdf_extract"
+OUT_DIR = r"D:\2607compound\results"
 
 def set_chinese_font(run, font_name="SimSun", size=10.5, bold=False):
     font = run.font

@@ -1,4 +1,4 @@
-# 阶段 A 技术规范：观测分析（图 1、图 2）
+﻿# 阶段 A 技术规范：观测分析（图 1、图 2）
 
 ## A.1 阶段目标
 
@@ -8,8 +8,8 @@
 
 | 数据集 | 路径 | 大小 | 格式 |
 |--------|------|------|------|
-| OISST v2 | `F:\2607compound\data\OISST\oisst_v2.1_1982_2023.nc` | ~3 GB | NetCDF |
-| E-OBS tg | `F:\2607compound\data\E-OBS\EOBS_tg_1984_2023.nc` | ~2 GB | NetCDF |
+| OISST v2 | `E:\2607compound\data\OISST\oisst_v2.1_1982_2023.nc` | ~3 GB | NetCDF |
+| E-OBS tg | `E:\2607compound\data\E-OBS\EOBS_tg_1984_2023.nc` | ~2 GB | NetCDF |
 
 **注意**: OISST 和 E-OBS 格点不对齐，需重采样到统一网格。
 
@@ -271,8 +271,8 @@ function fig2_chr(lon, lat, compound_days_mean, standalone_days_mean, CHR_ts, CH
 **⚠️ 数据清理由用户手动执行，必须用户确认当前阶段完成才能进入下一阶段。**
 
 画完图 1、图 2 并与原文目视比对一致后，**由用户手动删除**以下原始数据：
-- `F:\2607compound\data\OISST\oisst_v2.1_1982_2023.nc`（释放 ~3 GB）
-- `F:\2607compound\data\E-OBS\EOBS_tg_1984_2023.nc`（释放 ~2 GB）
+- `E:\2607compound\data\OISST\oisst_v2.1_1982_2023.nc`（释放 ~3 GB）
+- `E:\2607compound\data\E-OBS\EOBS_tg_1984_2023.nc`（释放 ~2 GB）
 
 **必须保留**:
 - `results/intermediate/` 下的 `.nc` 和 `.rds` 文件（共 < 1 GB）

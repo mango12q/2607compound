@@ -175,8 +175,13 @@ def plot_figure1(output_dir=None):
     path = os.path.join(output_dir, 'fig1_compound_spatial.pdf')
     tmp = os.path.join(tempfile.gettempdir(), 'fig1_temp.pdf')
     fig.savefig(tmp, dpi=300, bbox_inches='tight')
+    # PNG 副本：便于目视比对与快速查看（PDF 仍是交付版本）
+    tmp_png = os.path.join(tempfile.gettempdir(), 'fig1_temp.png')
+    fig.savefig(tmp_png, dpi=200, bbox_inches='tight')
     plt.close(fig)
     shutil.copy2(tmp, path)
     os.remove(tmp)
+    shutil.copy2(tmp_png, os.path.join(output_dir, 'fig1_compound_spatial.png'))
+    os.remove(tmp_png)
     print(f"Saved Figure 1 to: {path}")
     return path

@@ -1,4 +1,4 @@
-# 阶段 C 技术规范：湿热分析（图 5、图 6）
+﻿# 阶段 C 技术规范：湿热分析（图 5、图 6）
 
 ## C.1 阶段目标
 
@@ -8,10 +8,10 @@
 
 | 数据集 | 路径 | 大小 | 格式 |
 |--------|------|------|------|
-| ERA5 tmax | `F:\2607compound\data\ERA5\ERA5_tmax_1984_2023_daily.nc` | ~8 GB | NetCDF |
-| ERA5 d2m | `F:\2607compound\data\ERA5\ERA5_d2m_1984_2023_daily.nc` | ~8 GB | NetCDF |
-| ERA5 sp | `F:\2607compound\data\ERA5\ERA5_sp_1984_2023_daily.nc` | ~8 GB | NetCDF |
-| OAFlux | `F:\2607compound\data\OAFlux\OAFlux_evap_1991_2020_monthly.nc` | ~0.1 GB | NetCDF |
+| ERA5 tmax | `E:\2607compound\data\ERA5\ERA5_tmax_1984_2023_daily.nc` | ~8 GB | NetCDF |
+| ERA5 d2m | `E:\2607compound\data\ERA5\ERA5_d2m_1984_2023_daily.nc` | ~8 GB | NetCDF |
+| ERA5 sp | `E:\2607compound\data\ERA5\ERA5_sp_1984_2023_daily.nc` | ~8 GB | NetCDF |
+| OAFlux | `E:\2607compound\data\OAFlux\OAFlux_evap_1991_2020_monthly.nc` | ~0.1 GB | NetCDF |
 
 **注意**: WBT 公式未定，需确认论文使用 ERA5 提供变量还是手工计算后再绘制图 5–6。
 
@@ -232,8 +232,8 @@ function fig6_wbt(...)
 **⚠️ 数据清理由用户手动执行，必须用户确认当前阶段完成才能进入下一阶段。**
 
 画完图 5、图 6 并与原文目视比对一致后，**由用户手动删除**以下原始数据：
-- `F:\2607compound\data\ERA5\` 下全部 3 个 `.nc` 文件（释放 ~24 GB）
-- `F:\2607compound\data\OAFlux\OAFlux_evap_1991_2020_monthly.nc`（释放 ~0.1 GB）
+- `E:\2607compound\data\ERA5\` 下全部 3 个 `.nc` 文件（释放 ~24 GB）
+- `E:\2607compound\data\OAFlux\OAFlux_evap_1991_2020_monthly.nc`（释放 ~0.1 GB）
 
 **必须保留**:
 - `results/intermediate/` 下的 `.nc` 和 `.mat` 文件（共数 GB）

@@ -127,8 +127,13 @@ def plot_figure2(output_dir=None):
     path = os.path.join(output_dir, 'fig2_chr.pdf')
     tmp = os.path.join(tempfile.gettempdir(), 'fig2_temp.pdf')
     fig.savefig(tmp, dpi=300, bbox_inches='tight')
+    # PNG 副本：便于目视比对与快速查看（PDF 仍是交付版本）
+    tmp_png = os.path.join(tempfile.gettempdir(), 'fig2_temp.png')
+    fig.savefig(tmp_png, dpi=200, bbox_inches='tight')
     plt.close(fig)
     shutil.copy2(tmp, path)
     os.remove(tmp)
+    shutil.copy2(tmp_png, os.path.join(output_dir, 'fig2_chr.png'))
+    os.remove(tmp_png)
     print(f"Saved Figure 2 to: {path}")
     return path

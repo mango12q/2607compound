@@ -1,4 +1,4 @@
-# 数据下载要求
+﻿# 数据下载要求
 
 ## 数据清单总览
 
@@ -22,7 +22,7 @@
 下载完成后，`data/` 目录结构必须如下：
 
 ```
-F:\2607compound\data\
+E:\2607compound\data\
 ├── OISST\
 │   └── oisst_v2.1_1982_2023.nc
 ├── E-OBS\
@@ -63,7 +63,7 @@ F:\2607compound\data\
    - 空间范围：默认全球（无需修改）
    - 格式：NetCDF
 6. **点击 "Download"** 或 "Submit"
-7. **保存文件到**: `F:\2607compound\data\OISST\oisst_v2.1_1982_2023.nc`
+7. **保存文件到**: `E:\2607compound\data\OISST\oisst_v2.1_1982_2023.nc`
 
 **预期文件大小**: ~3 GB
 
@@ -99,7 +99,7 @@ doubao的链接 https://www.doubao.com/thread/x8PXIKs2BPXh1GfNR
    - **Format**: `NetCDF`
 5. **点击 "Submit"** 提交订单
 6. **等待邮件通知**（通常几分钟到几小时）
-7. **下载完成后**，将文件移动到 `F:\2607compound\data\E-OBS\EOBS_tg_1984_2023.nc`
+7. **下载完成后**，将文件移动到 `E:\2607compound\data\E-OBS\EOBS_tg_1984_2023.nc`
 
 **预期文件大小**: ~2 GB
 
@@ -142,7 +142,7 @@ doubao的链接 https://www.doubao.com/thread/x8PXIKs2BPXh1GfNR
    - `ERA5_daily_tmax_1984_2023.nc` → `ERA5_tmax_1984_2023_daily.nc`
    - `ERA5_daily_d2m_1984_2023.nc` → `ERA5_d2m_1984_2023_daily.nc`
    - `ERA5_daily_sp_1984_2023.nc` → `ERA5_sp_1984_2023_daily.nc`
-7. **保存到**: `F:\2607compound\data\ERA5\`
+7. **保存到**: `E:\2607compound\data\ERA5\`
 
 **预期文件大小**: 每个 ~8 GB，共 ~24 GB
 
@@ -184,7 +184,7 @@ doubao的链接 https://www.doubao.com/thread/x8PXIKs2BPXh1GfNR
 4. **注册账号**: 需要注册 UCAR 账号（免费）
 5. **选择时间范围**: 1991-01 至 2020-12
 6. **下载文件**
-7. **保存到**: `F:\2607compound\data\OAFlux\OAFlux_evap_1991_2020_monthly.nc`
+7. **保存到**: `E:\2607compound\data\OAFlux\OAFlux_evap_1991_2020_monthly.nc`
 
 **预期文件大小**: ~100 MB
 
@@ -224,7 +224,7 @@ doubao的链接 https://www.doubao.com/thread/x8PXIKs2BPXh1GfNR
 
 **目录结构要求**:
 ```
-F:\2607compound\data\CESM1-LE\
+E:\2607compound\data\CESM1-LE\
 ├── ALL\
 │   ├── b.e11.B20TRC5CNBDRD.001.cam.h1.TREFHT.185001-202312.nc
 │   ├── b.e11.B20TRC5CNBDRD.002.cam.h1.TREFHT.185001-202312.nc
@@ -252,7 +252,7 @@ F:\2607compound\data\CESM1-LE\
 # verify_data.py
 import os
 
-BASE_DIR = r"F:\2607compound"
+BASE_DIR = r"E:\2607compound"
 
 required = {
     "data/OISST/oisst_v2.1_1982_2023.nc": 3e9,
@@ -315,7 +315,7 @@ else:
 
 **使用方法**:
 ```bash
-cd F:\2607compound
+cd E:\2607compound
 python verify_data.py
 ```
 
@@ -341,7 +341,7 @@ python verify_data.py
 ## 存储空间规划
 
 ```
-F:\2607compound\
+E:\2607compound\
 ├── data/                    # 原始数据（~430 GB）
 │   ├── OISST/               # 3 GB
 │   ├── E-OBS/               # 2 GB

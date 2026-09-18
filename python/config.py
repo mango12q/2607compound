@@ -8,7 +8,6 @@ import os
 # 路径配置
 # ──────────────────────────────────────────────
 BASE_DIR = r"D:\2607compound"
-
 DATA_DIR = os.path.join(BASE_DIR, "data")
 OISST_DIR = os.path.join(DATA_DIR, "OISST")
 EOBS_DIR = os.path.join(DATA_DIR, "E-OBS")
@@ -38,8 +37,14 @@ EOBS_MERGED_FILE = os.path.join(EOBS_DIR, "EOBS_tg_1983_2023.nc")
 SST_CLIM_FILE = os.path.join(INTERMEDIATE_DIR, "sst_climatology_1983_2012.nc")
 T2M_CLIM_FILE = os.path.join(INTERMEDIATE_DIR, "t2m_climatology_1983_2012.nc")
 
-MHW_EVENTS_CSV = os.path.join(INTERMEDIATE_DIR, "mhw_events.csv")
-THW_EVENTS_CSV = os.path.join(INTERMEDIATE_DIR, "thw_events.csv")
+# ★ 2025-09-18 起海陆检测统一为 R heatwaveR (python/detect_events.R)：
+#   海洋 = mhw_events_R_global.csv（R 输出经 results/globalize_mhw_idx.py
+#          把裁剪文件局部索引换算回全球 OISST 索引，与 coastal_pairs 同空间）
+#   陆地 = thw_events_R.csv（detect_thw.R 产物；detect_events.R 的陆地重跑
+#          thw_events_R_v2.csv 已通过逐行回归对比，二者一致）
+#   旧的 Python 检测结果备份为 mhw_events_py.csv.bak / thw_events.csv.bak。
+MHW_EVENTS_CSV = os.path.join(INTERMEDIATE_DIR, "mhw_events_R_global.csv")
+THW_EVENTS_CSV = os.path.join(INTERMEDIATE_DIR, "thw_events_R.csv")
 
 COASTAL_PAIRS_CSV = os.path.join(INTERMEDIATE_DIR, "coastal_pairs.csv")
 
@@ -59,6 +64,20 @@ CLIM_PERIOD = (1983, 2012)
 DURATION_THRESH = 5
 GAP_TOLERANCE = 2
 PERCENTILE = 90
+
+# R heatwaveR 侧参数（与上面共用同一组数值，显式命名以免混淆）
+HW_MIN_DURATION = DURATION_THRESH
+HW_MAX_GAP = GAP_TOLERANCE
+HW_WINDOW_HALF_WIDTH = 5      # 11 天滑动窗口（heatwaveR 默认）
+R_WORKERS = 12                # PSOCK worker 数（本机 24 逻辑核）
+
+# ⚠️ 已知方法学差异（交叉验证结论，详见 results/THW_R_vs_Python_结论.md）
+# 1) 阈值：Python detect_thw.py 用逐 dayofyear 的**单日**分位数（无窗口）；
+#    heatwaveR 用 11 天滑动窗口分位数。两者在 E-OBS 上仅差 +0.23 °C。
+# 2) 最小持续时间口径（**主因**）：
+#    detect_thw.py      -> 事件"跨度"(含间隙) >= 5 天
+#    heatwaveR          -> "超标日游程"(不含间隙) >= 5 天
+#    该口径差异使 R 的事件数约为 Python 的 53%（消融实验 -45%）。
 
 # ──────────────────────────────────────────────
 # 复合事件参数
@@ -97,6 +116,12 @@ EOBS_VERSION_NOTE = (
     "Mixed versions: v33.0e (1980-2010) + v29.0e (2011-2023). "
     "Analysis subset to 1983-2023."
 )
+
+# ──────────────────────────────────────────────
+# R 调用配置
+# ──────────────────────────────────────────────
+RSCRIPT_PATH = r"C:\Program Files\R\R-4.6.1\bin\Rscript.exe"
+DETECT_THW_R_SCRIPT = os.path.join(BASE_DIR, "python", "detect_thw.R")
 
 # ──────────────────────────────────────────────
 # 绘图参数
