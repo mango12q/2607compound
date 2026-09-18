@@ -60,7 +60,11 @@ def plot_figure2(output_dir=None):
     # Mean fields over 2003-2023
     comp_mean = da_comp.sel(time=slice(2003, 2023)).mean(dim='time').values.astype(float)
     std_mean  = da_std.sel(time=slice(2003, 2023)).mean(dim='time').values.astype(float)
-    chr_map   = da_chr.sel(time=slice(2003, 2023)).mean(dim='time').values.astype(float)
+    # Panel d: ratio of TOTAL compound days to TOTAL standalone days (paper Fig.1m
+    # precedent: ratio of sums over the period, not mean of annual ratios)
+    comp_sum = da_comp.sel(time=slice(2003, 2023)).sum(dim='time')
+    std_sum  = da_std.sel(time=slice(2003, 2023)).sum(dim='time')
+    chr_map  = xr.where(std_sum > 0, comp_sum / std_sum, np.nan).values.astype(float)
 
     # Europe-wide mean CHR time-series (1983-2023)
     # Paper definition: sum(compound) / sum(standalone) per year, not mean(C/S)
@@ -131,9 +135,19 @@ def plot_figure2(output_dir=None):
     tmp_png = os.path.join(tempfile.gettempdir(), 'fig2_temp.png')
     fig.savefig(tmp_png, dpi=200, bbox_inches='tight')
     plt.close(fig)
-    shutil.copy2(tmp, path)
+    try:
+        shutil.copy2(tmp, path)
+    except PermissionError:
+        path = os.path.join(output_dir, 'fig2_chr_new.pdf')
+        shutil.copy2(tmp, path)
+        print("NOTE: fig2_chr.pdf 被占用(可能在预览中打开), 已另存 fig2_chr_new.pdf")
     os.remove(tmp)
-    shutil.copy2(tmp_png, os.path.join(output_dir, 'fig2_chr.png'))
+    png_path = os.path.join(output_dir, 'fig2_chr.png')
+    try:
+        shutil.copy2(tmp_png, png_path)
+    except PermissionError:
+        png_path = os.path.join(output_dir, 'fig2_chr_new.png')
+        shutil.copy2(tmp_png, png_path)
     os.remove(tmp_png)
     print(f"Saved Figure 2 to: {path}")
     return path

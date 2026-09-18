@@ -133,13 +133,14 @@ def phase2_compound(data, mhw_df, thw_df, pairs_df):
     print(f"Using {len(pairs_df)} pre-computed coastal pairs")
 
     print("\n[2a] Identifying compound events...")
+    time_coord = eobs['T2m'].time
     t0 = time.time()
-    compound_df = compound_events.identify_compound_events(mhw_df, thw_df, pairs_df)
+    compound_df = compound_events.identify_compound_events(
+        mhw_df, thw_df, pairs_df, time_coord)
     elapsed = time.time() - t0
-    print(f"Found {len(compound_df)} compound events in {elapsed:.1f} seconds")
+    print(f"Found {len(compound_df)} compound day-segments in {elapsed:.1f} seconds")
 
     print("\n[2b] Converting to daily fields...")
-    time_coord = eobs['T2m'].time
     lat_coord = eobs['T2m'].lat
     lon_coord = eobs['T2m'].lon
 

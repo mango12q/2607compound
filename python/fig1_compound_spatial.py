@@ -44,9 +44,11 @@ def plot_figure1(output_dir=None):
 
     lat, lon = da_comp.lat.values, da_comp.lon.values
 
-    # Co-occurrence probability (time-mean over 1984-2023)
-    prob_var = list(cooc.data_vars)[0]
-    prob_map = cooc[prob_var].mean(dim='time')
+    # Co-occurrence probability (paper Fig.1m: ratio of TOTAL compound days to
+    # TOTAL terrestrial heatwave days over 2003-2023)
+    comp_0323 = da_comp.sel(time=slice(2003, 2023)).sum(dim='time')
+    thw_0323 = da_thw.sel(time=slice(2003, 2023)).sum(dim='time')
+    prob_map = xr.where(thw_0323 > 0, comp_0323 / thw_0323, np.nan)
 
     # Specific years matching the paper
     target_years = [2003, 2006, 2010, 2012, 2018, 2019, 2020, 2022, 2023]
@@ -160,7 +162,7 @@ def plot_figure1(output_dir=None):
                          cmap='RdYlBu_r', vmin=0, vmax=0.8, s=6,
                          transform=ccrs.PlateCarree(), edgecolors='none',
                          linewidths=0.1, alpha=0.85)
-        ax.set_title('(m) Co-occurrence Probability\n(mean over 1984–2023)', fontsize=7, fontweight='bold', pad=2)
+        ax.set_title('(m) Co-occurrence Probability\n(mean over 2003–2023)', fontsize=7, fontweight='bold', pad=2)
         cbar2 = fig.colorbar(sc2, ax=ax, orientation='horizontal', pad=0.06, aspect=25, shrink=0.85)
         cbar2.set_label('Probability (Fraction)', fontsize=6)
         cbar2.ax.tick_params(labelsize=5)
@@ -184,4 +186,62 @@ def plot_figure1(output_dir=None):
     shutil.copy2(tmp_png, os.path.join(output_dir, 'fig1_compound_spatial.png'))
     os.remove(tmp_png)
     print(f"Saved Figure 1 to: {path}")
+    return path
+
+
+def plot_figure1_jkl_maxcell(output_dir=None):
+    """补充图: 图1 j/k/l 的逐格点**最大值**版本。
+
+    论文正文引述 Med 2022~78/2023~72 天, 但 90 分位阈值下 90% 的年份单点年
+    THW 天数 <=~70 天, 78 天不可能是逐点区域均值; 论文曲线更接近格点最大值
+    (或热点子区均值)。本图输出 max-cell 版本供与论文面板目视比对定稿。
+    """
+    import shutil
+    import tempfile
+    if output_dir is None:
+        output_dir = FIGURES_DIR
+    os.makedirs(output_dir, exist_ok=True)
+
+    ann_comp = xr.open_dataset(os.path.join(INTERMEDIATE_DIR, 'annual_compound_days.nc'))
+    da_comp = ann_comp['compound_mhw_thw']
+
+    regions = [
+        ('j', 'Mediterranean &\nBlack Sea', {'lat': (30, 47), 'lon': (5, 42)}),
+        ('k', 'Baltic Sea',                 {'lat': (53, 66), 'lon': (10, 30)}),
+        ('l', 'European Coasts',            {'lat': (30, 72), 'lon': (-15, 45)}),
+    ]
+
+    fig, axes = plt.subplots(3, 1, figsize=(6, 9), sharex=True)
+    for ax, (lbl, name, region) in zip(axes, regions):
+        r = da_comp.sel(lat=slice(*region['lat']), lon=slice(*region['lon']))
+        mask = r.mean(dim='time') > 0
+        r_masked = r.where(mask)
+        ts = r_masked.max(dim=['lat', 'lon'])
+        yr = ts.time.values.astype(int)
+        vals = ts.values
+        ax.fill_between(yr, 0, vals, color='#d73027', alpha=0.6, step='mid')
+        ax.plot(yr, vals, color='#d73027', linewidth=0.8, marker='.', markersize=2)
+        ax.set_ylabel('Days/year', fontsize=8)
+        ax.set_title(f"({lbl}) {name.replace(chr(10), ' ')} — max-cell compound days",
+                     fontsize=9, fontweight='bold')
+        ax.tick_params(labelsize=7)
+        ax.grid(True, alpha=0.3, linestyle=':', linewidth=0.3)
+
+    axes[-1].set_xlim(1983, 2023)
+    axes[-1].set_xticks(range(1983, 2024, 5))
+    fig.suptitle('Fig.1 j-l supplementary: per-cell MAXIMUM compound days\n'
+                 '(paper quotes Med 2022~78 / 2023~72 days)', fontsize=9)
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
+
+    path = os.path.join(output_dir, 'figS1_jkl_maxcell.pdf')
+    tmp = os.path.join(tempfile.gettempdir(), 'figS1_temp.pdf')
+    fig.savefig(tmp, dpi=300, bbox_inches='tight')
+    tmp_png = os.path.join(tempfile.gettempdir(), 'figS1_temp.png')
+    fig.savefig(tmp_png, dpi=200, bbox_inches='tight')
+    plt.close(fig)
+    shutil.copy2(tmp, path)
+    os.remove(tmp)
+    shutil.copy2(tmp_png, os.path.join(output_dir, 'figS1_jkl_maxcell.png'))
+    os.remove(tmp_png)
+    print(f"Saved Figure S1 (jkl max-cell) to: {path}")
     return path
