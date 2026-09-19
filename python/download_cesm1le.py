@@ -37,6 +37,7 @@ download_cesm1le.py — Phase 6 (CESM1-LE 归因) 数据下载工具
 import argparse
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.request
@@ -424,8 +425,9 @@ def _head_size(url):
         return int(r.headers.get("Content-Length", 0))
 
 
-def _download_one(url, dest, retries=3):
+def _download_one(url, dest, retries=5):
     part = dest + ".part"
+    fresh = dest + ".fresh.part"
     if os.path.exists(dest):
         # 自愈: 已存在的成品也要校验长度(此前出现过代理断流导致的截断文件)
         try:
@@ -446,14 +448,17 @@ def _download_one(url, dest, retries=3):
             req = Request(url, headers=headers)
             with urlopen(req, timeout=120) as r:
                 status = getattr(r, "status", 200)
-                if have and status != 206:
-                    print("    服务器不支持断点续传, 从头下载")
+                resuming = bool(have) and status == 206
+                if have and not resuming:
+                    print("    服务器不支持断点续传, 改写临时副本(保留断点)")
                     have = 0
                 cl = r.headers.get("Content-Length")
                 expected = (have + int(cl)) if cl else None
                 got = 0
                 last_gb = -1
-                with open(part, "ab" if have else "wb") as f:
+                # 206 续传写 .part; 非 206 全新下载写 .fresh.part, 失败不损 .part
+                target = part if resuming else fresh
+                with open(target, "ab" if resuming else "wb") as f:
                     while True:
                         chunk = r.read(8 << 20)
                         if not chunk:
@@ -466,11 +471,37 @@ def _download_one(url, dest, retries=3):
                             print(f"    {got/1e9:.1f}{exp}", flush=True)
                 if expected is not None and got != expected:
                     raise RuntimeError(f"传输不完整: 收到 {got/1e9:.2f} / 应为 {expected/1e9:.2f} GB")
-            os.replace(part, dest)
+                if expected is None:
+                    # chunked/无 CL 响应 → 事后 HEAD 校验, 否则断流会被漏判
+                    cl2 = _head_size(url)
+                    if cl2 and got != cl2:
+                        raise RuntimeError(f"传输不完整(chunked): 收到 {got/1e9:.2f} / HEAD {cl2/1e9:.2f} GB")
+            os.replace(target, dest)
+            for p in (part, fresh):
+                if os.path.exists(p):
+                    os.remove(p)
             return dest, attempt
         except Exception as e:
             print(f"    重试 {attempt}/{retries}: {type(e).__name__} {str(e)[:120]}")
             time.sleep(5 * attempt)
+    # 兜底: curl.exe 独立 HTTP 栈, -C - 自动从 .part 续传
+    try:
+        proxy = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY") or ""
+        cmd = ["curl.exe", "-sfL", "--retry", "3", "-C", "-"]
+        if proxy:
+            cmd += ["-x", proxy]
+        cmd += ["-o", part, url]
+        print(f"    curl 兜底: {' '.join(cmd[:6])} ...")
+        subprocess.run(cmd, check=True, timeout=14400)
+        cl = _head_size(url)
+        if cl and abs(os.path.getsize(part) - cl) <= 1024:
+            os.replace(part, dest)
+            if os.path.exists(fresh):
+                os.remove(fresh)
+            return dest, retries + 1
+        raise RuntimeError(f"curl 后大小不符: {os.path.getsize(part)/1e9:.2f}/{cl/1e9:.2f} GB")
+    except Exception as e:
+        print(f"    curl 兜底失败: {type(e).__name__} {str(e)[:100]}")
     raise RuntimeError(f"下载失败: {url}")
 
 
