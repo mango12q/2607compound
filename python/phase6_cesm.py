@@ -222,19 +222,13 @@ def cmd_pairs(args):
 # ──────────────────────────────────────────────
 # detect
 # ──────────────────────────────────────────────
-def _detect_mhw_member(exp, m, pairs_df):
-    """MHW: 配对海点 + 逐 doy 90 分位气候态 + 游程状态机 (与观测同语义)。"""
-    out_csv = os.path.join(CESM_INT, f"mhw_{exp}_{m}.csv")
-    if os.path.exists(out_csv):
-        print(f"已存在, 跳过 {out_csv}")
-        return out_csv
-
+def _load_sst_points(exp, m, pairs_df):
+    """配对海点 SST 序列 (块读+对角抽取)。返回 (vals(nt,npair), time, kmt_pt)。"""
     segs = find_sst_segments(exp, m)
     if not segs:
         raise FileNotFoundError(f"{exp} {m}: 无 SST 段")
     pj = pairs_df.ocean_lat_idx.values
     pi = pairs_df.ocean_lon_idx.values
-    npair = len(pj)
 
     series, times = [], []
     kmt = None
@@ -259,43 +253,125 @@ def _detect_mhw_member(exp, m, pairs_df):
     time = pd.DatetimeIndex([t for tv in times for t in tv])
     kmt_pt = np.asarray(np.ma.filled(kmt[pj, pi], 0))           # 配对点 KMT
     vals[:, kmt_pt <= 0] = np.nan               # 陆点/死海无值
+    return vals, time, kmt_pt
+
+
+def _run_events(x, time, min_dur=5, max_gap=2):
+    """超标 bool 序列 -> 事件 (游程>=min_dur, 桥接<=max_gap; 时长含间隙日)。"""
+    x = x.astype(np.int8)
+    dz = np.diff(np.concatenate(([0], x, [0])))
+    starts = np.flatnonzero(dz == 1)
+    ends = np.flatnonzero(dz == -1) - 1
+    merged = []
+    for a, b in zip(starts, ends):
+        if merged and a - merged[-1][1] - 1 <= max_gap:
+            merged[-1][1] = b
+        else:
+            merged.append([a, b])
+    return [(a, b) for a, b in merged if b - a + 1 >= min_dur]
+
+
+def _pooled_threshold_sst(pairs_df, members):
+    """XGHG 合并气候态 (反事实基准): 逐 doy 90 分位, 缓存 npz。"""
+    cache = os.path.join(CESM_INT, "thresh_sst_xghg.npz")
+    if os.path.exists(cache):
+        z = np.load(cache)
+        return z["thresh"], z["doy_map"]
+    chunks = []
+    for m in members:
+        vals, time, _ = _load_sst_points("XGHG", m, pairs_df)
+        chunks.append((vals, time.dayofyear.values))
+        print(f"  基准池: XGHG {m} ({vals.shape[0]} 天)")
+    doy_all = np.concatenate([d for _, d in chunks])
+    mat = np.concatenate([v for v, _ in chunks], axis=0)   # (~66y, npair)
+    npair = mat.shape[1]
+    thresh = np.full((366, npair), np.nan)
+    for d in np.arange(1, 366):
+        rows = mat[doy_all == d]
+        if len(rows):
+            thresh[d - 1] = np.nanpercentile(rows, 90, axis=0)
+    np.savez_compressed(cache, thresh=thresh, doy_map=np.arange(366))
+    print(f"  SST 反事实基准 -> {cache}")
+    return thresh, np.arange(366)
+
+
+def _pooled_threshold_t2m(pairs_df, members):
+    """XGHG 合并气候态 (T2m): heatwaveR 语义 = 11 天窗 90 分位, 缓存 npz。"""
+    cache = os.path.join(CESM_INT, "thresh_t2m_xghg.npz")
+    if os.path.exists(cache):
+        z = np.load(cache)
+        return z["thresh"]
+    pj = pairs_df.land_lat_idx.values
+    pi = pairs_df.land_lon_idx.values
+    chunks = []
+    for m in members:
+        f = os.path.join(CESM_INT, f"XGHG_{m}_T2m.nc")
+        ds = xr.open_dataset(f)
+        da = ds["T2m"].isel(lat=xr.DataArray(pj, dims="p"),
+                            lon=xr.DataArray(pi, dims="p"))
+        arr = da.transpose("time", "p").values.astype(np.float64)
+        chunks.append((arr, pd.DatetimeIndex(da.time.values).dayofyear.values))
+        ds.close()
+        print(f"  基准池: XGHG {m} T2m ({arr.shape[0]} 天)")
+    doy_all = np.concatenate([d for _, d in chunks])
+    mat = np.concatenate([v for v, _ in chunks], axis=0)   # (~66y, nland)
+    nland = mat.shape[1]
+    # 单日 doy 分位 (66 样本/doy)
+    single = np.full((366, nland), np.nan)
+    for d in np.arange(1, 366):
+        rows = mat[doy_all == d]
+        if len(rows):
+            single[d - 1] = np.nanpercentile(rows, 90, axis=0)
+    # 11 天圆形窗平滑 (heatwaveR windowHalfWidth=5 语义: 窗内样本合并求分位)
+    thresh = np.full_like(single, np.nan)
+    for d in np.arange(1, 366):
+        win = [(d + k - 1) % 365 + 1 for k in range(-5, 6)]
+        stacked = np.concatenate([single[w - 1] for w in win], axis=0)
+        thresh[d - 1] = np.nanpercentile(stacked, 90, axis=0)
+    np.savez_compressed(cache, thresh=thresh)
+    print(f"  T2m 反事实基准 (11 天窗) -> {cache}")
+    return thresh
+
+
+def _detect_mhw_member(exp, m, pairs_df, thresh_ext=None, suffix=""):
+    """MHW: 配对海点 + 逐 doy 90 分位气候态 + 游程状态机 (与观测同语义)。
+
+    thresh_ext=None -> 成员自身气候态 (v1); 传入 (366,npair) 外置阈值 -> 反事实基准 (v2)。
+    """
+    out_csv = os.path.join(CESM_INT, f"mhw{suffix}_{exp}_{m}.csv")
+    if os.path.exists(out_csv):
+        print(f"已存在, 跳过 {out_csv}")
+        return out_csv
+
+    vals, time, _ = _load_sst_points(exp, m, pairs_df)
 
     print(f"{exp} {m}: SST {vals.shape[0]} 天 x {vals.shape[1]} 配对点")
 
-    # 逐 doy 90 分位气候态 (成员自身 2000-2021, 与观测 load_data 同语义)
     doy = time.dayofyear.values
     nt, npair = vals.shape
-    thresh = np.full((366, npair), np.nan)
-    for d in np.unique(doy):
-        thresh[d - 1] = np.nanpercentile(vals[doy == d], 90, axis=0)
+    if thresh_ext is not None:
+        thresh = thresh_ext
+    else:
+        # 逐 doy 90 分位气候态 (成员自身 2000-2021, 与观测 load_data 同语义)
+        thresh = np.full((366, npair), np.nan)
+        for d in np.unique(doy):
+            thresh[d - 1] = np.nanpercentile(vals[doy == d], 90, axis=0)
     thr_t = thresh[doy - 1]                       # (nt, npairs)
 
-    # 游程状态机 (min_dur=5, max_gap=2) — 与 detect_mhw._EventTracker 同语义
+    # 游程事件 (min_dur=5, max_gap=2) — 与 detect_mhw._EventTracker 同语义
     events = []
     for p in range(npair):
         x = vals[:, p] > thr_t[:, p]
         x[np.isnan(vals[:, p])] = False
-        x = x.astype(np.int8)
-        dz = np.diff(np.concatenate(([0], x, [0])))
-        starts = np.flatnonzero(dz == 1)
-        ends = np.flatnonzero(dz == -1) - 1
-        # 桥接 <=2 天间隙: 合并间隔 <=2 的相邻游程
-        merged = []
-        for a, b in zip(starts, ends):
-            if merged and a - merged[-1][1] - 1 <= 2:
-                merged[-1][1] = b
-            else:
-                merged.append([a, b])
-        for a, b in merged:
-            if b - a + 1 >= 5:
-                events.append({
-                    "event_start": time[a], "event_end": time[b],
-                    "duration": int(b - a + 1),
-                    "lat_idx": int(pairs_df.ocean_lat_idx.iloc[p]),
-                    "lon_idx": int(pairs_df.ocean_lon_idx.iloc[p]),
-                    "lat": float(pairs_df.ocean_lat.iloc[p]),
-                    "lon": float(pairs_df.ocean_lon.iloc[p]),
-                })
+        for a, b in _run_events(x, time):
+            events.append({
+                "event_start": time[a], "event_end": time[b],
+                "duration": int(b - a + 1),
+                "lat_idx": int(pairs_df.ocean_lat_idx.iloc[p]),
+                "lon_idx": int(pairs_df.ocean_lon_idx.iloc[p]),
+                "lat": float(pairs_df.ocean_lat.iloc[p]),
+                "lon": float(pairs_df.ocean_lon.iloc[p]),
+            })
     df = pd.DataFrame(events)
     df.to_csv(out_csv, index=False)
     print(f"  MHW 事件 {len(df)} -> {out_csv}")
@@ -327,8 +403,67 @@ def _detect_thw_member(exp, m):
     return out_csv
 
 
+def _detect_thw_member_ext(exp, m, pairs_df, thresh):
+    """THW v2: 外置反事实阈值 (XGHG 合并 11 天窗 90 分位) + 游程事件。
+
+    阈值来源与 heatwaveR ts2clm 同语义 (11 天窗分位), 事件逻辑 (游程>=5, 桥接<=2)
+    与 heatwaveR detect_event / marineHeatWaves 一致 (项目交叉验证已核),
+    故外部阈值下 python/R 等价 —— 阈值才是方法学本体。
+    """
+    out_csv = os.path.join(CESM_INT, f"thw_x_{exp}_{m}.csv")
+    if os.path.exists(out_csv):
+        print(f"已存在, 跳过 {out_csv}")
+        return out_csv
+    f = os.path.join(CESM_INT, f"{exp}_{m}_T2m.nc")
+    ds = xr.open_dataset(f)
+    pj = pairs_df.land_lat_idx.values
+    pi = pairs_df.land_lon_idx.values
+    da = ds["T2m"].isel(lat=xr.DataArray(pj, dims="p"),
+                        lon=xr.DataArray(pi, dims="p"))
+    arr = da.transpose("time", "p").values.astype(np.float64)
+    time = pd.DatetimeIndex(da.time.values)
+    ds.close()
+
+    doy = time.dayofyear.values
+    thr_t = thresh[doy - 1]                       # (nt, nland)
+    events = []
+    for p in range(len(pj)):
+        x = arr[:, p] > thr_t[:, p]
+        x[np.isnan(arr[:, p])] = False
+        for a, b in _run_events(x, time):
+            events.append({
+                "event_start": time[a], "event_end": time[b],
+                "duration": int(b - a + 1),
+                "lat_idx": int(pj[p]), "lon_idx": int(pi[p]),
+                "lat": float(pairs_df.land_lat.iloc[p]),
+                "lon": float(pairs_df.land_lon.iloc[p]),
+            })
+    df = pd.DataFrame(events)
+    df.to_csv(out_csv, index=False)
+    print(f"  THW(x) 事件 {len(df)} -> {out_csv}")
+    return out_csv
+
+
 def cmd_detect(args):
     pairs_df = pd.read_csv(PAIRS_CSV)
+    baseline = getattr(args, "baseline", "own")
+    if baseline == "xghg":
+        print("== v2: XGHG 合并反事实基准 ==")
+        thr_sst, _ = _pooled_threshold_sst(pairs_df, MEMBERS_P0[: args.members])
+        thr_t2m = _pooled_threshold_t2m(pairs_df, MEMBERS_P0[: args.members])
+        for exp in ("ALL", "XGHG"):
+            for m in MEMBERS_P0[: args.members]:
+                try:
+                    _detect_thw_member_ext(exp, m, pairs_df, thr_t2m)
+                except Exception as e:
+                    print(f"!! THW(x) 失败 {exp} {m}: {e}")
+                    continue
+                try:
+                    _detect_mhw_member(exp, m, pairs_df,
+                                       thresh_ext=thr_sst, suffix="_x")
+                except Exception as e:
+                    print(f"!! MHW(x) 失败 {exp} {m}: {e}")
+        return
     for exp in ("ALL", "XGHG"):
         for m in MEMBERS_P0[: args.members]:
             try:
@@ -349,12 +484,13 @@ def cmd_compound(args):
     from compound_events import (
         identify_compound_events, _pair_maps, _event_daily_mask,
     )
+    tag = getattr(args, "tag", "")
     pairs_df = pd.read_csv(PAIRS_CSV)
     rows = []
     for exp in ("ALL", "XGHG"):
         for m in MEMBERS_P0[: args.members]:
-            thw_f = os.path.join(CESM_INT, f"thw_{exp}_{m}.csv")
-            mhw_f = os.path.join(CESM_INT, f"mhw_{exp}_{m}.csv")
+            thw_f = os.path.join(CESM_INT, f"thw{tag}_{exp}_{m}.csv")
+            mhw_f = os.path.join(CESM_INT, f"mhw{tag}_{exp}_{m}.csv")
             if not (os.path.exists(thw_f) and os.path.exists(mhw_f)):
                 print(f"!! 缺事件表, 跳过 {exp} {m}")
                 continue
@@ -395,12 +531,13 @@ def cmd_compound(args):
 
             # 逐年暴露时间 (PR 口径: 模型年 = 22 年 × 成员; 聚合用 Med 框)
             ann = _annual_per_pair(comp, time_da.time, pairs_df)
-            ann.to_csv(os.path.join(CESM_INT, f"annual_{exp}_{m}.csv"),
+            ann.to_csv(os.path.join(CESM_INT, f"annual{tag}_{exp}_{m}.csv"),
                        index=False)
             t2m.close()
     df = pd.DataFrame(rows)
-    df.to_csv(EXPOSURE_CSV, index=False)
-    print(f"暴露时间表 -> {EXPOSURE_CSV}")
+    df.to_csv(os.path.join(CESM_INT, f"exposure_members{tag}.csv"),
+              index=False)
+    print(f"暴露时间表 -> {os.path.join(CESM_INT, f'exposure_members{tag}.csv')}")
 
 
 # ──────────────────────────────────────────────
@@ -482,8 +619,10 @@ def cmd_attrib(args):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    df = pd.read_csv(EXPOSURE_CSV)
-    if len(df):
+    tag = getattr(args, "tag", "")
+    df_path = os.path.join(CESM_INT, f"exposure_members{tag}.csv")
+    if os.path.exists(df_path):
+        df = pd.read_csv(df_path)
         a = df[df.exp == "ALL"].compound_days.values.astype(float)
         f = df[df.exp == "XGHG"].compound_days.values.astype(float)
         if len(a) and len(f) and f.mean() > 0:
@@ -499,9 +638,9 @@ def cmd_attrib(args):
 
     # 模型年样本 (合并成员: 3 成员 × 22 年 = 66 模型年/组)
     def load_sample(exp, col):
-        fs = sorted(glob.glob(os.path.join(CESM_INT, f"annual_{exp}_*.csv")))
+        fs = sorted(glob.glob(os.path.join(CESM_INT, f"annual{tag}_{exp}_*.csv")))
         if not fs:
-            raise SystemExit(f"缺 {exp} 年序列, 先跑 compound")
+            raise SystemExit(f"缺 {exp} 年序列 (tag={tag!r}), 先跑 compound")
         parts = []
         for f in fs:
             m = re.search(r"annual_(\w+)_(\d+)\.csv$", os.path.basename(f))
@@ -542,12 +681,14 @@ def cmd_attrib(args):
         ax.axvline(min(pr, 50) if np.isfinite(pr) else 50, color="k", lw=1.5)
         ax.set_xlabel("Bootstrapped PR (clipped at 50)")
         ax.set_ylabel("Bootstrap replicates")
-    fig.suptitle("CESM1-LE P0 (3 members): Probability Ratio validation "
-                 "(paper Fig.7 metric)", fontsize=11)
+    fig.suptitle(f"CESM1-LE P0 (3 members): Probability Ratio "
+                 f"[baseline={'XGHG-pooled' if tag else 'own-clim'}]",
+                 fontsize=11)
     fig.tight_layout()
     os.makedirs(C.FIGURES_DIR, exist_ok=True)
-    fig.savefig(FIG7_PNG, dpi=200)
-    print(f"图 -> {FIG7_PNG}")
+    out_png = os.path.join(C.FIGURES_DIR, f"fig7_p0_validation{tag}.png")
+    fig.savefig(out_png, dpi=200)
+    print(f"图 -> {out_png}")
 
 
 # ──────────────────────────────────────────────
@@ -556,8 +697,14 @@ def main():
     sp = p.add_subparsers(dest="cmd", required=True)
     for name in ("prepare", "pairs", "detect", "compound", "attrib"):
         q = sp.add_parser(name)
+        if name == "detect":
+            q.add_argument("--baseline", choices=["own", "xghg"], default="own",
+                           help="own=成员自身气候态(v1); xghg=XGHG 合并反事实基准(v2)")
         if name != "pairs":
             q.add_argument("--members", type=int, default=C.CESM_P0_MEMBERS)
+        if name in ("compound", "attrib"):
+            q.add_argument("--tag", default="",
+                           help="事件文件后缀: ''=v1(own), '_x'=v2(XGHG 基准)")
         q.set_defaults(func=globals()[f"cmd_{name}"])
     args = p.parse_args()
     args.func(args)
