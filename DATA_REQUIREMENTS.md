@@ -15,6 +15,18 @@
 
 **总数据量**: ~430 GB
 
+### 下载自动化脚本（2025-09-22 更新）
+
+| 数据集 | 自动化脚本 | 状态 |
+|--------|-----------|------|
+| OISST | （已下载完成） | ✅ 就位 |
+| E-OBS tg | （已下载完成） | ✅ 就位 |
+| ERA5 tmax | `python/download_era5_tmax.py`（CDS daily-statistics API，断点续传+合并） | ⬜ 待运行 |
+| ERA5 d2m | （已下载完成，`ERA5/d2m_global_daily/` 按月文件，0.25° 全球日值） | ✅ 就位 |
+| ERA5 sp | （已下载完成，`ERA5/sp/pres.sfc.daily.era5.*.nc`，1.0° 全球日值） | ✅ 就位 |
+| OAFlux evap | `python/download_oaflux_evap.py`（WHOI 官方多镜像自动降级+强校验+合并） | ⬜ 待运行 |
+| CESM1-LE | `run_p0_download.bat`（双击 P0）/ `python/download_cesm1le.py --members 20`（全量） | 🔶 已下 ~126 GB，断点续传 |
+
 ---
 
 ## 目录结构要求
@@ -114,9 +126,21 @@ doubao的链接 https://www.doubao.com/thread/x8PXIKs2BPXh1GfNR
 
 **用途**: WBT 计算（需要 tmax, d2m, sp）
 
-**下载地址**: https://cds.climate.copernicus.eu/datasets/era5-daily-single-levels
+**当前状态（2025-09-22）**: d2m（0.25° 全球日值 1979-2024）、sp（1.0° 全球日值 1984-2024）已就位；**tmax 缺失**，用下方脚本下载。
 
-**操作步骤**:
+**自动化（推荐）**:
+```powershell
+python python\download_era5_tmax.py        # 1984-2023 按月下载+校验, 断点续传
+python python\download_era5_tmax.py --merge # 生成 data\ERA5\ERA5_tmax_1984_2023_daily.nc
+```
+- 数据集: CDS `derived-era5-single-levels-daily-statistics`（日最高气温 = hourly mx2t 的逐日最大）
+- 键名注意: 日统计键是 **`daily_statistic`**（不是 `statistic`）; `time_zone=utc+00:00` 对欧洲区域与当地日最大值一致
+- 首次运行前置: `pip install cdsapi`；`~/.cdsapirc` 已配置有效；若数据集页面未接受过 CC-BY 许可，需先在线接受一次
+- 手动网页步骤（备用方案）保留如下
+
+**下载地址**: https://cds.climate.copernicus.eu/datasets/derived-era5-single-levels-daily-statistics
+
+**操作步骤（手动备用）**:
 
 1. **打开网页**: https://cds.climate.copernicus.eu/datasets/era5-daily-single-levels
 2. **登录**（使用 Copernicus 账号，与 E-OBS 相同）
@@ -148,35 +172,31 @@ doubao的链接 https://www.doubao.com/thread/x8PXIKs2BPXh1GfNR
 
 **注意事项**:
 - 下载可能需要几小时到几天
-- 可使用 CDS API 批量下载（更稳定）:
-  ```python
-  import cdsapi
-  c = cdsapi.Client()
-  c.retrieve(
-      'reanalysis-era5-single-levels',
-      {
-          'product_type': 'reanalysis',
-          'variable': 'maximum_temperature_at_2_metres_since_previous_post_processing',
-          'year': list(range(1984, 2024)),
-          'month': [f'{m:02d}' for m in range(1, 13)],
-          'day': [f'{d:02d}' for d in range(1, 32)],
-          'time': [f'{h:02d}:00' for h in range(24)],
-          'area': [66, -10, 30, 40],
-          'format': 'netcdf',
-      },
-      'ERA5_tmax_1984_2023.nc'
-  )
-  ```
+- ~~旧 hourly API 片段已删除~~：`reanalysis-era5-single-levels` 是 **hourly** 数据集（24 时次×40 年体积过大且语义错误）。日值请用 `derived-era5-single-levels-daily-statistics`，已封装进 `python/download_era5_tmax.py`
 
 ---
 
-## 数据集 4：OAFlux（UCAR）
+## 数据集 4：OAFlux（WHOI）
 
 **用途**: 海洋蒸发趋势
 
-**下载地址**: https://climatedataguide.ucar.edu/climate-data/oaflux-objectively-analyzed-air-sea-fluxes-global-oceans
+**当前状态（2025-09-22）**: 未下载；下载脚本已就绪。
 
-**操作步骤**:
+**自动化（推荐）**:
+```powershell
+python python\download_oaflux_evap.py            # 1991-2020, 自动镜像降级+强校验+合并
+python python\download_oaflux_evap.py --probe    # 只探测各镜像可用性
+```
+- **官方主源**: `ftp://ftp.whoi.edu/pub/science/oaflux/data_v3`（WHOI 官网 data-access 页列出）
+- **官方镜像**: WHOI HTTP（ftp1.whoi.edu）、NOAA PSL THREDDS、APDRC、UCAR RDA ds260.1
+- 免账号; 脚本按官方镜像优先级自动探测 evap 月值文件, 逐文件内容校验后合并为
+  `data/OAFlux/OAFlux_evap_1991_2020_monthly.nc`
+- 注意（2025-09-22 实测）: WHOI FTP 端口本网络不通、PSL THREDDS 维护中、APDRC 502, 均为临时状况; 换网络/稍后重试即可
+- 下方 UCAR climatedataguide 页面只是**介绍页**（非直接下载入口），手动下载请走 WHOI 官网
+
+**下载地址**: https://oaflux.whoi.edu/data-access/
+
+**操作步骤（手动备用）**:
 
 1. **打开网页**: https://climatedataguide.ucar.edu/climate-data/oaflux-objectively-analyzed-air-sea-fluxes-global-oceans
 2. **滚动到 "Data Access" 部分**（页面下方）
@@ -199,13 +219,27 @@ doubao的链接 https://www.doubao.com/thread/x8PXIKs2BPXh1GfNR
 
 ---
 
-## 数据集 5：CESM1-LE（Earth System Grid Federation）
+## 数据集 5：CESM1-LE（NCAR GDEX / AWS）
 
-**用途**: 归因分析（ALL 强迫 + FixGHG）
+**用途**: 归因分析（ALL 强迫 + XGHG 反事实；论文口径 ALL-but-GHG）
 
-**下载地址**: https://www.earthsystemgrid.org/dataset/
+**当前状态（2025-09-22）**: 已下 ~126 GB（成员 001-003 相关 + 部分），断点续传续补。
 
-**操作步骤**:
+**自动化（推荐，已实爬验证源可用）**:
+```powershell
+# P0 验证（成员 001-003, 双击或命令行均可, 断点续传）
+run_p0_download.bat
+# 全量 20 成员
+python python\download_cesm1le.py aws --members 20    # ALL 日值 TREFHT 走 AWS zarr
+python python\download_cesm1le.py gdex --members 20   # SST + XGHG 走 NCAR GDEX
+```
+- 精确文件清单（实爬生成）: `results/tables/cesm1le_download_manifest.csv`
+- 走系统代理实测 2.24 MB/s（直连 <0.1）; 工具已自动接入
+- 数据选型依据（为何不用 CMIP6）见 `results/复现报告.md` §11
+
+**下载地址**: https://gdex.ucar.edu/datasets/d651027/ （GDEX d651027, 匿名可用）· AWS 镜像 `s3://ncar-cesm-lens`（仅 ALL 日值 TREFHT）
+
+**操作步骤（手动备用）**:
 
 1. **打开网页**: https://www.earthsystemgrid.org/dataset/
 2. **注册账号**: 需要免费注册 ESG 账号

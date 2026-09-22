@@ -2,13 +2,25 @@
 
 ## 项目性质
 
-学术复现项目，非典型软件仓库。目标：复现论文 *Compound coastal marine–terrestrial heatwaves associated with humid-heat stress in Europe*（Scientific Reports 2025）。代码尚未写完，当前仅有文档和一个 Word 生成脚本。
+学术复现项目，非典型软件仓库。目标：复现论文 *Compound coastal marine–terrestrial heatwaves associated with humid-heat stress in Europe*（Scientific Reports 2025）。
+
+**当前进度（2025-09-22）**：Phase 1-4（观测链路：检测→配对→复合→图1/图2/S1/S2）完成，锚点基本命中；Phase 6 P0（CESM 3 成员管线 + v2 反事实基准）验证通过，全量未跑；Phase 5（湿热应力）与 Phase 7（写作）未开始。详见 `results/复现报告.md`。
 
 ## 当前可运行文件
 
-- `translate_to_word.py` — 唯一可执行的 Python 脚本，读取 `D:\2607compound\pdf_extract\` 下的图片，生成中文翻译 Word 文档。依赖 `python-docx`。**Windows 硬编码路径**：`IMG_DIR = r"D:\2607compound\pdf_extract"`，`OUT_DIR = r"D:\2607compound\results"`。
+主链路（Phase 1-4，已验证）：
+- `python/run_all.py` — 四阶段主控（检测→复合→年度指标→CHR/共现概率）
+- `python/figures.py` — 图1/图2/S1 出图；`python/fig_jkl_mhw_envelope.py` — S2
+- `python/detect_events.R` — 陆地热浪检测正式链路（R heatwaveR；`python/detect_thw.R` 有吞错 bug 仅存档勿用）
+- `python/phase6_cesm.py` — Phase 6 归因管线（P0 验证版）
 
-## 计划目录结构（尚未全部创建）
+下载工具：
+- `python/download_cesm1le.py` + `run_p0_download.bat` — CESM1-LE（AWS zarr / GDEX，断点续传，走系统代理）
+- `python/download_era5_tmax.py` — ERA5 日最高气温（CDS daily-statistics；需 CDS 凭据，已配置）
+- `python/download_oaflux_evap.py` — OAFlux 蒸发（WHOI 多镜像自动降级）
+- `scripts/translate_to_word.py` — 读取 `pdf_extract/` 图片生成中文翻译 Word（注意：其引用的图片文件名与当前 `pdf_extract/` 实际文件名不一致，需先核对）
+
+## 目录结构（已建成；`data` 为 NTFS Junction → `E:\2607compound\data`）
 
 ```
 D:\2607compound\        ← 工作区根目录（代码、文档、结果）
@@ -42,15 +54,19 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
 4. **海洋-陆地网格对齐**：OISST 与 E-OBS 格点不对齐，需要重采样到统一网格后再做沿海配对。
 5. **WBT 公式未定**：论文用的是 ERA5 提供变量还是手工公式尚未确认（`TECHNICAL_SPEC.md` 提供了两种实现）。
 6. **无包管理/CI 配置**：没有 `requirements.txt`、`pyproject.toml`、`environment.yml`、`Makefile` 或 CI 工作流。环境需手动搭建。
-7. **无测试框架**：项目无单元测试或集成测试，验证方式为与论文图表目视比对 + `verify_data.py` 数据完整性检查（脚本内嵌于 `DATA_REQUIREMENTS.md`，未独立成文件）。
+7. **无测试框架**：项目无单元测试或集成测试，验证方式为与论文图表目视比对（锚点总表见 `results/复现报告.md` §4）+ `python/verify_data.py` 数据完整性检查。
 
 ## 快速参考
 
 | 任务 | 命令/说明 |
 |------|----------|
-| 生成 Word 翻译文档 | `python translate_to_word.py`（需 `pdf_extract/` 就位）|
-| 检查数据完整性 | 复制 `DATA_REQUIREMENTS.md` 中 `verify_data.py` 代码后运行 |
-| 环境搭建 | conda 创建 env，手动 `pip install` 列出的依赖 |
+| 一键复现 Phase 1-3 | `python python\run_all.py`（检测已缓存 ~1 min；全量重检 ~22 min）|
+| 出图 1/2/S1/S2 | `python python\figures.py` + `python python\fig_jkl_mhw_envelope.py` |
+| 下 ERA5 tmax | `python python\download_era5_tmax.py`（`--merge` 合并） |
+| 下 OAFlux | `python python\download_oaflux_evap.py` |
+| 下 CESM1-LE | `run_p0_download.bat`（P0）/ `python python\download_cesm1le.py --members 20` |
+| 检查数据完整性 | `python python\verify_data.py` |
+| 环境搭建 | 见 §技术栈；关键包 xarray/cartopy/heatwaveR(R)/cdsapi |
 
 ## 权威文档
 
