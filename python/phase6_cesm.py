@@ -375,7 +375,11 @@ def _pooled_threshold(pairs_df, members, exclude=None, kind="sst"):
     npt = mat.shape[1]
     thresh = np.full((366, npt), np.nan)
     cal = 365 if (doy_all.max() <= 365 and 366 not in set(doy_all.tolist())) else 366
-    for d in np.arange(1, 366):
+    # ★ F9：循环上界必须是 cal（而非硬编码 365）。proc 文件日历标为
+    #   proleptic_gregorian 但数据实为 noleap，闰年 12-31 的 dayofyear = 366，
+    #   原写法只填 1..365 ⇒ 第 366 行全 NaN ⇒ 闰年 12-31 恒不超阈
+    #   （6 天/序列 × 206 点）。heatwaveR ts2clm 会为 366 行都算阈值。
+    for d in np.arange(1, cal + 1):
         win = [(d + k - 1) % cal + 1 for k in range(-5, 6)]
         pool_rows = [mat[doy_all == w] for w in win]
         pool_rows = [r for r in pool_rows if len(r)]
@@ -421,7 +425,7 @@ def _detect_mhw_member(exp, m, pairs_df, thresh_ext=None, suffix=""):
         #   原实现只用单日 doy 分位（实测使超标日放大 1.49–1.53 倍）。
         cal = 365 if (doy.max() <= 365 and 366 not in set(doy.tolist())) else 366
         thresh = np.full((366, npair), np.nan)
-        for d in np.arange(1, 366):
+        for d in np.arange(1, cal + 1):   # ★ F9：上界 cal，见 _pooled_threshold 注释
             win = [(d + k - 1) % cal + 1 for k in range(-5, 6)]
             rs = [vals[doy == w] for w in win]
             rs = [r for r in rs if len(r)]

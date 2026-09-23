@@ -20,6 +20,7 @@
 | F6 | 新增 `--loo`（leave-one-out），对每个成员剔除自身建阈 | D-3 C1 / `PHASE_B` 步骤 2b |
 | F7 | bootstrap **不再静默丢弃 `inf`**；`0/0 → nan`；用**次序统计量**求经验分位数（避免 inf−inf→nan）；输出 inf 比例与两套 CI | D-4 S10 / S12 |
 | F8 | 日期原点统一 `.normalize()`（消除 ALL 组 MHW 掩码早 1 天） | D-4 S6 / D-2 A1（Lead 确证） |
+| F9 | 阈值窗循环上界由硬编码 365 改为 `cal`（=366 时也填满第 366 行） | D-1 S-2 / D-2 E1-c（Lead 复现：修复前 sst/t2m 第 366 行**全 NaN**，修复后无空 NaN 行） |
 
 **未改（属口径决策，不是代码错误，已在报告中登记待用户拍板）**：归因阈值用 62/78/72 vs 128；
 主口径 `med_mean` vs `med_max`；Phase 6 复合定义（论文模型 Methods `paper_text.txt:546` 用
@@ -128,6 +129,21 @@ python python\phase6_cesm.py attrib   --members 3 --tag _x2
 日志 `results/intermediate/audit/lead/fix_v3_{detect,compound,attrib}.log`。
 
 ---
+
+## 3.3 F9 验证（doy=366 行）
+
+| | 修复前 | 修复后（F9） |
+|---|---|---|
+| SST 阈值全 NaN 行 | **[366]** | **[]** |
+| T2m 阈值全 NaN 行 | **[366]** | **[]** |
+| 影响 | 闰年 12-31（6 天/序列 × 206 点 = 1,236 点·日/序列）**恒不超阈** | 已填满 |
+
+（口径：proc 文件 calendar 标为 `proleptic_gregorian` 但数据实为 noleap，闰年 12-31 的
+`dayofyear = 366`；heatwaveR `ts2clm` 会为 366 行都算阈值。复算：
+`python -c "import numpy as np; z=np.load('results/intermediate/cesm/thresh_t2m_xghg_v3_w11_loo_001-002-003.npz'); t=z['thresh']; print([i+1 for i in range(366) if np.isnan(t[i]).all()])"`）
+
+`_x3`（含 F9）与 `_x2`（不含）的归因指标**完全相同**（PR=52.0 / FAR=0.981；128 天处 ∞），
+仅 XGHG 002 的复合日 +29 天 —— 证实 F9 只影响那 6 天。
 
 ## 4. 回归基线
 
