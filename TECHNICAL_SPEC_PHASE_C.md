@@ -23,7 +23,7 @@
    0.25° 欧洲框下载任务已立项（数据集 3b+）。在就位前，WBT/SH 会在 1.0° 气压场上
    混合 0.25° 温露场——**属需登记的降级**，不得无声带过。
 
-## C.3 处理流程（9 个步骤）
+## C.3 处理流程（10 个步骤）
 
 ### 步骤 1：加载数据
 
@@ -144,29 +144,88 @@ def calc_sh_trend(sh_daily: xr.DataArray, period=(1994, 2023), months=[7, 8, 9])
     """ERA5 JAS 比湿线性趋势，单位 g/kg/decade"""
 ```
 
-### 步骤 8：筛选复合年份并统计极端值
+### 步骤 8：构建 100 km 海岸缓冲掩码（图6 分析域）
 
-**函数要求**:
+**涉及文件**: `python/coastal_buffer.py`（✅ 已实现）
+
+**论文口径**: "land grid cells located **up to 100 km inland from the Mediterranean coast**"
+（Methods 与 Fig.6 caption 共三处）。论文未给算法，本项目采用与 `coastal_mask.py`
+同一套几何基准：**到最近海洋格点中心的球面距离 ≤ `COASTAL_BUFFER_KM`**。
+
+**函数**:
 ```python
-def select_compound_years(compound_days: xr.DataArray) -> List[int]:
-    """识别复合热浪年份（如 2003, 2022, 2023）"""
-
-def calc_wbt_sh_stats(WBT: xr.DataArray, SH: xr.DataArray, compound_daily: xr.DataArray) -> Dict:
-    """
-    计算复合年份与非复合年份的:
-    - WBT >= 25.5°C 天数频率
-    - SH >= 19 g/kg 天数频率
-    - 重现期（基于 GEV 分布或简单分位数）
-    """
+def build_coastal_buffer_mask(
+    eobs_file=EOBS_MERGED_FILE,
+    oisst_file=OISST_MERGED_FILE,
+    buffer_km=COASTAL_BUFFER_KM,
+    region=COASTAL_BUFFER_REGION,
+    max_search_km=400.0,
+) -> (xr.DataArray, xr.DataArray, dict):
+    """返回 (掩码 DataArray[bool], 距海距离场[km], 统计信息)"""
 ```
 
 **技术细节**:
-- 复合年份判定：该年有复合热浪天数
-- WBT 阈值：25.5°C（ISO 7243 标准）
-- SH 阈值：19 g/kg
-- 重现期计算：对地中海区域平均序列拟合 GEV 分布
+- 陆地 = E-OBS `T2m` 非 NaN；海洋 = OISST `sst` 非 NaN（与 `build_ocean_mask` 同）
+- KDTree 建在 **3D 单位球笛卡尔坐标** 上（避免经度 ±180 环绕）
+- 弦长换大圆距离：`d = 2R·asin(c/2)`，`R = 6371.0088 km`
+- 输出：`results/intermediate/coastal_buffer100km_mask.nc`、`dist_to_ocean_km.nc`
 
-### 步骤 9：导出 .mat 供 MATLAB 绘图 —— ⬜ **已弃用，不再执行**
+**实测结果（2026-09-23，`python python/coastal_buffer.py`）**:
+
+| 区域口径 | 陆地格点 | 缓冲内（≤100 km） |
+|---|---|---|
+| **默认 = fig1j 框** lat 30–47 / lon 5–42（含黑海） | **4492** | **1952（43.5%）** |
+| 严格地中海（不含黑海）lat 30–46 / lon 5–30 | 2118 | 1184（55.9%） |
+| 含西班牙东岸 lat 30–46 / lon −6–36 | 4313 | 1777（41.2%） |
+
+缓冲内最大距海距离 99.7 km（< 100 ✓）。复算脚本：`results/check_buffer_regions.py`。
+
+> ⚠️ **区域口径待确认**：论文 Fig.6 只写 "Mediterranean coast"（不含黑海），
+> 但论文 Fig.1j caption 又把黑海并入"地中海区域"。本项目 fig1j/k/l 统一用
+> lat(30,47)/lon(5,42)，故默认沿用该框以免出现第三套定义；
+> 若按 Fig.6 字面收窄，改用上表第 2 行口径即可（`config.COASTAL_BUFFER_REGION`）。
+>
+> 已知局限：默认框 lon≥5 会**排除西班牙地中海东岸与巴利阿里群岛**
+> （论文图1 热点叙述里的 "Catalan coast"、eastern Spain 在此范围外）。
+> 第 3 行口径可覆盖，需一并决定。
+
+### 步骤 9：筛选复合/非复合年份并统计极端值（图6a–c）
+
+**函数要求**:
+```python
+def select_compound_years(compound_days: xr.DataArray, buffer_mask: xr.DataArray,
+                          region=COASTAL_BUFFER_REGION) -> List[int]:
+    """识别复合热浪年份（论文取 2003 / 2022 / 2023）"""
+
+def select_noncompound_years(compound_days, buffer_mask, n_years=10, **kwargs) -> List[int]:
+    """⬜ 非复合年判据 —— 见下方「待定」"""
+
+def calc_wbt_sh_stats(WBT, SH, compound_daily, buffer_mask, years) -> Dict:
+    """复合年 vs 非复合年的 WBT/SH 超阈天数（图6a/b）"""
+```
+
+**论文口径（必须遵循）**:
+
+| 项 | 论文原文 | 实现要求 |
+|---|---|---|
+| 空间域 | 地中海海岸向内 100 km 陆地格点 | **步骤 8 的掩码**（`buffer_mask.where()`） |
+| 图6a | **年度** WBT ≥ 25.5 °C 天数（非 JJA） | `(WBT >= 25.5).groupby('time.year').sum()` 后按掩码做区域平均 |
+| 图6b | **年度** SH ≥ 19 g/kg 天数（非 JJA） | 同上 |
+| 图6c | 重现期（年），WBT 极端值范围 **22–28 °C**，统计窗口 = **JJA 90 天夏季（June–August）** | 对 **JJA** 的 WBT 序列取 22–28 °C 网格阈值，逐年/逐事件拟合 GEV 求重现期 |
+| 图6d–f | 2003 / 2022 / 2023 复合日的 WBT 空间分布（与地形相关，低海拔变化大） | 复合日平均 WBT 场 |
+
+**⚠️ 与图5 的季节区分**：图5 三条趋势用 **JAS**（7–9 月）；**图6c 用 JJA（6–8 月）**。
+论文自身如此，勿统一。
+
+**⬜ 待定（开工前必须落实）**：
+1. **非复合年判据** —— 论文 Fig.6 caption 写 **11** 个非复合年、正文写 **10** 个，
+   且只说"依 Supplementary Fig. S1 的检测结果"。
+   现写法"该年有复合热浪天数"**不可用**（论文正文亦称 2010–2023 几乎年年有复合热浪）。
+   需定一个阈值型判据（如"地中海区域年复合天数 ≤ N"），并做敏感性。
+2. **区域口径** —— 见步骤 8 的待确认项。
+3. **WBT 近似式** —— 见 `TECHNICAL_SPEC.md` §3.8（Stull vs 牛顿迭代），需锚点验证后定稿。
+
+### 步骤 10：导出 —— ⬜ **`.mat` 已弃用，不再执行**
 
 > **状态：作废**。项目已全面切换 Python (matplotlib + cartopy)，`matlab/` 目录不存在。
 > 改为 NetCDF / JSON 落盘：`results/intermediate/sst_trend.nc`、`sh_daily.nc`、

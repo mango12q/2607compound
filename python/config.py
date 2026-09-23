@@ -86,6 +86,22 @@ MAX_GRID_DIST_DEG = 0.5
 WBT_THRESHOLD = 25.5
 SH_THRESHOLD = 19.0
 
+# 图6 分析域：地中海海岸向内 100 km 的陆地格点
+# 论文原文：“spatial averages over land grid cells located up to 100 km inland
+#          from the Mediterranean coast”（Methods / Fig.6 caption）
+# 实现见 python/coastal_buffer.py（KDTree 最近海洋格点距离，与 coastal_pairs 同口径）
+#
+# 区域口径说明：
+#   - 论文 Fig.6 只写 "Mediterranean coast"；但论文 Fig.1j caption 把黑海并入
+#     "the Mediterranean region (including the Black Sea)"。
+#   - 本项目 fig1j/k/l（fig1_compound_spatial.py:60、fig_jkl_mhw_envelope.py:29）
+#     统一使用 lat(30,47) / lon(5,42) 作为"地中海 & 黑海"框。
+#   - 此处沿用同一框，避免在工作区里出现第三套"地中海"定义。
+#   - 若要严格按 Fig.6 字面（仅地中海、不含黑海），把 lat 上限降到 46、
+#     lon 上限降到 30 即可（见 results/规划文件与论文一致性审查_第二轮复核.md）。
+COASTAL_BUFFER_KM = 100.0
+COASTAL_BUFFER_REGION = {"lon": (5.0, 42.0), "lat": (30.0, 47.0)}   # = fig1j 区域框
+
 # ──────────────────────────────────────────────
 # Bootstrap 参数（归因分析阶段使用）
 # ──────────────────────────────────────────────

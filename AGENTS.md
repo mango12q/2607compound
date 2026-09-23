@@ -17,6 +17,7 @@
 - `python/figures.py` — 图1/图2/S1 出图；`python/fig_jkl_mhw_envelope.py` — S2
 - `python/detect_events.R` — **海陆统一热浪检测正式链路**（R heatwaveR）
 - `python/phase6_cesm.py` — Phase 6 归因管线（P0 验证版）
+- `python/coastal_buffer.py` — 图6 分析域：海岸向内 100 km 缓冲掩码（Phase 5 前置，已实现待接入）
 
 ⚠️ **检测链路口径提示**：`python/detect_thw.R` 有吞错 bug，**仅存档勿用**；
 但 `python/run_all.py` 的 THW 环节当前仍经 `detect_thw_wrapper` 指向它（缓存命中时不会重跑）。
@@ -71,7 +72,8 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
    （`MAX_GRID_DIST_DEG = 0.5°`，实测 2039 对 / 1434 唯一海点），下游全部按配对索引匹配。
 5. **WBT 计算输入已确认**：论文明确由 ERA5 的 **Tmax + 露点 + 地表气压**估算**日最高 WBT**；
    具体近似式未给，`TECHNICAL_SPEC.md` §3.8 提供 Stull / 牛顿迭代双实现待定稿。
-   另：`config.py` **尚无** `COASTAL_BUFFER_KM`（论文图6 的"向内 100 km"域）——Phase 5 必须补。
+   **图6 的 100 km 海岸缓冲已实现**：`python/coastal_buffer.py` + `config.COASTAL_BUFFER_KM`
+   （实测 1952/4492 格点落入缓冲区；区域口径待确认，见 PHASE_C 步骤 8）。
 6. **无包管理/CI 配置**：没有 `requirements.txt`、`pyproject.toml`、`environment.yml`、`Makefile` 或 CI 工作流。环境需手动搭建。
 7. **无测试框架**：项目无单元测试或集成测试，验证方式为与论文图表目视比对（锚点总表见 `results/复现报告.md` §4）+ `python/verify_data.py` 数据完整性检查。
 

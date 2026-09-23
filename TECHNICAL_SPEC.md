@@ -116,6 +116,7 @@ D:\2607compound\                 # 工作区根目录
 │   ├── detect_mhw.py             ⚠️ Python 侧 MHW 检测，仅单格点核验用（DEPRECATED）
 │   ├── detect_thw.py             ⚠️ 纯 Python 复刻，仅交叉验证用（DEPRECATED）
 │   ├── coastal_mask.py           # 沿海格点掩码与配对（KDTree）
+│   ├── coastal_buffer.py         ✅ 图6 分析域：海岸向内 100 km 缓冲掩码
 │   ├── compound_events.py        # 复合事件识别（逐日共超标）
 │   ├── fig_jkl_mhw_envelope.py   # 图1 j–l 的 MHW 包络口径预计算
 │   ├── calc_chr.py               # 复合热浪比 (CHR) 与共现概率
@@ -141,6 +142,8 @@ D:\2607compound\                 # 工作区根目录
 │   │   ├── mhw_events_R_global.csv        ✅ MHW 事件（全球索引）
 │   │   ├── thw_events_R.csv               ✅ THW 事件
 │   │   ├── coastal_pairs.csv              ✅ 沿海配对（2039 对 / 1434 唯一海点）
+│   │   ├── coastal_buffer100km_mask.nc    ✅ 图6 分析域掩码（1952 格点）
+│   │   ├── dist_to_ocean_km.nc            ✅ 各陆点到最近海洋格点的距离场
 │   │   ├── compound_events.nc             ✅ 复合日场
 │   │   ├── standalone_days.nc             ✅ 独立陆地热浪日场
 │   │   ├── annual_*.nc / CHR_annual.nc / cooccurrence_prob_annual.nc
@@ -209,8 +212,9 @@ PERCENTILE = 90                  # 90 百分位阈值
 # 复合事件参数
 # ──────────────────────────────────────────────
 MAX_GRID_DIST_DEG = 0.5          # 陆点→最近海点的最大配对距离（度）
-COASTAL_BUFFER_KM = 100          # ⬜ 图6 分析域：地中海海岸向内 100 km（论文口径）
-                                 #    ⚠️ 目前 config.py 中尚未定义该项，Phase 5 需补
+COASTAL_BUFFER_KM = 100.0        # 图6 分析域：到最近海洋格点 ≤ 100 km 的陆地格点
+COASTAL_BUFFER_REGION = {"lon": (5.0, 42.0), "lat": (30.0, 47.0)}  # = fig1j 区域框
+                                 # 实现见 python/coastal_buffer.py（已实现，1952/4492 格点）
 WBT_THRESHOLD = 25.5             # WBT 阈值 (°C)
 SH_THRESHOLD = 19.0              # 比湿阈值 (g/kg)
 
