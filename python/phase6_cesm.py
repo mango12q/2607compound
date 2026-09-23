@@ -14,12 +14,17 @@ phase6_cesm.py — CESM1-LE 归因管线（P0: 成员 001-003 验证版）
             → 暴露时间表 (compound/standalone/THW 配对日数)
   attrib    ALL vs XGHG 暴露时间分布 + bootstrap 概率比 + 图7 验证版
 
-用法:
-  python phase6_cesm.py prepare --members 3
+用法（20 成员全量，推荐序列；口径见文件顶部 COMPOUND_DEF 等常量与
+results/phase6审计报告.md §4 的口径决策记录）:
   python phase6_cesm.py pairs
-  python phase6_cesm.py detect --members 3
-  python phase6_cesm.py compound --members 3
-  python phase6_cesm.py attrib --members 3
+  python phase6_cesm.py prepare  --members 20
+  python phase6_cesm.py detect   --members 20 --baseline xghg --loo --tag _v4
+  python phase6_cesm.py compound --members 20 --tag _v4 --compound-def envelope
+  python phase6_cesm.py attrib   --members 20 --tag _v4 --compound-def envelope --boot indep
+  可选敏感性：
+  python phase6_cesm.py compound --members 20 --tag _v4e --compound-def exceed   # 共超标对照
+  python phase6_cesm.py attrib   --members 20 --tag _v4  --boot block            # 分层块 bootstrap
+  python phase6_cesm.py attrib   --members 20 --tag _v4  --agg med_p90 med_max   # 单口径
 
 口径说明 (与观测管线 Phase 2-3 的一致性与差异):
   * 检测参数完全一致: pctile=90, 11 天窗(heatwaveR), min_dur=5, max_gap=2;
@@ -54,6 +59,28 @@ EXPOSURE_CSV = os.path.join(CESM_INT, "exposure_members.csv")
 FIG7_PNG = os.path.join(C.FIGURES_DIR, "fig7_p0_validation.png")
 
 MAX_PAIR_DIST_DEG = 1.0     # f09/gx1v6 均 ~1° 网格, 观测的 0.5° 不适用
+
+# ══════════════════════════════════════════════════════════════════════════
+# Phase 6 口径决策（2026-09-23 用户拍板；原委见 results/phase6审计报告.md §4）
+# ══════════════════════════════════════════════════════════════════════════
+# 决策 1B：复合事件定义 = **MHW 包络**（论文模型 Methods paper_text.txt:546
+#   "a marine heatwave fully encompasses a terrestrial heatwave"），
+#   与已定稿的图1j-l（方案 B）同语义：
+#     某 MHW 完全涵盖 >=1 个 THW 事件 -> 该 MHW 的**全部跨度天**计为复合天。
+#   共超标口径（论文观测 Methods L503 / compound_events.identify_compound_events）
+#   保留为 `--compound-def exceed`，供敏感性对照；图1a-i/1m/图2 仍用共超标。
+COMPOUND_DEF = "envelope"       # {"envelope", "exceed"}
+# 决策 3A：主口径 = 区域暴露均值；p90 敏感性；格点最大降为参考
+MAIN_AGG = "med_mean"
+AGG_COLS = ("med_mean", "med_p90", "med_max")
+AGG_LABEL = {"med_mean": "区域均值（主口径）",
+             "med_p90": "区域 p90（敏感性）",
+             "med_max": "格点最大（参考，原 P0 口径）"}
+# 决策 2C：归因阈值扫描 + 论文 Fig.3c 的三条年份参考线（Med&BS 面板）
+SWEEP_MIN, SWEEP_MAX, SWEEP_STEP = 0.0, 100.0, 1.0
+PAPER_THR_REFS = {2003: 62.0, 2022: 78.0, 2023: 72.0}   # 论文 Fig.3c 垂直线
+# 决策 5A：主口径 = 独立重采样（论文 Methods :585-587 字面）；block 作附录
+BOOT_MODE = "indep"             # {"indep", "block"}（block = 成员内分层 + 块）
 N_BOOTSTRAP = C.N_BOOTSTRAP
 CI = C.CI_ALPHA
 
@@ -479,6 +506,59 @@ def _detect_thw_member(exp, m):
     return out_csv
 
 
+def _pair_table(pairs_df):
+    """{(land_lat_idx, land_lon_idx): (land_lat, land_lon,
+                                     ocean_lat_idx, ocean_lon_idx)}"""
+    return {(int(r.land_lat_idx), int(r.land_lon_idx)):
+            (float(r.land_lat), float(r.land_lon),
+             int(r.ocean_lat_idx), int(r.ocean_lon_idx))
+            for r in pairs_df.itertuples(index=False)}
+
+
+def _envelope_mask(thw_g, mhw_g, nt, t0):
+    """★ 决策 1B：MHW 包络复合掩码。
+
+    与 python/fig_jkl_mhw_envelope.py 的观测侧定义**逐条对齐**：
+      1) 取该陆点的所有 THW 事件 [a, b]（日索引）；
+      2) 取配对海点的所有 MHW 事件 [ms, me]；
+      3) 若某个 MHW 满足 `a >= ms and b <= me`（THW 被该 MHW **完全涵盖**），
+         则该 MHW 的**全部跨度天** [ms, me] 计入复合天；
+      4) 同一陆点多个 MHW 的跨度取并集。
+    注：复合天可超出该陆点的 THW 天集合（这正是包络口径与共超标口径的区别，
+    也是图1j/l 量级可达 78/72 的原因）。
+    """
+    m = np.zeros(nt, dtype=bool)
+    if thw_g is None or len(thw_g) == 0 or mhw_g is None or len(mhw_g) == 0:
+        return m
+    ts = (pd.to_datetime(thw_g.event_start) - t0).dt.days.values
+    te = (pd.to_datetime(thw_g.event_end) - t0).dt.days.values
+    tin = list(zip(ts, te))
+    ms = (pd.to_datetime(mhw_g.event_start) - t0).dt.days.values
+    me = (pd.to_datetime(mhw_g.event_end) - t0).dt.days.values
+    for mi0, mi1 in zip(ms, me):
+        if any(a >= mi0 and b <= mi1 for a, b in tin):
+            a, b = max(int(mi0), 0), min(int(mi1), nt - 1)
+            if b >= a:
+                m[a:b + 1] = True
+    return m
+
+
+def _mask_to_segments(mask, t0, pairs_df, ptab, land_key, ocean_key):
+    """逐日 bool 掩码 -> 复合日段记录（列名与 identify_compound_events 兼容）。"""
+    d = np.diff(np.concatenate(([0], mask.astype(np.int8), [0])))
+    recs = []
+    lat, lon, _, _ = ptab[land_key]
+    for a, b in zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1) - 1):
+        recs.append({"thw_start": t0 + pd.Timedelta(days=int(a)),
+                     "thw_end": t0 + pd.Timedelta(days=int(b)),
+                     "land_lat_idx": int(land_key[0]),
+                     "land_lon_idx": int(land_key[1]),
+                     "ocean_lat_idx": int(ocean_key[0]),
+                     "ocean_lon_idx": int(ocean_key[1]),
+                     "land_lat": lat, "land_lon": lon})
+    return recs
+
+
 def _detect_thw_member_ext(exp, m, pairs_df, thresh, suffix="_x"):
     """THW v2: 外置反事实阈值 (XGHG 合并 11 天窗 90 分位) + 游程事件。
 
@@ -600,7 +680,11 @@ def cmd_compound(args):
         identify_compound_events, _pair_maps, _event_daily_mask,
     )
     tag = getattr(args, "tag", "")
+    cdef = getattr(args, "compound_def", COMPOUND_DEF)
+    print(f"== 复合定义 = {cdef} "
+          f"({'MHW 包络 fully-encompasses，决策 1B' if cdef == 'envelope' else '逐日共超标 L503'}) ==")
     pairs_df = pd.read_csv(PAIRS_CSV)
+    ptab = _pair_table(pairs_df)
     rows = []
     for exp in ("ALL", "XGHG"):
         for m in select_members(getattr(args, 'members', C.CESM_P0_MEMBERS)):
@@ -622,33 +706,59 @@ def cmd_compound(args):
             time_norm = xr.DataArray(
                 pd.DatetimeIndex(time_da.time.values).normalize(),
                 dims="time", coords={"time": time_da.time})
-            comp = identify_compound_events(mhw, thw, pairs_df, time_norm)
-
-            # 暴露时间 (与 identify_compound_events 同一套逐日口径)
             lpd = _pair_maps(pairs_df)
             om = {}
+            om_raw = {}
             for k, g in mhw.groupby(["lat_idx", "lon_idx"]):
                 om[k] = _event_daily_mask(g, nt, t0)
+                om_raw[k] = g
             kd = pd.DataFrame(list(lpd.keys()), columns=["lat_idx", "lon_idx"])
             thw_co = thw.merge(kd, on=["lat_idx", "lon_idx"], how="inner")
             thw_by = {k: g for k, g in thw_co.groupby(["lat_idx", "lon_idx"])}
-            comp_days = std_days = thw_days = 0
+
+            comp_days = std_days = thw_days = thw_in_comp = 0
+            seg_recs = []
             for lk, ok_ in lpd.items():
                 g = thw_by.get(lk)
                 if g is None or len(g) == 0:
                     continue
                 lm = _event_daily_mask(g, nt, t0)
                 thw_days += int(lm.sum())
-                m_ = om.get(ok_)
-                comp_days += int((lm & (m_ if m_ is not None else 0)).sum())
-                std_days += int((lm & ~(m_ if m_ is not None
-                                        else np.zeros(nt, bool))).sum())
-            rows.append({"exp": exp, "member": m,
+                if cdef == "envelope":
+                    cm = _envelope_mask(g, om_raw.get(ok_), nt, t0)
+                else:
+                    m_ = om.get(ok_)
+                    cm = lm & (m_ if m_ is not None else np.zeros(nt, bool))
+                comp_days += int(cm.sum())
+                thw_in_comp += int((lm & cm).sum())
+                # standalone = 该陆点 THW 日中**不在复合日**的天数
+                # （共超标口径下等价于原 `lm & ~MHW`，行为不变）
+                std_days += int((lm & ~cm).sum())
+                if cm.any():
+                    seg_recs += _mask_to_segments(cm, t0, pairs_df, ptab, lk, ok_)
+
+            if cdef == "envelope":
+                comp = pd.DataFrame(seg_recs) if seg_recs else pd.DataFrame(
+                    columns=["thw_start", "thw_end", "land_lat_idx",
+                             "land_lon_idx", "ocean_lat_idx", "ocean_lon_idx",
+                             "land_lat", "land_lon"])
+            else:
+                # 共超标：仍复用观测链路的 identify_compound_events（口径单一来源），
+                # 并断言其段长与上面逐日计数同源，防两套实现漂移。
+                comp = identify_compound_events(mhw, thw, pairs_df, time_norm)
+                if len(comp):
+                    seg_len = int(((pd.to_datetime(comp.thw_end)
+                                    - pd.to_datetime(comp.thw_start)).dt.days + 1).sum())
+                    assert seg_len == comp_days, (seg_len, comp_days)
+
+            rows.append({"exp": exp, "member": m, "compound_def": cdef,
                          "compound_days": comp_days,
+                         "thw_in_compound_days": thw_in_comp,
                          "standalone_days": std_days,
                          "thw_pair_days": thw_days})
-            print(f"{exp} {m}: 段数={len(comp)} compound={comp_days:,} "
-                  f"standalone={std_days:,} THW(配对)={thw_days:,}")
+            print(f"{exp} {m} [{cdef}]: 段数={len(comp)} compound={comp_days:,} "
+                  f"(其中 THW 日 {thw_in_comp:,}) standalone={std_days:,} "
+                  f"THW(配对)={thw_days:,}")
 
             # 逐年暴露时间 (PR 口径: 模型年 = 22 年 × 成员; 聚合用 Med 框)
             ann = _annual_per_pair(comp, time_da.time, pairs_df)
@@ -687,8 +797,10 @@ def _annual_per_pair(comp, time_da, pairs_df):
     med = (pairs_df.land_lat.between(30, 47) & pairs_df.land_lon.between(5, 42)).values
     out = pd.DataFrame({"year": uyears,
                         "med_mean": ann[:, med].mean(axis=1),
+                        "med_p90": np.percentile(ann[:, med], 90, axis=1),
                         "med_max": ann[:, med].max(axis=1),
                         "eur_mean": ann.mean(axis=1),
+                        "eur_p90": np.percentile(ann, 90, axis=1),
                         "eur_max": ann.max(axis=1)})
     return out
 
@@ -762,88 +874,211 @@ def _pr_boot(x_thresh, sample_all, sample_fix, n_boot=N_BOOTSTRAP, seed=42):
                 n_inf=n_inf, n_nan=n_nan, n_boot=len(boots), boots=boots)
 
 
+def _boot_indices(member, n_boot, rng, mode="indep"):
+    """返回 (n_boot, N) 整型重采样索引矩阵。
+
+    mode='indep'：对 N 个模型年独立有放回重采样（论文 Methods :585-587 字面，主口径）。
+    mode='block'：成员内分层 —— 先对成员有放回抽，再在抽中成员内对其年份有放回抽，
+                  保留同成员年际自相关（附录稳健性检验）。
+    """
+    member = np.asarray(member)
+    N = len(member)
+    if mode == "block":
+        umem = np.unique(member)
+        pos = {m: np.flatnonzero(member == m) for m in umem}
+        out = np.empty((n_boot, N), dtype=int)
+        for b in range(n_boot):
+            chosen = rng.choice(umem, size=len(umem), replace=True)
+            out[b] = np.concatenate(
+                [rng.choice(pos[m], size=len(pos[m]), replace=True) for m in chosen])
+        return out
+    return rng.integers(0, N, size=(n_boot, N))
+
+
+def _emp_quantile(sorted_vals, pct):
+    """次序统计量分位数（对 inf 安全；避免 np.percentile 在 inf-inf 处返回 nan）。"""
+    n = len(sorted_vals)
+    if n == 0:
+        return np.nan
+    k = int(np.ceil(pct / 100.0 * n)) - 1
+    return float(sorted_vals[min(max(k, 0), n - 1)])
+
+
+def _sweep_one(sa, sf, idx_a, idx_f, thrs, n_boot):
+    """单聚合列的阈值扫描：返回逐阈值 PR/FAR 与 bootstrap CI 的 DataFrame。"""
+    rows = []
+    for x in thrs:
+        ia = (sa >= x)
+        ifx = (sf >= x)
+        p_all = float(ia.mean())
+        p_fix = float(ifx.mean())
+        if p_all == 0 and p_fix == 0:
+            pr = far = np.nan
+        elif p_fix == 0:
+            pr = np.inf
+            far = 1.0 if p_all > 0 else np.nan
+        else:
+            pr = p_all / p_fix
+            far = 1.0 - p_fix / p_all
+        ba = ia[idx_a].mean(axis=1)          # (n_boot,)
+        bf = ifx[idx_f].mean(axis=1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            prb = np.where((ba == 0) & (bf == 0), np.nan,
+                           np.where(bf == 0, np.inf,
+                                    ba / np.where(bf == 0, 1.0, bf)))
+        sv = np.sort(prb[~np.isnan(prb)])
+        fin = prb[np.isfinite(prb)]
+        lo_f, hi_f = (np.percentile(fin, [CI[0] * 100, CI[1] * 100])
+                      if len(fin) else (np.nan, np.nan))
+        rows.append({"threshold": float(x), "p_all": p_all, "p_fix": p_fix,
+                     "PR": pr, "FAR": far,
+                     "PR_lo": _emp_quantile(sv, CI[0] * 100),
+                     "PR_hi": _emp_quantile(sv, CI[1] * 100),
+                     "PR_lo_fin": float(lo_f), "PR_hi_fin": float(hi_f),
+                     "n_inf": int(np.isinf(prb).sum()),
+                     "n_nan": int(np.isnan(prb).sum()), "n_boot": int(n_boot)})
+    return pd.DataFrame(rows)
+
+
+def _our_year_refs(cdef):
+    """本复现自己的年份参考值（用于与论文 62/78/72 对照）。"""
+    refs = {}
+    if cdef == "envelope":
+        fp = os.path.join(C.TABLES_DIR, "fig_jkl_envelope.json")
+        try:
+            import json
+            with open(fp, encoding="utf-8") as fh:
+                j = json.load(fh)
+            for k, v in j.items():
+                if "mediterr" in k:
+                    yy = dict(zip(v["years"], v["values"]))
+                    refs["envelope·图1j 区域均值"] = {
+                        y: float(yy[y]) for y in PAPER_THR_REFS if y in yy}
+        except Exception as e:
+            print(f"  (本复现包络参考值不可用: {e})")
+    try:
+        obs = _obs_annual_threshold()
+        for col in ("med_mean", "med_max"):
+            refs[f"共超标·观测 {col}"] = {
+                y: float(obs.loc[obs.year == y, col].iloc[0])
+                for y in PAPER_THR_REFS if (obs.year == y).any()}
+    except Exception as e:
+        print(f"  (观测参考值不可用: {e})")
+    return refs
+
+
 def cmd_attrib(args):
-    """论文口径: PR/FAR = P(年暴露时间 >= 观测阈值) 之比, bootstrap 1000 次。"""
+    """★ 决策 2C/3A/5A：阈值扫描 + 三聚合口径 + 两种 bootstrap。
+
+    与旧实现（只报单点阈值 + 丢弃 inf 的 CI）的区别见
+    results/phase6审计报告.md §4 与 results/phase6审计_修复前后对比.md。
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     tag = getattr(args, "tag", "")
+    cdef = getattr(args, "compound_def", COMPOUND_DEF)
+    boot_mode = getattr(args, "boot", BOOT_MODE)
+    cols = tuple(getattr(args, "agg", None) or AGG_COLS)
+    thrs = np.arange(SWEEP_MIN, SWEEP_MAX + 1e-9,
+                     float(getattr(args, "thr_step", SWEEP_STEP)))
+    n_boot = int(getattr(args, "n_boot", N_BOOTSTRAP))
+
     df_path = os.path.join(CESM_INT, f"exposure_members{tag}.csv")
     if os.path.exists(df_path):
-        df = pd.read_csv(df_path)
-        a = df[df.exp == "ALL"].compound_days.values.astype(float)
-        f = df[df.exp == "XGHG"].compound_days.values.astype(float)
+        d = pd.read_csv(df_path)
+        if "compound_def" in d.columns:
+            print(f"[口径] 暴露表记录的复合定义 = {d.compound_def.iloc[0]}")
+        a = d[d.exp == "ALL"].compound_days.values.astype(float)
+        f = d[d.exp == "XGHG"].compound_days.values.astype(float)
         if len(a) and len(f) and f.mean() > 0:
-            print(f"[参考] 22 年总暴露时间均值比 ALL/XGHG = "
-                  f"{a.mean() / f.mean():.2f} (非论文口径, 仅 sanity)")
+            print(f"[参考] 22 年总暴露时间均值比 ALL/XGHG = {a.mean()/f.mean():.2f}")
 
-    # 观测阈值 (同口径: Med 框, 2022 年值; 均值/最大值两种聚合)
-    obs = _obs_annual_threshold()
-    v22_mean = float(obs.loc[obs.year == 2022, "med_mean"].iloc[0])
-    v22_max = float(obs.loc[obs.year == 2022, "med_max"].iloc[0])
-    print(f"观测 Med 2022: 区域均值口径 {v22_mean:.1f} 天, "
-          f"格点最大口径 {v22_max:.1f} 天")
-
-    # 模型年样本 (合并成员: 3 成员 × 22 年 = 66 模型年/组)
     def load_sample(exp, col):
         fs = sorted(glob.glob(os.path.join(CESM_INT, f"annual{tag}_{exp}_*.csv")))
         if not fs:
             raise SystemExit(f"缺 {exp} 年序列 (tag={tag!r}), 先跑 compound")
         parts = []
-        for f in fs:
-            m = re.search(r"annual_(\w+)_(\d+)\.csv$", os.path.basename(f))
-            parts.append(pd.read_csv(f).assign(member=m.group(2)))
-        s = pd.concat(parts).sort_values(["member", "year"])
-        return s[col].values.astype(float), s
+        for fp in fs:
+            mm = re.search(r"annual_\w+_(\d+)\.csv$", os.path.basename(fp))
+            parts.append(pd.read_csv(fp).assign(member=mm.group(1)))
+        ss = pd.concat(parts).sort_values(["member", "year"])
+        if col not in ss.columns:
+            raise SystemExit(f"年序列表缺列 {col!r}（已有 {list(ss.columns)}）"
+                             f"；请用新版 compound 重跑以生成 med_p90")
+        return ss[col].values.astype(float), ss.member.values
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    results = {}
-    for k, col in enumerate(["med_mean", "med_max"]):
-        x22 = v22_mean if col == "med_mean" else v22_max
-        sa, _ = load_sample("ALL", col)
-        sf, _ = load_sample("XGHG", col)
-        R = _pr_boot(x22, sa, sf)
-        pr, far, lo, hi = R["pr"], R["far"], R["lo"], R["hi"]
-        boots = R["boots"]
-        results[col] = R
-        prs = f"{pr:.1f}" if np.isfinite(pr) else ("nan" if np.isnan(pr) else "∞")
-        prs_lo = "inf" if np.isinf(lo) else f"{lo:.1f}"
-        prs_hi = "inf" if np.isinf(hi) else f"{hi:.1f}"
-        print(f"[{col}] 阈值={x22:.1f} 天: P_ALL={np.mean(sa >= x22):.3f} "
-              f"P_fix={np.mean(sf >= x22):.3f}  PR={prs} FAR={far:.3f} "
-              f"| 90%CI(含 inf)={prs_lo}-{prs_hi} "
-              f"| 90%CI(仅有限)={R['lo_fin']:.1f}-{R['hi_fin']:.1f} "
-              f"| bootstrap inf={R['n_inf']}/{R['n_boot']} nan={R['n_nan']}")
+    rng = np.random.default_rng(42)
+    refs = _our_year_refs(cdef)
+    print(f"\n扫描阈值 {thrs[0]:.0f}..{thrs[-1]:.0f} 天（步长 {thrs[1]-thrs[0]:.0f}）"
+          f"，bootstrap={boot_mode}×{n_boot}")
+    print(f"论文 Fig.3c 参考线（Med&BS）：{PAPER_THR_REFS}")
+    for k, v in refs.items():
+        print(f"本复现参考值 [{k}]：{ {y: round(x,1) for y, x in v.items()} }")
 
-        ax = axes[0, k]
-        bins = np.histogram_bin_edges(np.concatenate([sa, sf, [x22]]), bins=14)
-        ax.hist(sf, bins=bins, alpha=0.65, label="FixGHG (model-years)",
-                color="#4878cf")
-        ax.hist(sa, bins=bins, alpha=0.65, label="ALL (model-years)",
-                color="#d65f5f")
-        ax.axvline(x22, color="k", ls="--", lw=1.2,
-                   label=f"obs 2022 = {x22:.0f} d")
-        ax.set_xlabel(f"Annual compound days ({col}, Med box)")
-        ax.set_ylabel("Model years")
-        ax.set_title(f"P0: {col}  PR={prs} FAR={far:.2f}")
-        ax.legend(fontsize=8)
+    fig, axes = plt.subplots(len(cols), 2, figsize=(13, 3.6 * len(cols)),
+                             squeeze=False)
+    os.makedirs(C.TABLES_DIR, exist_ok=True)
+    summary = []
+    for row, col in enumerate(cols):
+        sa, ma = load_sample("ALL", col)
+        sf, mf = load_sample("XGHG", col)
+        idx_a = _boot_indices(ma, n_boot, rng, boot_mode)
+        idx_f = _boot_indices(mf, n_boot, rng, boot_mode)
+        tab = _sweep_one(sa, sf, idx_a, idx_f, thrs, n_boot)
+        csv = os.path.join(C.TABLES_DIR, f"phase6_attrib_sweep{tag}_{col}.csv")
+        tab.to_csv(csv, index=False)
+        print(f"\n[{col}] {AGG_LABEL.get(col, '')}  样本 N_ALL={len(sa)} N_XGHG={len(sf)}"
+              f"  -> {csv}")
+        # 论文参考线处读数
+        for y, x in PAPER_THR_REFS.items():
+            r = tab[np.isclose(tab.threshold, x)]
+            if len(r):
+                r = r.iloc[0]
+                print(f"    @论文 {y} 参考线 {x:.0f} 天: P_ALL={r.p_all:.3f} "
+                      f"P_fix={r.p_fix:.3f} PR={r.PR:.2f} FAR={r.FAR:.3f} "
+                      f"(inf {int(r.n_inf)}/{int(r.n_boot)})")
+                summary.append({"agg": col, "year": y, "threshold": x,
+                                "p_all": r.p_all, "p_fix": r.p_fix,
+                                "PR": r.PR, "FAR": r.FAR,
+                                "PR_lo": r.PR_lo, "PR_hi": r.PR_hi,
+                                "n_inf": int(r.n_inf), "boot": boot_mode})
 
-        ax = axes[1, k]
-        fin = boots[np.isfinite(boots)]
-        if len(fin):
-            ax.hist(np.minimum(fin, 50), bins=30, color="#d65f5f", alpha=0.75)
-        ax.axvline(min(pr, 50) if np.isfinite(pr) else 50, color="k", lw=1.5)
-        ax.set_xlabel("Bootstrapped PR (clipped at 50)")
-        ax.set_ylabel("Bootstrap replicates")
-    fig.suptitle(f"CESM1-LE P0 (3 members): Probability Ratio "
-                 f"[baseline={'XGHG-pooled' if tag else 'own-clim'}]",
-                 fontsize=11)
-    fig.tight_layout()
+        prp = tab.PR.replace([np.inf], np.nan)
+        ax = axes[row, 0]
+        ax.plot(tab.threshold, tab.FAR, color="#4878cf", lw=1.6, label="FAR")
+        ax.set_ylim(0, 1.05)
+        ax.set_ylabel(f"FAR\n({col})")
+        ax = axes[row, 1]
+        ax.plot(tab.threshold, prp, color="#4878cf", lw=1.6, label="PR")
+        ax.set_yscale("log")
+        ax.set_ylabel(f"PR\n({col})")
+        for ax in (axes[row, 0], axes[row, 1]):
+            for y, x in PAPER_THR_REFS.items():
+                ax.axvline(x, color="k", ls="--", lw=0.9, alpha=0.6)
+                ax.text(x, ax.get_ylim()[1], f" {y}", fontsize=7,
+                        va="top", rotation=90)
+            for nm, vv in refs.items():
+                if 2022 in vv:
+                    ax.axvline(vv[2022], color="#d65f5f", ls=":", lw=1.0,
+                               label=f"本复现 2022 ({nm})")
+            ax.set_xlim(thrs[0], thrs[-1])
+            ax.set_xlabel("Threshold (compound heatwave days)")
+            ax.grid(True, alpha=0.25, ls=":")
+        axes[row, 1].legend(fontsize=7, loc="upper right")
+    fig.suptitle(f"Phase 6 attribution sweep — compound def={cdef}, "
+                 f"boot={boot_mode}, tag={tag!r}", fontsize=11)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
     os.makedirs(C.FIGURES_DIR, exist_ok=True)
-    out_png = os.path.join(C.FIGURES_DIR, f"fig7_p0_validation{tag}.png")
+    out_png = os.path.join(C.FIGURES_DIR, f"fig3_attribution_sweep{tag}.png")
     fig.savefig(out_png, dpi=200)
+    plt.close(fig)
     print(f"图 -> {out_png}")
+    if summary:
+        sp = os.path.join(C.TABLES_DIR, f"phase6_attrib_summary{tag}.csv")
+        pd.DataFrame(summary).to_csv(sp, index=False)
+        print(f"汇总 -> {sp}")
 
 
 # ──────────────────────────────────────────────
@@ -866,6 +1101,19 @@ def main():
         if name in ("compound", "attrib"):
             q.add_argument("--tag", default="",
                            help="事件文件后缀: ''=v1(own), '_x'=v2(XGHG 基准)")
+            q.add_argument("--compound-def", choices=["envelope", "exceed"],
+                           default=COMPOUND_DEF, dest="compound_def",
+                           help="复合定义: envelope=MHW 包络(论文模型 Methods, 决策 1B, 默认); "
+                                "exceed=逐日共超标(观测 Methods L503)")
+        if name == "attrib":
+            q.add_argument("--boot", choices=["indep", "block"], default=BOOT_MODE,
+                           help="bootstrap: indep=模型年独立重采样(论文口径, 默认); "
+                                "block=成员内分层+块(附录稳健性)")
+            q.add_argument("--agg", nargs="+", default=list(AGG_COLS),
+                           help=f"聚合口径列，默认 {list(AGG_COLS)}")
+            q.add_argument("--thr-step", type=float, default=SWEEP_STEP,
+                           help="阈值扫描步长（天）")
+            q.add_argument("--n-boot", type=int, default=N_BOOTSTRAP)
         q.set_defaults(func=globals()[f"cmd_{name}"])
     args = p.parse_args()
     args.func(args)

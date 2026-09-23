@@ -105,7 +105,9 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
 | 下 ERA5 sp 0.25° | `python python\download_era5_sp025.py [--dry-run]`（数据集 3b+） |
 | 下 OAFlux | `python python\download_oaflux_evap.py [--probe]` |
 | 下 CESM1-LE | `run_p0_download.bat`（P0 3 成员）/ `python python\download_cesm1le.py aws\|gdex --members 20` |
-| Phase 6 归因（P0） | `python python\phase6_cesm.py prepare --members 3` → `pairs` → `detect` → `compound` → `attrib` |
+| Phase 6 归因（全量，口径已定） | `pairs` → `prepare --members 20` → `detect --members 20 --baseline xghg --loo --tag _v4` → `compound --members 20 --tag _v4 --compound-def envelope` → `attrib --members 20 --tag _v4 --compound-def envelope` |
+| Phase 6 口径决策 | 复合=**MHW 包络**(D7.1)；归因=**阈值扫描+62/78/72 参考线**(D7.2)；主口径 **med_mean**(D7.3)；基准期 **XGHG+LOO**(D7.4)；bootstrap **indep**(D7.5) —— 见 `results/复现报告.md` §5 D7 |
+| Phase 6 逻辑自检（不读数据） | `python results\phase6_selftest.py` → `ALL SELFTESTS PASSED` |
 | 检查数据完整性 | `python python\verify_data.py` |
 | 环境搭建 | 见 §技术栈；关键包 xarray/cartopy/heatwaveR(R)/cdsapi |
 
