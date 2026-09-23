@@ -1,6 +1,9 @@
 """
 compound_events.py — 复合事件识别（逐日共超标定义, 2025-09-18 修订）
 
+2025-09-23 方案 B 定稿：本文件（共超标/L477）用于图1a-i/图1m/图2；
+图1j-l 曲线已切换为 MHW 包络口径（L520），见 fig_jkl_mhw_envelope.py。
+
 ★ 定义修订记录 ★
   旧实现: compound = THW 事件**整段**被配对海 MHW **完全涵盖**（containment）。
   新实现: compound day = 陆地 THW 跨度日 ∩ 配对海洋 MHW 跨度日（**逐日共超标**）。

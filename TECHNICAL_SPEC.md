@@ -952,7 +952,12 @@ def get_grid_pair_info(
 ### 3.6 `compound_events.py` — 复合事件识别
 
 **文件路径**: `python/compound_events.py`  
-**功能**: 识别复合海洋-陆地热浪（MHW 完全涵盖 THW）。
+**功能**: 识别复合海洋-陆地热浪。
+
+**复合日定义（2025-09-23 方案 B 定稿）**：
+- 图1a-i / 图1m / 图2 全系：逐日共超标（论文 L477 simultaneously exceed），由 compound_events.py 实现
+- 图1j-l 时序曲线：MHW 包络（论文 L520 fully encompasses），由 fig_jkl_mhw_envelope.py 预计算，fig1_compound_spatial.py 从 fig_jkl_envelope.json 读取
+- 论文引言/结果/模型 Methods 均用 encompassment（L30/L77/L104/L520），仅 L477 用 exceedance；两定义产出不同，本复现分别在不同面板使用，与论文实际做法一致
 
 ```python
 """

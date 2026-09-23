@@ -62,21 +62,18 @@ def plot_figure1(output_dir=None):
         ('l', 'European Coasts',            {'lat': (30, 72), 'lon': (-15, 45)}),
     ]
 
-    def coastal_mean(da, region):
-        r = da.sel(lat=slice(*region['lat']), lon=slice(*region['lon']))
-        mask = r.mean(dim='time') > 0
-        if mask.sum() < 5:
-            w = np.cos(np.deg2rad(r.lat))
-            return r.weighted(w).mean(dim=['lat', 'lon'])
-        r_masked = r.where(mask)
-        w = np.cos(np.deg2rad(r_masked.lat))
-        return r_masked.weighted(w).mean(dim=['lat', 'lon'])
-
+    # ---- j/k/l: MHW-envelope compound days (paper L520 "fully encompasses") ----
+    import json
+    env_json_path = os.path.join(os.path.dirname(INTERMEDIATE_DIR), 'tables', 'fig_jkl_envelope.json')
+    with open(env_json_path, encoding='utf-8') as fh:
+        env_data = json.load(fh)
+    # Keys in JSON: fig1j_mediterranean, fig1k_baltic, fig1l_european
+    _env_keys = {'j': 'fig1j_mediterranean', 'k': 'fig1k_baltic', 'l': 'fig1l_european'}
     ts_list = []
     for lbl, name, region in regions:
-        ts = coastal_mean(da_comp, region)
-        ts_list.append((lbl, name, ts, '#d73027'))
-    yr_ts = ts_list[0][2].time.values
+        vals = np.array(env_data[_env_keys[lbl]]['values'])
+        ts_list.append((lbl, name, vals, '#d73027'))
+    yr_ts = np.arange(1983, 2024)
 
     fig = plt.figure(figsize=(18, 14))
     gs = fig.add_gridspec(3, 5, hspace=0.3, wspace=0.25,
@@ -124,8 +121,8 @@ def plot_figure1(output_dir=None):
 
     for ti, (lbl, name, ts, color) in enumerate(ts_list):
         ax = fig.add_subplot(gs[ti, 3])
-        yr = ts.time.values.astype(int)
-        vals = ts.values
+        yr = np.arange(1983, 2024)
+        vals = np.asarray(ts)
         ax.fill_between(yr, 0, vals, color=color, alpha=0.6, step='mid')
         ax.plot(yr, vals, color=color, linewidth=0.8, marker='.', markersize=2)
 
@@ -140,10 +137,10 @@ def plot_figure1(output_dir=None):
             ax.plot(yr, curve, 'r-', linewidth=0.8, alpha=0.7)
 
         ax.set_ylabel('Days/year', fontsize=7)
-        ax.set_title(f'({lbl}) {name}\nCompound MHW-THW Days (1983–2023)', fontsize=7, fontweight='bold')
+        ax.set_title(f'({lbl}) {name}\nMHW-Envelope Compound Days (1983–2023)', fontsize=7, fontweight='bold')
         ax.tick_params(labelsize=6)
         ax.set_xlim(1983, 2023)
-        ax.set_ylim(0, 90)
+        ax.set_ylim(0, 130)
         ax.set_xticks(range(1983, 2024, 3))
         ax.tick_params(axis='x', rotation=45)
         ax.grid(True, alpha=0.3, linestyle=':', linewidth=0.3)
@@ -245,3 +242,9 @@ def plot_figure1_jkl_maxcell(output_dir=None):
     os.remove(tmp_png)
     print(f"Saved Figure S1 (jkl max-cell) to: {path}")
     return path
+
+
+
+
+
+
