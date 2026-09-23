@@ -114,6 +114,22 @@ GEV_RETURN_PERIODS = (5, 10, 20, 50, 100)
 GEV_CI = (0.025, 0.975)   # 区别于图3 的 CI_ALPHA=(0.05, 0.95)
 
 # ──────────────────────────────────────────────
+# Phase 6 归因口径（决策 D7，2026-09-23 用户拍板）
+#   原散落在 python/phase6_cesm.py:61,72-83,314；2026-09-23 第三轮规划一致性审查时
+#   下沉到此处，使 SPEC §3.1「参数集中管理，避免硬编码」成立。
+#   phase6_cesm.py 仍以同名变量引用（值不变），CLI 默认值亦不变。
+# ──────────────────────────────────────────────
+COMPOUND_DEF = "envelope"        # 模型侧复合定义 {"envelope","exceed"}（D7.1：MHW 包络）
+MAIN_AGG = "med_mean"            # 区域聚合主口径（D7.3；med_p90 敏感性、med_max 参考）
+AGG_COLS = ("med_mean", "med_p90", "med_max")
+SWEEP_MIN, SWEEP_MAX, SWEEP_STEP = 0.0, 100.0, 1.0   # 归因阈值扫描 0–100 天（D7.2）
+PAPER_THR_REFS = {2003: 62.0, 2022: 78.0, 2023: 72.0}  # 论文 Fig.3c 三条年份参考线
+BOOT_MODE = "indep"              # bootstrap 主口径 {"indep","block"}（D7.5）
+THRESH_VERSION = "v3_w11_loo"    # 阈值缓存指纹版本（审计 F4）
+SST_TIME_LABEL_SHIFT_DAYS = -1   # ★ POP SST 标签（=物理日+1）校正，第三轮 F10
+MAX_PAIR_DIST_DEG = 1.0          # CESM 侧配对上限（度；观测侧为 MAX_GRID_DIST_DEG=0.5°）
+
+# ──────────────────────────────────────────────
 # CESM1-LE 成员列表
 # ──────────────────────────────────────────────
 CESM_ALL_MEMBERS = [f"{i:03d}" for i in range(1, 21)]

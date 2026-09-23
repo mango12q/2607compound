@@ -21,8 +21,22 @@
 | §5 | 分报告 D-3：阈值基准期 | `phase6审计_基准期.md` |
 | §6 | 分报告 D-4：复合与统计 | `phase6审计_复合与统计.md` |
 
+> **第三轮补注（2026-09-23，编号与时效对照）**：
+> 1. **F5/F6 编号互换**——本报告 F5=`--members` 全量名单、F6=`--loo`；而 `python/phase6_cesm.py`
+>    头注释自述 **F5=`leave-one-out`（`:313`）、F6=`--members`（`:91,:606`）**。
+>    F1–F4、F7–F9 两侧一致。追溯时请以代码内注释的行号为准。
+> 2. **doy=366 已修**——§1 的"建议清单"里仍记"补 doy=366 行（未修）"，实际已由 **F9** 实现
+>    并附验证节（§2.3.3）；以 F9 为准。
+> 3. **§0.5 与 §四 C11 就 POP SST 标签方向结论相反**（见 §0.5 的"新行动项"与 §四 C11 的"已否证"）。
+>    **第三轮实测裁决：C11 的否证不成立**——CAM `date`/`time_bnds` 为区间**左端**
+>    （`time[0]=1920-01-01`、首条 `time_bnds=(1920-01-01,1920-01-01)` 退化），
+>    POP `time_bound[0]=(1920-01-01 01:00, 1920-01-02)` 为区间**右端** ⇒
+>    POP 标签 = 物理日 + 1，**§0.5 的方向才是对的**；`_load_sst_points` 至今未做该校正，
+>    列为本轮 P0-2（详见 `results/规划一致性审查.md` 第三轮）。
+
 **可复算脚本**：`results/tools/phase6审计/`（4 份分报告脚本）、
-`results/tools/phase6审计复算/`（Lead 12 份独立复算 + `phase6_selftest.py`）。
+`results/tools/phase6审计复算/`（Lead 12 份独立复算）；
+口径自检脚本在**顶层** `results/phase6_selftest.py`（不在 tools/ 下，第三轮更正）。
 
 ---
 
@@ -41,7 +55,7 @@
 - `results/phase6审计_检测语义.md`（D-2，task-2）
 - `results/phase6审计_基准期.md`（D-3，task-3）
 - `results/phase6审计_复合与统计.md`（D-4，task-4）
-- Lead 独立复算脚本：`results/phase6_audit_lead_check.py` … `_check12.py`、`phase6_audit_lead_check.R`
+- Lead 独立复算脚本：`results/tools/phase6审计复算/phase6_audit_lead_check.py` … `_check12.py`、`phase6_audit_lead_check.R`
 
 ---
 
@@ -60,7 +74,7 @@
 | **P1-2** | `ALL_{m}_T2m.nc` 时间原点在 **12:00**（AWS 成品），POP SST 在 00:00 ⇒ `_event_daily_mask` 的 `.days` 向下取整使 **ALL 组 MHW 掩码整体早 1 天**，XGHG 组不受影响 | 确证 | 中 | ALL 复合日 63,154→62,191 / 75,581→74,707 / 78,973→78,045（−1.5%~−1.2%）；**两组口径因此不可比** |
 | **P1-3** | bootstrap **静默丢弃 `inf` 重复**（`P_fix=0` ⇒ PR=∞），把 CI 系统性压低 | 确证 | 高 | med_max 口径 **372/1000 为 inf 被丢弃** ⇒ 报出的 CI [14.7, 53.0] 只用了 628 个重复；保留 inf 时上界为 **∞**（Clopper-Pearson [8.9, 1050]，上界差 20 倍）。med_mean 口径 1000/1000 全 inf ⇒ CI=nan |
 | **P1-4** | 归因阈值用**本复现自己的** 2022 值（med_mean 20.7 / med_max 128），而非论文 Fig.3c 的 **62/78/72** | 确证 | 高 | 128 天属格点极值口径、20.7 天属区域均值口径，论文值落在本复现 p90(43.2)~max(128) 之间，**无单一口径可复现** |
-| **P1-5** | 论文**模型 Methods（`paper_text.txt:546`）**把复合日定义为「MHW **fully encompasses** THW」，而 `cmd_compound` 用的是 L477 的**逐日共超标**口径 | 确证 | 中高 | 与 `复现报告.md` 方案 B（图1j-l 用包络口径）不一致；Phase 6 应随模型 Methods 用包络口径 |
+| **P1-5** | 论文**模型 Methods（`paper_text.txt:546`）**把复合日定义为「MHW **fully encompasses** THW」，而 `cmd_compound` 用的是 L502-503 的**逐日共超标**口径 | 确证 | 中高 | 与 `复现报告.md` 方案 B（图1j-l 用包络口径）不一致；Phase 6 应随模型 Methods 用包络口径 |
 | **P2-1** | v2 阈值表 **doy=366 行全 NaN**（noleap 无 2-29，但 `dayofyear` 用公历）⇒ 闰年 12-31 恒不超阈 | 确证 | 中 | 6 天 × 206 点 = 1,236 点·日/序列 |
 | **P2-2** | noleap 日期被按公历做差 ⇒ 索引尾部漂移 +6 天，`max_e` 达 8035 > nt−1=8029 | 确证 | 中 | 每成员 1–5 个事件整段丢弃、13–196 个被静默裁尾 |
 | **P2-3** | **ALL 成员 SST 只有 8029 天**（缺标签 2006-01-02），XGHG 有 8030 天 ⇒ ALL/XGHG 不对称 | 确证 | 低 | 1 天/序列；跨该日的游程被当作相邻 |
@@ -199,7 +213,7 @@ P0-1 ~ P0-5、P1-1 ~ P1-5、P2-1 ~ P2-7；以及 §0「已确认无误」全部�
 **建议改（未动，待用户决策）**
 9. 归因阈值改用论文 Fig.3c 的 62/78/72（或明确用区域暴露口径），不要用格点极值 128。
 10. 主口径从 `med_max` 切到区域暴露（`med_mean` 类）—— 但需先把"论文 78 天是什么口径"定下来（与图1j/l 未复现项同源）。
-11. Phase 6 复合定义改随论文**模型 Methods（`:546`）的 "fully encompasses"**，而非 L477 共现超标。
+11. Phase 6 复合定义改随论文**模型 Methods（`:546`）的 "fully encompasses"**，而非 L502-503 共现超标。
 12. 补 doy=366 行（闰年 12-31）的阈值。
 13. 20 成员时 bootstrap 改「成员内分层 + 块重采样」。
 14. 文档同步：`AGENTS.md` 与 SPEC 补登模型侧配对口径（206/191/1.0°≈112 km）；`复现报告.md` §11.6 修正 PR=48/FAR=0.98 的表述与 CI 标签。
@@ -208,7 +222,7 @@ P0-1 ~ P0-5、P1-1 ~ P1-5、P2-1 ~ P2-7；以及 §0「已确认无误」全部�
 
 ## 5. 本轮修复的前后对比与验证
 
-见 `results/phase6审计_修复前后对比.md`。
+见**本文件 §2**（原 `results/phase6审计_修复前后对比.md`，2026-09-23 已并入本文件）。
 
 
 ## 2. 修复前后对比与验证证据
@@ -239,7 +253,7 @@ P0-1 ~ P0-5、P1-1 ~ P1-5、P2-1 ~ P2-7；以及 §0「已确认无误」全部�
 
 **未改（属口径决策，不是代码错误，已在报告中登记待用户拍板）**：归因阈值用 62/78/72 vs 128；
 主口径 `med_mean` vs `med_max`；Phase 6 复合定义（论文模型 Methods `paper_text.txt:546` 用
-"fully encompasses"，代码用 L477 共超标）；doy=366 行；20 成员 bootstrap 分层块。
+"fully encompasses"，代码用 L502-503 共超标）；doy=366 行；20 成员 bootstrap 分层块。
 
 ---
 
@@ -272,7 +286,7 @@ Rscript -e "cat(deparse(heatwaveR:::proto_event), sep='\n')"
 | 3超 + 2空 + 3超 | `[]` | `[]` |
 
 ⇒ **头尾不对称**（吸收尾部空档、不吸收首部空档）是 heatwaveR 的真实语义，已实现。
-复算：`python results/phase6_audit_lead_check7.py`、`Rscript results/phase6_audit_lead_check.R`。
+复算：`python results/tools/phase6审计复算/phase6_audit_lead_check7.py`、`Rscript results/tools/phase6审计复算/phase6_audit_lead_check.R`。
 
 ---
 
@@ -290,7 +304,7 @@ python -c "import numpy as np; z=np.load(r'results/intermediate/cesm/thresh_t2m_
 | 系统性方向 | 最冷点被抬高 **+18.49 °C**、最暖点被压低 **−2.86 °C** | — |
 | ALL 001 超阈率（南欧 <40N / 北欧 >60N） | 12.8% / **0.0%** | 6.3% / 6.5% |
 
-复算：`python results/phase6_audit_lead_check.py`、`results/phase6_audit_lead_check2.py`。
+复算：`python results/tools/phase6审计复算/phase6_audit_lead_check.py`、`results/tools/phase6审计复算/phase6_audit_lead_check2.py`。
 
 ---
 
@@ -377,7 +391,7 @@ python python\verify_data.py     # 期望：All data files present and valid.
 > *来源存档：`phase6审计_网格与配对.md`（原文未改动，仅并入本文件）*
 
 - **审计对象**：`python/phase6_cesm.py` 的 `cmd_prepare` / `cmd_pairs` / `_load_sst_points` / `_pooled_threshold_t2m`
-- **复算脚本**：`results/phase6_audit_grid.py`（只读 `data/` 与 `results/intermediate/cesm/`；产物全部写入 `results/intermediate/audit/grid/`）
+- **复算脚本**：`results/tools/phase6审计/phase6_audit_grid.py`（只读 `data/` 与 `results/intermediate/cesm/`；产物全部写入 `results/intermediate/audit/grid/`）
 - **审计员**：grid-auditor ｜ 结论一律以"实测数字"为准，不采信文档自述
 - **判定口径**：【确认无误】= 实测与代码意图一致；【有问题】= 实测与代码意图/物理事实不符；【未判定】= 证据不足
 
@@ -440,7 +454,7 @@ python python\verify_data.py     # 期望：All data files present and valid.
 复算方式：
 
 ```
-python results/phase6_audit_grid.py --only A1        # 逐行复刻 phase6_cesm.py:148-219
+python results/tools/phase6审计/phase6_audit_grid.py --only A1        # 逐行复刻 phase6_cesm.py:148-219
 ```
 
 关键输出行：
@@ -519,7 +533,7 @@ python results/phase6_audit_grid.py --only A1        # 逐行复刻 phase6_cesm.
 
 ### A5 口径差异的文档登记情况 —— 【有问题（文档）】
 
-复算方式：`python results/phase6_audit_grid.py --only A5`（全工作区 `*.py` / `*.md` 正则扫描，命中 39 行 .md + 101 行代码 → `A5_doc_scan.txt`）
+复算方式：`python results/tools/phase6审计/phase6_audit_grid.py --only A5`（全工作区 `*.py` / `*.md` 正则扫描，命中 39 行 .md + 101 行代码 → `A5_doc_scan.txt`）
 
 **登记了模型侧口径的文档**：
 
@@ -752,8 +766,8 @@ python results\phase6_audit_grid.py --list                :: 列出全部段号
 `results/detect_event_source.txt`、`results/ts2clm_source.txt`）。全部结论 = 本机 heatwaveR 真实函数体 + 判别性实验实测数字。
 **复算入口**：
 ```
-Rscript results/phase6_audit_detect.R  <in> <out> {all|fuzz|force}
-python  results/phase6_audit_detect.py [--skip-r] [--only export,fuzz,r,e1,e2,e3,e4,e4c,e5,a1]
+Rscript results/tools/phase6审计/phase6_audit_detect.R  <in> <out> {all|fuzz|force}
+python  results/tools/phase6审计/phase6_audit_detect.py [--skip-r] [--only export,fuzz,r,e1,e2,e3,e4,e4c,e5,a1]
 ```
 **产物目录**：`results/intermediate/audit/detect/`（`audit_summary.json` 为机器可读汇总）
 
@@ -802,7 +816,7 @@ SST 侧没有这个问题（行内极差 22.8 °C），文件大小差 **117×**
 
 ### 1.2 机制确认（可复算）
 
-`results/phase6_audit_detect.py::e1` 按被审计代码原样复算：
+`results/tools/phase6审计/phase6_audit_detect.py::e1` 按被审计代码原样复算：
 
 ```python
 single[d-1] = np.nanpercentile(rows, 90, axis=0)                 # (206,)
@@ -1231,7 +1245,7 @@ XGHG: t0 = 2000-01-01 00:00:00    T2m 8030 天;  SST 8030 天
 
 ---
 
-*审计执行：detection-auditor（task-2）。全部数字可由 `results/phase6_audit_detect.R` + `results/phase6_audit_detect.py` 复算；
+*审计执行：detection-auditor（task-2）。全部数字可由 `results/tools/phase6审计/phase6_audit_detect.R` + `results/tools/phase6审计/phase6_audit_detect.py` 复算；
 未修改 `python/` 与 `results/intermediate/cesm/` 下任何文件。*
 
 
@@ -1245,7 +1259,7 @@ XGHG: t0 = 2000-01-01 00:00:00    T2m 8030 天;  SST 8030 天
 > **权威口径**：`TECHNICAL_SPEC_PHASE_B.md` 步骤 2b（L60-86，用户已拍板：XGHG 集合合并反事实基准 + **leave-one-out**）；
 > `results/复现报告.md` §5.1 第 8 行（L121）、§11.6 v2 修订（L349）。
 > **审计日期**：2026-09-23　|　**审计员**：baseline-stats-auditor　|　**数据**：CESM1-LE P0 成员 001-003（全量 20 成员未下载，未跑）
-> **复算脚本**：`results/phase6_audit_baseline.py`（分阶段：g1 / g2 / g3 / trend / chain / sweep）
+> **复算脚本**：`results/tools/phase6审计/phase6_audit_baseline.py`（分阶段：g1 / g2 / g3 / trend / chain / sweep）
 > **产物目录**：`results/intermediate/audit/baseline/`（**未改动** `results/intermediate/cesm/` 下任何文件；已核对 mtime 仍为 2026-09-19）
 
 > **命名说明**：本文用 **XGHX** 指代反事实组（ALL-but-GHG / FixGHG 世界），数据与文件名中的实验名是 **XGHG**（如 `XGHG_001_T2m.nc`、`mhw_x_XGHG_001.csv`）——两者指同一实验；写代码/路径时必须用 XGHG。
@@ -1276,7 +1290,7 @@ XGHG: t0 = 2000-01-01 00:00:00    T2m 8030 天;  SST 8030 天
 
 ## 1. 审计方法与可复算性
 
-**原则**：不采信文档自述，一切回到代码与真实数据；每个数字都能用 `results/phase6_audit_baseline.py` 重跑得到。
+**原则**：不采信文档自述，一切回到代码与真实数据；每个数字都能用 `results/tools/phase6审计/phase6_audit_baseline.py` 重跑得到。
 
 **关键做法（保证"同一套代码逻辑"）**：
 1. 直接 `import phase6_cesm`，**调用原函数**做静态/缓存实验（`_pooled_threshold_sst`、`_pooled_threshold_t2m`）。
@@ -1286,7 +1300,7 @@ XGHG: t0 = 2000-01-01 00:00:00    T2m 8030 天;  SST 8030 天
 
 | 校验项 | 结果 | 复算方式 |
 |---|---|---|
-| SST 阈值复算 = 磁盘 `thresh_sst_xghg.npz` | **逐位一致** | `python results/phase6_audit_baseline.py g2` |
+| SST 阈值复算 = 磁盘 `thresh_sst_xghg.npz` | **逐位一致** | `python results/tools/phase6审计/phase6_audit_baseline.py g2` |
 | T2m(buggy) 阈值复算 = 磁盘 `thresh_t2m_xghg.npz` | **逐位一致** | 同上（⇒ 根因定位完整，没有第二处差异） |
 | `mhw_x_*`/`thw_x_*` 事件表复刻 = 既有 12 个 CSV | **12/12 逐行一致**（event_start/lat_idx/duration 全同） | `... chain`（[校验] 行） |
 | `exposure_members_x.csv` 6 行 | **逐格一致**（含 `thw_pair_days`） | 同上 |
@@ -1315,7 +1329,7 @@ XGHG: t0 = 2000-01-01 00:00:00    T2m 8030 天;  SST 8030 天
 
 ### G1.1 关键词检索：不支持（**C1，高**）
 
-复算：`python results/phase6_audit_baseline.py g1`；在 `python/phase6_cesm.py` 全文（714 行）正则检索
+复算：`python results/tools/phase6审计/phase6_audit_baseline.py g1`；在 `python/phase6_cesm.py` 全文（714 行）正则检索
 `exclude_member|leave[-_ ]?one[-_ ]?out|\bloo\b` ⇒ **0 命中**。`python/` 全目录检索同样 0 命中。
 规范要求（`TECHNICAL_SPEC_PHASE_B.md` L81）「阈值构造需支持 `exclude_member` 参数（⬜ 待实现）」——现状**确为未实现**。
 
@@ -1729,7 +1743,7 @@ python results\intermediate\audit\baseline\summarize.py   # 报告用汇总数�
 > 对照 `python/compound_events.py`（`identify_compound_events` / `_pair_maps` / `_event_daily_mask`）、
 > `config.py`（`N_BOOTSTRAP=1000` L108、`CI_ALPHA=(0.05,0.95)` L109）与论文 `results/paper_text.txt`。
 > **审计日期**：2026-09-23　|　**审计员**：baseline-stats-auditor　|　**数据**：CESM1-LE P0 成员 001-003（全量 20 成员未跑）
-> **复算脚本**：`results/phase6_audit_stats.py`（阶段 i1 / i1b / i2 / i3 / i4）
+> **复算脚本**：`results/tools/phase6审计/phase6_audit_stats.py`（阶段 i1 / i1b / i2 / i3 / i4）
 > **产物目录**：`results/intermediate/audit/stats/`；**只读** `python/` 与 `results/intermediate/cesm/`（未做任何写入）
 
 > **命名说明**：本文用 **XGHX** 指代反事实组（ALL-but-GHG / FixGHG 世界），数据与文件名中的实验名是 **XGHG**（如 `XGHG_001_T2m.nc`、`mhw_x_XGHG_001.csv`）——两者指同一实验；写代码/路径时必须用 XGHG。
@@ -1769,7 +1783,7 @@ python results\intermediate\audit\baseline\summarize.py   # 报告用汇总数�
 
 ### I1.1 复用为真（**S1**，确认无误）
 
-复算：`python results/phase6_audit_stats.py i1` → `i1_structure.json` / `i1_identify_vs_exposure.csv`
+复算：`python results/tools/phase6审计/phase6_audit_stats.py i1` → `i1_structure.json` / `i1_identify_vs_exposure.csv`
 
 - 文件:行证据：`phase6_cesm.py` **L485** `from compound_events import (identify_compound_events, _pair_maps, _event_daily_mask,)`；
   **L504** `comp = identify_compound_events(mhw, thw, pairs_df, time_da.time)`
@@ -1904,7 +1918,7 @@ multiple land cells could share the same adjacent ocean cell"）。字典以陆�
 
 ### 3.2 inf 的处理：**丢弃 inf 使 CI 失去意义**（**S10**，高）
 
-复算：`i3_bootstrap.csv`（`python results/phase6_audit_stats.py i3`）
+复算：`i3_bootstrap.csv`（`python results/tools/phase6审计/phase6_audit_stats.py i3`）
 
 | 口径 | 阈值 | P_ALL | P_fix | 点估计 PR | 点估计 FAR | inf 次数/1000 | 丢弃 inf 后 CI | 有限重采样中位数 | Clopper-Pearson PR 区间 |
 |---|---|---|---|---|---|---|---|---|---|

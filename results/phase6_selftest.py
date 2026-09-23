@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""phase6_selftest.py — Phase 6 新口径的**纯合成**自检（不读任何项目数据、不跑管线）。
+r"""phase6_selftest.py — Phase 6 新口径的**纯合成**自检（不读任何项目数据、不跑管线）。
 
 覆盖 2026-09-23 拍板后新增/改动的三块逻辑：
   1) `_envelope_mask`（决策 1B：MHW 包络）——与观测侧
@@ -158,12 +158,73 @@ check("0/0 记为 nan 而非 inf",
       np.isnan(P._sweep_one(np.array([0.0]), np.array([0.0]), np.zeros((1, 1), int),
                             np.zeros((1, 1), int), np.array([5.0]), 1).PR.iloc[0]))
 
+# ★ 第三轮（F12）：FAR 的置信区间（Table 1 的先决条件）
+check("输出含 FAR 置信区间列（FAR_lo/FAR_hi/FAR_*_fin）",
+      {"FAR_lo", "FAR_hi", "FAR_lo_fin", "FAR_hi_fin"} <= set(tab.columns))
+_fin_rows = tab[np.isfinite(tab.FAR.values)]
+check("FAR 的 CI 包住点估计（有限行）",
+      bool(np.all(_fin_rows.FAR_lo.values <= _fin_rows.FAR.values + 1e-12)
+           and np.all(_fin_rows.FAR.values <= _fin_rows.FAR_hi.values + 1e-12)),
+      f"n={len(_fin_rows)}/{len(tab)}")
+check("阈值 0（FAR 恒 0）时 CI 退化为 [0, 0]",
+      np.isclose(float(tab.FAR_lo.iloc[0]), 0.0)
+      and np.isclose(float(tab.FAR_hi.iloc[0]), 0.0))
+check("两组都无样本时 FAR 与区间同为 nan",
+      np.isnan(tab_d.FAR) and np.isnan(tab_d.FAR_lo) and np.isnan(tab_d.FAR_hi))
+check("仅 FixGHG 无样本时 FAR=1，区间上界亦为 1",
+      np.isclose(float(tab_i.FAR), 1.0) and np.isclose(float(tab_i.FAR_hi), 1.0),
+      f"FAR_lo={tab_i.FAR_lo:.3f} FAR_hi={tab_i.FAR_hi:.3f}")
+
 mem = np.array(["001"] * 22 + ["002"] * 22 + ["003"] * 22)
 ib = P._boot_indices(mem, 50, np.random.default_rng(4), "block")
 check("block 索引矩阵形状正确", ib.shape == (50, 66))
 check("block 每次抽样的成员数恒为 3 的整数倍（成员整体进出）",
       all(len(set(mem[ib[b]])) <= 3 for b in range(50)))
 check("indep 索引在 [0,N) 内", idx_a.min() >= 0 and idx_a.max() < 66)
+
+print()
+print("=" * 74)
+print("5) 文件发现兼容 gdex 命名 + 坐标名归一（第三轮 F10/F11）")
+print("=" * 74)
+
+import shutil          # noqa: E402
+import tempfile        # noqa: E402
+
+import xarray as xr    # noqa: E402
+
+_tmp = tempfile.mkdtemp(prefix="p6selftest_")
+_old_proc = P.CESM_PROC_DIR
+try:
+    P.CESM_PROC_DIR = _tmp
+    # 001 用 gdex 命名、002 用 aws/trim 命名（两者必须都被认出，且不互相串号）
+    for _n in ("trefht_all_001_2000-2021.nc", "TREFHT_all_002_2000-2021_europe.nc",
+               "trefht_xghg_001_2000-2021.nc", "sst_all_001_2000-2021.nc",
+               "sst_xghg_001_2000-2021.nc"):
+        open(os.path.join(_tmp, _n), "w", encoding="utf-8").close()
+
+    check("认出 gdex 名（T2m ALL 001）",
+          len(P.find_t2m_segments("ALL", "001")) == 1,
+          f"got={[os.path.basename(x) for x in P.find_t2m_segments('ALL', '001')]}")
+    check("依旧认 aws 名（T2m ALL 002）且不串号",
+          len(P.find_t2m_segments("ALL", "002")) == 1,
+          f"got={[os.path.basename(x) for x in P.find_t2m_segments('ALL', '002')]}")
+    check("认出 gdex 名（T2m XGHG 001）",
+          len(P.find_t2m_segments("XGHG", "001")) == 1)
+    check("认出 gdex 名（SST ALL 001 / XGHG 001）",
+          len(P.find_sst_segments("ALL", "001")) == 1
+          and len(P.find_sst_segments("XGHG", "001")) == 1)
+    check("不存在的成员返回空列表（不误报）",
+          len(P.find_t2m_segments("ALL", "019")) == 0
+          and len(P.find_sst_segments("XGHG", "019")) == 0)
+
+    _da = xr.DataArray(np.zeros((2, 3)), dims=("latitude", "longitude"))
+    check("_norm_latlon 把 latitude/longitude 统一为 lat/lon",
+          set(P._norm_latlon(_da).dims) == {"lat", "lon"})
+    check("F10 校正常量已定义（POP SST 标签整体回退 1 天）",
+          P.SST_TIME_LABEL_SHIFT_DAYS == -1)
+finally:
+    P.CESM_PROC_DIR = _old_proc
+    shutil.rmtree(_tmp, ignore_errors=True)
 
 print()
 print("=" * 74)

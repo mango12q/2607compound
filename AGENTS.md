@@ -6,7 +6,19 @@
 
 **当前进度（2026-09-23）**：Phase 1-4（观测链路：检测→配对→复合→图1/图2/S1/S2）完成；图1j-l 已切换为 MHW 包络口径（方案 B），共超标口径备份为 fig1_compound_spatial_exceedance_backup.*；**图1j/l 的绝对量级已定稿为"未复现项"**（定性一致、定量不可复现、原文口径不足以唯一确定——见 `results/复现报告.md` §6，停止口径搜索）；Phase 6 P0（CESM 3 成员管线 + v2 反事实基准）验证通过，全量未跑；Phase 5（湿热应力）与 Phase 7（写作）未开始。详见 `results/复现报告.md`。
 
-**2026-09-23 第四批：Phase 6 归因管线正确性审计 + 修复（任务 D）**：Lead + 3 名独立审计员四路并行，逐项核验 `python/phase6_cesm.py`。**发现 2 个 P0 级检测层错误**——① `_pooled_threshold_t2m` 的 `axis` 崩溃使 206 个陆点共用一条全欧阈值曲线（阈值 mean\|Δ\| 8.26 °C）；② `_run_events` 是「先桥接后过滤」而 heatwaveR `proto_event` 是「先过滤后桥接」（450 例模糊测试 429/450 不一致）；另模型侧 MHW 阈值缺 11 天窗。**3 个 P0 级工程缺陷**：`--members 20` 静默只跑 3 个成员、阈值缓存无成员指纹、不支持 leave-one-out。已修复 8 项（F1–F8）并给出前后对比：THW 的 ALL/XGHG 事件比 1.73→3.01，`PR=48.0/FAR=0.98` **作废**（修复后该阈值下 P_fix=0），可判读阈值（20.7 天）下 PR=52.0/FAR=0.981。**观测链路（Phase 1–4）不受影响**（全部走 R heatwaveR）。详见 **`results/Phase6审计报告.md`**（6 份分报告已合并为一件：§1 汇总 / §2 修复对比 / §3–§6 四份分报告全文）。
+**2026-09-23 第四批：Phase 6 归因管线正确性审计 + 修复（任务 D）**：Lead + 3 名独立审计员四路并行，逐项核验 `python/phase6_cesm.py`。**发现 2 个 P0 级检测层错误**——① `_pooled_threshold_t2m` 的 `axis` 崩溃使 206 个陆点共用一条全欧阈值曲线（阈值 mean\|Δ\| 8.26 °C）；② `_run_events` 是「先桥接后过滤」而 heatwaveR `proto_event` 是「先过滤后桥接」（450 例模糊测试 429/450 不一致）；另模型侧 MHW 阈值缺 11 天窗。**3 个 P0 级工程缺陷**：`--members 20` 静默只跑 3 个成员、阈值缓存无成员指纹、不支持 leave-one-out。已修复 9 项（F1–F9）并给出前后对比：THW 的 ALL/XGHG 事件比 1.73→3.01，`PR=48.0/FAR=0.98` **作废**（修复后该阈值下 P_fix=0），可判读阈值（20.7 天）下 PR=52.0/FAR=0.981。**观测链路（Phase 1–4）不受影响**（全部走 R heatwaveR）。详见 **`results/Phase6审计报告.md`**（6 份分报告已合并为一件：§1 汇总 / §2 修复对比 / §3–§6 四份分报告全文）。
+
+**2026-09-23 第五批：第三轮规划一致性审查（三路独立审计）**：发现 **3 项 Phase 6 全量开跑前的 P0 阻塞项**——① `gdex --members 20` 的产出命名（`{var}_{exp}_{mem}_2000-2021.nc`）与 `phase6_cesm.py` 的文件发现模式不匹配 ⇒ prepare 静默跳过新成员、detect 在成员 004 抛 `FileNotFoundError`（**全量实际只会跑 3 个成员**）；② `_load_sst_points` 未做 POP SST「物理日 +1」标签校正，MHW 掩码相对 THW 整体晚 1 天，而审计报告 §0.5 与 §四 C11 对此**给出相反结论**（C11 的"已否证"裁决被本轮实测推翻：CAM `date` 为区间左端、POP `time_bound` 为右端）；③ `_sweep_one` 不产出 FAR 置信区间，而 Table 1 验收锚点需要。另修正：SPEC §9.3 的 Phase 6 命令因 `--tag` 两端默认值不一致而**逐字不可执行**、`run_all.py` 已改走 `detect_events.R`（文档滞后）、D7 五项口径未进任何规格文档、CESM 全量体量与 E: 盘剩余空间（190 GB）自相矛盾（~750 GB 只适用于 raw 路径）。详见 `results/规划一致性审查.md`（第三轮）。
+
+> **第三轮代码修改（2026-09-23，用户指令"执行修改但不跑代码"）**：上述 3 项 P0 已在源码层修掉——
+> **F10** `_load_sst_points` 对 POP SST 时间轴回退 1 天（标签=物理日+1）；**F11** 文件发现兼容
+> gdex 命名 + `download_cesm1le.py` 保留 KMT/TLAT/TLONG、`_mask_sst_box` 不再空间裁剪；
+> **F12** `_sweep_one` 补 `FAR_lo/FAR_hi` 及区间列（Table 1 先决条件）；Phase 6 口径常量下沉
+> `python/config.py`；`results/phase6_selftest.py` 补 5 项断言 + 新命名测试节。
+> **⚠️ 未运行任何代码 ⇒ 未验证**：首次运行前先 `python -m py_compile python\phase6_cesm.py
+> python\download_cesm1le.py python\config.py` 与 `python results\phase6_selftest.py`；
+> 旧 `_x/_x2/_x3` 产物属未校正口径，需用新 `--tag` 重跑 `detect`+`compound`。
+> 细则见 `results/规划一致性审查.md` 第三轮·代码修改记录。
 
 **2026-09-23 第三批：下载脚本就绪 + 图1j/l 定稿**：① Phase 5/6 下载脚本全部编辑就绪并 dry-run 验证（**均未运行**）——新增 `python/download_era5_sp025.py`（0.25° sp 欧洲框，数据集 3b+），给 `download_era5_tmax.py` 补 `--dry-run`，新增两个一键入口 `run_phase5_downloads.bat` / `run_phase6_download.bat`；② 图1j/l 定稿为未复现项（THW 硬约束 23.2/35.1/48.3 天 ⇒ 共超标口径封顶；MHW 包络对区域框高度敏感；8 区域框扫描无一口径满足论文四约束）；③ 修正 `diagnose_subbasin.py` 的归一化（`Σwi·d/n` → `Σwi·d/Σwi`），并据此**撤销**复现报告与修订报告中不可复算的"西地中海弧 76.0/68.5 唯一全面命中"结论。详见 `results/复现报告.md` §6 与 `results/方法与证据.md §3`。
 
@@ -20,14 +32,16 @@
 - `python/run_all.py` — Phase 0–3 四阶段主控（预处理→检测→复合→年度指标/CHR/共现概率）
 - `python/figures.py` — 图1/图2/S1 出图；`python/fig_jkl_mhw_envelope.py` — S2
 - `python/detect_events.R` — **海陆统一热浪检测正式链路**（R heatwaveR）
-- `python/phase6_cesm.py` — Phase 6 归因管线（P0 验证版；**2026-09-23 审计修复 F1–F8**：
-  检测端与 R heatwaveR 等价、阈值逐点、缓存带指纹、`--members` 作用于全量 20 人名单、新增 `--loo`）
+- `python/phase6_cesm.py` — Phase 6 归因管线（P0 验证版；**2026-09-23 审计修复 F1–F9**：
+  检测端与 R heatwaveR 等价、阈值逐点、11 天窗、缓存带指纹、`--members` 作用于全量 20 人名单、
+  `--loo`、doy=366 阈值行）
 - `python/coastal_buffer.py` — 图6 分析域：海岸向内 100 km 缓冲掩码（Phase 5 前置，已实现待接入）
 
-⚠️ **检测链路口径提示**：`python/detect_thw.R` 有吞错 bug，**仅存档勿用**；
-但 `python/run_all.py` 的 THW 环节当前仍经 `detect_thw_wrapper` 指向它（缓存命中时不会重跑）。
-正式重检请直接调用 `detect_events.R`。另：全链路 `smoothPercentile=FALSE`，
-偏离两包默认（TRUE/31 天窗），理由见 `results/复现报告.md` D2。
+⚠️ **检测链路口径提示**：`python/detect_thw.R` 有吞错 bug，**仅存档勿用**。
+**（第三轮更正）`python/run_all.py` 现已海陆双路都走正式链路 `python/detect_events.R`**
+（`run_all.py:47,73-95,161-181`，2026-09-23 提交 `e622993`）——此前"THW 环节仍指向
+`detect_thw.R`"的说法已过期；`detect_thw_wrapper.py` 仅保留供单点复核。
+另：全链路 `smoothPercentile=FALSE`，偏离两包默认（TRUE/31 天窗），理由见 `results/复现报告.md` D2。
 
 下载工具：
 - `python/download_cesm1le.py` + `run_p0_download.bat`（P0 3 成员）/ `run_phase6_download.bat`（全量 20 成员）
@@ -106,7 +120,7 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
 | 一键复现 Phase 0-3 | `python python\run_all.py`（缓存命中 ~1 min；全量重检陆地 ~22 min）|
 | 出图 1/2/S1/S2 | `python python\figures.py` + `python python\fig_jkl_mhw_envelope.py` |
 | **下 Phase 5 全部输入** | `run_phase5_downloads.bat`（= ERA5 tmax + ERA5 sp 0.25° + OAFlux） |
-| **下 CESM 全量** | `run_phase6_download.bat`（20 成员，~750 GB，4–5 天） |
+| **下 CESM 全量** | `run_phase6_download.bat`（20 成员；**实际走 gdex 服务端切片直写 `proc/`，约 +80–100 GB**；文档旧写的 "~750 GB / 4–5 天" 只适用于 raw 整档路径，E: 盘仅剩 190 GB，raw 路径不可行） |
 | 下 ERA5 tmax | `python python\download_era5_tmax.py [--dry-run]`（`--merge` 合并） |
 | 下 ERA5 sp 0.25° | `python python\download_era5_sp025.py [--dry-run]`（数据集 3b+） |
 | 下 OAFlux | `python python\download_oaflux_evap.py [--probe]` |
@@ -127,8 +141,8 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
 - `results/README.md` — **results/ 目录导航（先看这个）**
 - `results/复现报告.md` — 进度、锚点验证总表、方法学决策记录 **D1–D7**、偏差清单 §5.1、图1j/l 定稿 §6
 - `results/Phase6审计报告.md` — Phase 6 归因管线审计（含修复前后对比与四份分报告）
-- `results/规划一致性审查.md` — 规划文件 vs 论文两轮审查；**第二轮有对第一轮的 3 处更正**
-  （**Phase 5/6 开工前必须先读**）
+- `results/规划一致性审查.md` — 规划文件 vs 论文**三轮**审查；**第二轮对第一轮有 3 处更正、
+  第三轮给出 3 项 Phase 6 全量开跑前的 P0 阻塞项**（**Phase 5/6 开工前必须先读**）
 - `results/方法与证据.md` — §1 目视比对 / §2 E-OBS 拼接核查 / §3 S1 读取与图6年份判据 /
   §4 R-Python 检测交叉验证 / §5–§6 历史存档
 - `results/tools/README.md` — 诊断与复算脚本索引（**哪个结论由哪个脚本算出**）

@@ -58,29 +58,32 @@ DOMAINS_CSV = os.path.join(CESM_INT, "domains_land_cesm.csv")
 EXPOSURE_CSV = os.path.join(CESM_INT, "exposure_members.csv")
 FIG7_PNG = os.path.join(C.FIGURES_DIR, "fig7_p0_validation.png")
 
-MAX_PAIR_DIST_DEG = 1.0     # f09/gx1v6 均 ~1° 网格, 观测的 0.5° 不适用
+MAX_PAIR_DIST_DEG = C.MAX_PAIR_DIST_DEG   # f09/gx1v6 均 ~1° 网格, 观测的 0.5° 不适用
 
 # ══════════════════════════════════════════════════════════════════════════
-# Phase 6 口径决策（2026-09-23 用户拍板；原委见 results/phase6审计报告.md §4）
+# Phase 6 口径决策（2026-09-23 用户拍板）
+#   ★ 第三轮（2026-09-23）：这些常量已**下沉到 python/config.py**（SPEC §3.1 要求
+#     "参数集中管理，避免硬编码"），此处改为引用；**取值一个未变**，CLI 默认值亦不变。
+#     原委：results/phase6审计报告.md（问题清单）+ results/复现报告.md §5 D7（拍板记录）。
 # ══════════════════════════════════════════════════════════════════════════
 # 决策 1B：复合事件定义 = **MHW 包络**（论文模型 Methods paper_text.txt:546
 #   "a marine heatwave fully encompasses a terrestrial heatwave"），
 #   与已定稿的图1j-l（方案 B）同语义：
 #     某 MHW 完全涵盖 >=1 个 THW 事件 -> 该 MHW 的**全部跨度天**计为复合天。
-#   共超标口径（论文观测 Methods L503 / compound_events.identify_compound_events）
+#   共超标口径（论文观测 Methods L502-503 / compound_events.identify_compound_events）
 #   保留为 `--compound-def exceed`，供敏感性对照；图1a-i/1m/图2 仍用共超标。
-COMPOUND_DEF = "envelope"       # {"envelope", "exceed"}
+COMPOUND_DEF = C.COMPOUND_DEF               # {"envelope", "exceed"}
 # 决策 3A：主口径 = 区域暴露均值；p90 敏感性；格点最大降为参考
-MAIN_AGG = "med_mean"
-AGG_COLS = ("med_mean", "med_p90", "med_max")
+MAIN_AGG = C.MAIN_AGG
+AGG_COLS = tuple(C.AGG_COLS)
 AGG_LABEL = {"med_mean": "区域均值（主口径）",
              "med_p90": "区域 p90（敏感性）",
              "med_max": "格点最大（参考，原 P0 口径）"}
 # 决策 2C：归因阈值扫描 + 论文 Fig.3c 的三条年份参考线（Med&BS 面板）
-SWEEP_MIN, SWEEP_MAX, SWEEP_STEP = 0.0, 100.0, 1.0
-PAPER_THR_REFS = {2003: 62.0, 2022: 78.0, 2023: 72.0}   # 论文 Fig.3c 垂直线
+SWEEP_MIN, SWEEP_MAX, SWEEP_STEP = C.SWEEP_MIN, C.SWEEP_MAX, C.SWEEP_STEP
+PAPER_THR_REFS = dict(C.PAPER_THR_REFS)     # 论文 Fig.3c 垂直线
 # 决策 5A：主口径 = 独立重采样（论文 Methods :585-587 字面）；block 作附录
-BOOT_MODE = "indep"             # {"indep", "block"}（block = 成员内分层 + 块）
+BOOT_MODE = C.BOOT_MODE                     # {"indep", "block"}（block = 成员内分层 + 块）
 N_BOOTSTRAP = C.N_BOOTSTRAP
 CI = C.CI_ALPHA
 
@@ -108,30 +111,55 @@ def select_members(n):
 # ──────────────────────────────────────────────
 # 文件发现
 # ──────────────────────────────────────────────
+def _norm_latlon(obj):
+    """统一坐标名为 lat/lon（gdex 切片件可能用 latitude/longitude）。★F11 配套"""
+    ren = {}
+    for a, b in (("latitude", "lat"), ("longitude", "lon")):
+        if a in getattr(obj, "dims", ()) or a in getattr(obj, "coords", ()):
+            ren[a] = b
+    return obj.rename(ren) if ren else obj
+
+
 def find_t2m_segments(exp, m):
-    """返回该成员 (exp) 的 TREFHT proc 段文件列表 (按起始年排序)。"""
+    """返回该成员 (exp) 的 TREFHT proc 段文件列表 (按起始年排序)。
+
+    ★F11：同时接受 **gdex 产出名** `trefht_{exp}_{m}_2000-2021.nc`
+    （`download_cesm1le.py::cmd_gdex` 的命名规则 `{var}_{exp}_{mem}_{y0}-{y1}.nc`）
+    与 aws/trim 派生名。两者的大气网格框一致（`config.CESM_EUROPE_LAT/LON`）。
+    """
+    pats = []
     if exp == "ALL":
-        f = os.path.join(CESM_PROC_DIR, f"TREFHT_all_{m}_2000-2021_europe.nc")
-        return [f] if os.path.exists(f) else []
-    pats = [
-        os.path.join(CESM_PROC_DIR, f"*xghg.{m}.cam.h1.TREFHT.*_2000-2021.nc"),
-    ]
-    fs = sorted(sum([glob.glob(p) for p in pats], []))
-    return fs
+        pats.append(os.path.join(CESM_PROC_DIR, f"TREFHT_all_{m}_2000-2021_europe.nc"))
+        pats.append(os.path.join(CESM_PROC_DIR, f"trefht_all_{m}_2000-2021.nc"))
+    else:
+        pats.append(os.path.join(CESM_PROC_DIR, f"*xghg.{m}.cam.h1.TREFHT.*_2000-2021.nc"))
+        pats.append(os.path.join(CESM_PROC_DIR, f"trefht_xghg_{m}_2000-2021.nc"))
+    fs = []
+    for p in pats:
+        fs += glob.glob(p)
+    return sorted(set(fs))
 
 
 def find_sst_segments(exp, m):
+    """返回该成员 (exp) 的 POP SST proc 段文件列表。
+
+    ★F11：额外接受 gdex 产出名 `sst_{exp}_{m}_2000-2021.nc`。
+    注意 gdex 件必须保留 POP 全局网格（见 `download_cesm1le._mask_sst_box` 的说明），
+    否则 `coastal_pairs_cesm.csv` 里缓存的网格索引会与文件错位。
+    """
     if exp == "ALL":
         pats = [
             os.path.join(CESM_PROC_DIR,
                          f"*B20TRC5CNBDRD.f09_g16.{m}.pop.h.nday1.SST.*_2000-2021.nc"),
             os.path.join(CESM_PROC_DIR,
                          f"*BRCP85C5CNBDRD.f09_g16.{m}.pop.h.nday1.SST.*_2000-2021.nc"),
+            os.path.join(CESM_PROC_DIR, f"sst_all_{m}_2000-2021.nc"),
         ]
     else:
         pats = [
             os.path.join(CESM_PROC_DIR,
                          f"*xghg.{m}.pop.h.nday1.SST.*_2000-2021.nc"),
+            os.path.join(CESM_PROC_DIR, f"sst_xghg_{m}_2000-2021.nc"),
         ]
     return sorted(sum([glob.glob(p) for p in pats], []))
 
@@ -139,12 +167,25 @@ def find_sst_segments(exp, m):
 # ──────────────────────────────────────────────
 # prepare
 # ──────────────────────────────────────────────
+def _atm_reference():
+    """参考大气网格（lat/lon）：取 ALL 001 的 TREFHT proc 件。
+
+    ★F11：不再硬编码 `TREFHT_all_001_2000-2021_europe.nc`——只有 raw+trim 路径才产出
+    该名，gdex 路径产出的是 `trefht_all_001_2000-2021.nc`。
+    """
+    refs = find_t2m_segments("ALL", "001")
+    if not refs:
+        raise FileNotFoundError(
+            "找不到 ALL 001 的 TREFHT proc 文件（aws/trim 或 gdex 命名均可）；"
+            f"目录 = {CESM_PROC_DIR}")
+    return refs[0]
+
+
 def cmd_prepare(args):
     """逐成员生成 {exp}_{m}_T2m.nc (Europe 框, °C, 拼好两段)。"""
     os.makedirs(CESM_INT, exist_ok=True)
-    # 参考欧洲框: 取 AWS 成品 001 的 lat/lon
-    ref = xr.open_dataset(
-        os.path.join(CESM_PROC_DIR, "TREFHT_all_001_2000-2021_europe.nc"))
+    # 参考欧洲框: 取 ALL 001 成品件的 lat/lon
+    ref = _norm_latlon(xr.open_dataset(_atm_reference()))
     ref_lat, ref_lon = ref.lat, ref.lon
     ref.close()
 
@@ -163,8 +204,8 @@ def cmd_prepare(args):
             for f in segs:
                 ds = xr.open_dataset(f)
                 var = "TREFHT" if "TREFHT" in ds.data_vars else "T2m"
-                da = ds[var]
-                # 统一到 AWS 成品的欧洲框坐标 (XGHG 原生 0-360 经度/纬度可能降序)
+                da = _norm_latlon(ds[var])          # ★F11：gdex 件可能用 latitude/longitude
+                # 统一到参考成品的欧洲框坐标 (XGHG 原生 0-360 经度/纬度可能降序)
                 lon180 = ((da.lon.astype(float) + 180) % 360) - 180
                 da = da.assign_coords(lon=lon180).sortby("lon")
                 da = da.sel(lat=ref_lat.values, lon=ref_lon.values,
@@ -193,14 +234,24 @@ def cmd_prepare(args):
 def cmd_pairs(args):
     """CESM 沿海配对: POP 湿点 → f09 陆地掩码 → 边缘 → KDTree。"""
     os.makedirs(CESM_INT, exist_ok=True)
-    ref = xr.open_dataset(
-        os.path.join(CESM_PROC_DIR, "TREFHT_all_001_2000-2021_europe.nc"))
+    ref = _norm_latlon(xr.open_dataset(_atm_reference()))   # ★F11：不硬编码 aws 名
     atm_lat = ref.lat.values.astype(float)   # 升序?
     atm_lon = ref.lon.values.astype(float)   # -17..47
     ref.close()
 
-    sst_f = find_sst_segments("ALL", "001")[0]
+    sst_segs = find_sst_segments("ALL", "001")             # ★F11
+    if not sst_segs:
+        raise FileNotFoundError(
+            f"找不到 ALL 001 的 POP SST proc 文件；目录 = {CESM_PROC_DIR}")
+    sst_f = sst_segs[0]
     ds = xr.open_dataset(sst_f, decode_times=False)
+    for need in ("KMT", "TLAT", "TLONG"):
+        if need not in ds:
+            ds.close()
+            raise KeyError(
+                f"{os.path.basename(sst_f)} 缺少 POP 静态场 {need}——"
+                "gdex 切片件必须用**第三轮修正后**的 download_cesm1le.py 生成"
+                "（该版本保留 KMT/TLAT/TLONG）；否则请改用 raw+trim 路径。")
     kmt = ds["KMT"].values            # (nlat, nlon) >0 = 湿格点
     tlat = ds["TLAT"].values.astype(float)
     tlon = ds["TLONG"].values.astype(float)
@@ -256,6 +307,8 @@ def cmd_pairs(args):
     pairs_df.to_csv(PAIRS_CSV, index=False)
     print(f"配对成功 {len(pairs_df)}/{len(edge_idx)} (上限 {MAX_PAIR_DIST_DEG}°)"
           f" -> {PAIRS_CSV}")
+    print(f"  ⚠ 网格来源 = {os.path.basename(sst_f)}（POP 索引 {kmt.shape}）；"
+          f"若日后改用另一来源（raw/trim ↔ gdex）必须**重跑 pairs**，否则索引会静默错位。")
 
     # 4) R 域文件 (只检测配对陆点)
     dom = pairs_df[["land_lat", "land_lon"]].drop_duplicates()
@@ -282,11 +335,24 @@ def _load_sst_points(exp, m, pairs_df):
         ds = xr.open_dataset(f)
         tv = pd.DatetimeIndex(ds.time.values)
         if kmt is None:
+            if "KMT" not in ds:
+                ds.close()
+                raise KeyError(
+                    f"{os.path.basename(f)} 缺 POP 静态场 KMT——gdex 切片件需用"
+                    "**第三轮修正后**的 download_cesm1le.py 生成（保留 KMT/TLAT/TLONG）。")
             kmt = ds["KMT"].values
         ds.close()
         nc = Dataset(f)
         v = nc.variables["SST"]                     # (time, nlat, nlon)
         j0, j1 = int(pj.min()), int(pj.max()) + 1
+        i1 = int(pi.max()) + 1
+        if j1 > v.shape[1] or i1 > v.shape[2]:
+            nc.close()
+            raise ValueError(
+                f"{os.path.basename(f)} 的 POP 网格 {tuple(v.shape[1:])} 小于配对索引所需 "
+                f"({j1}, {i1})——coastal_pairs_cesm.csv 与该 SST 文件**不同源**"
+                "（例如 pairs 由 raw/trim 全网格生成、detect 却用了被空间裁剪的 gdex 件）。"
+                "请统一来源后重跑 pairs。")
         block = v[:, j0:j1, :].astype(np.float32)   # (nt, rows, 320) 一次大读
         nc.close()
         rows = block[:, pj - j0, :]                 # (nt, npair, 320)
@@ -296,6 +362,11 @@ def _load_sst_points(exp, m, pairs_df):
         del block, rows
     vals = np.concatenate(series, axis=0).astype(np.float64)   # (nt, npair)
     time = pd.DatetimeIndex([t for tv in times for t in tv])
+    # ★F10：POP `time` = 平均区间**右端** ⇒ 标签 = 物理日 + 1（raw `time_bound` 实测）。
+    #   统一回退 1 天，使 MHW 与 THW 的掩码落在同一物理日；不校正则 MHW 掩码整体晚 1 天。
+    #   阈值池化（_pooled_threshold）与事件日期（cmd_detect）都吃这条时间轴，故一处即全覆盖。
+    if SST_TIME_LABEL_SHIFT_DAYS:
+        time = time + pd.Timedelta(days=SST_TIME_LABEL_SHIFT_DAYS)
     kmt_pt = np.asarray(np.ma.filled(kmt[pj, pi], 0))           # 配对点 KMT
     vals[:, kmt_pt <= 0] = np.nan               # 陆点/死海无值
     return vals, time, kmt_pt
@@ -311,7 +382,22 @@ def _load_sst_points(exp, m, pairs_df):
 #      （原 SST 完全无窗；T2m 是「逐日分位的再分位」）
 #   F4 阈值缓存加入成员名单指纹（原先换 --members 会静默复用旧缓存）
 #   F5 支持 leave-one-out（`exclude` 参数，剔除被检测成员自身）
-THRESH_VERSION = "v3_w11_loo"
+#   （F6 `--members` 全量名单见 select_members；F7 次序统计量 CI 见 _emp_quantile；
+#     F8 日期原点 .normalize() 见 cmd_compound；F9 doy=366 见 _pooled_threshold）
+THRESH_VERSION = C.THRESH_VERSION           # "v3_w11_loo"（下沉 config，值不变）
+
+# ★ 第三轮修复（2026-09-23；见 results/规划一致性审查.md「第三轮」）★
+#   F10 POP SST 时间标签校正 —— POP `time` 是平均区间的**右端**标签
+#       （raw 实测 `time_bound[0] = (1920-01-01 01:00, 1920-01-02)`，标签 1920-01-02），
+#       而 CAM TREFHT 的 `date` 是区间**左端**（标签 = 该物理日）⇒ **POP 标签 = 物理日 + 1**。
+#       不校正时 MHW 掩码相对 THW 掩码整体晚 1 天（复合暴露量级 ±1~2%，并改变
+#       包络判据"MHW 完全涵盖 THW"的边缘日）。此处把 SST 时间轴整体回退 1 天。
+#       ⚠️ 该结论**推翻**了 phase6审计报告 §四 C11 的"已否证"裁决（§0.5 的方向是对的）。
+#   F11 文件发现兼容 gdex 产出命名 `{var}_{exp}_{mem}_2000-2021.nc`
+#       （download_cesm1le.py::cmd_gdex）。原先只认 aws/trim 派生名 ⇒
+#       `--members 20` 时 prepare 对成员 004–020 静默跳过、detect 在成员 004
+#       FileNotFoundError，即"全量只跑 3 个成员"在数据层复现（F6 只修了名单层）。
+SST_TIME_LABEL_SHIFT_DAYS = C.SST_TIME_LABEL_SHIFT_DAYS     # -1
 
 
 def _rle_all(mask):
@@ -926,15 +1012,30 @@ def _sweep_one(sa, sf, idx_a, idx_f, thrs, n_boot):
             prb = np.where((ba == 0) & (bf == 0), np.nan,
                            np.where(bf == 0, np.inf,
                                     ba / np.where(bf == 0, 1.0, bf)))
+            # ★F12（第三轮 P0-3）：补 **FAR 的 bootstrap 分布**——Table 1 要求
+            #   `FAR 0.72 [0.64–0.80]` 这类区间，而旧实现只输出 PR 的 CI。
+            #   FAR = 1 − p_fix/p_all：p_all=0 → nan（无定义）；p_fix=0 且 p_all>0 → 1。
+            #   FAR 有界（≤1），无 PR 的 inf 问题；仍用次序统计量取分位，并给
+            #   `*_fin`（仅有限样本）对照，口径与 PR_lo_fin/PR_hi_fin 一致。
+            farb = np.where(ba == 0, np.nan,
+                            np.where(bf == 0, 1.0,
+                                     1.0 - bf / np.where(ba == 0, 1.0, ba)))
         sv = np.sort(prb[~np.isnan(prb)])
         fin = prb[np.isfinite(prb)]
         lo_f, hi_f = (np.percentile(fin, [CI[0] * 100, CI[1] * 100])
                       if len(fin) else (np.nan, np.nan))
+        svf = np.sort(farb[~np.isnan(farb)])
+        finf = farb[np.isfinite(farb)]
+        lo_ff, hi_ff = (np.percentile(finf, [CI[0] * 100, CI[1] * 100])
+                        if len(finf) else (np.nan, np.nan))
         rows.append({"threshold": float(x), "p_all": p_all, "p_fix": p_fix,
                      "PR": pr, "FAR": far,
                      "PR_lo": _emp_quantile(sv, CI[0] * 100),
                      "PR_hi": _emp_quantile(sv, CI[1] * 100),
                      "PR_lo_fin": float(lo_f), "PR_hi_fin": float(hi_f),
+                     "FAR_lo": _emp_quantile(svf, CI[0] * 100),
+                     "FAR_hi": _emp_quantile(svf, CI[1] * 100),
+                     "FAR_lo_fin": float(lo_ff), "FAR_hi_fin": float(hi_ff),
                      "n_inf": int(np.isinf(prb).sum()),
                      "n_nan": int(np.isnan(prb).sum()), "n_boot": int(n_boot)})
     return pd.DataFrame(rows)
@@ -1037,12 +1138,15 @@ def cmd_attrib(args):
             if len(r):
                 r = r.iloc[0]
                 print(f"    @论文 {y} 参考线 {x:.0f} 天: P_ALL={r.p_all:.3f} "
-                      f"P_fix={r.p_fix:.3f} PR={r.PR:.2f} FAR={r.FAR:.3f} "
+                      f"P_fix={r.p_fix:.3f} PR={r.PR:.2f} "
+                      f"[{r.PR_lo:.2f}–{r.PR_hi:.2f}] FAR={r.FAR:.3f} "
+                      f"[{r.FAR_lo:.3f}–{r.FAR_hi:.3f}] "
                       f"(inf {int(r.n_inf)}/{int(r.n_boot)})")
                 summary.append({"agg": col, "year": y, "threshold": x,
                                 "p_all": r.p_all, "p_fix": r.p_fix,
                                 "PR": r.PR, "FAR": r.FAR,
                                 "PR_lo": r.PR_lo, "PR_hi": r.PR_hi,
+                                "FAR_lo": r.FAR_lo, "FAR_hi": r.FAR_hi,
                                 "n_inf": int(r.n_inf), "boot": boot_mode})
 
         prp = tab.PR.replace([np.inf], np.nan)

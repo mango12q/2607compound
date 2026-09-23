@@ -12,16 +12,21 @@
 |--------|-------------|----------|----------|--------|----------|------|
 | **OISST v2.1 全球** | `data/OISST/oisst_v2.1_1982_2023.nc` | 1982–2023 | 全球 | 0.25° 日度 | 23.1 GB（15340 天 × 720 × 1440） | ✅ 就位 |
 | **OISST v2.1 欧洲裁剪** | `data/OISST/oisst_v2.1_eur_1983_2023.nc` | 1983–2023 | 欧洲 | 0.25° 日度 | 1.1 GB | ✅ 就位 |
+| **OISST temp_raw（未合并原始）** | `data/OISST/temp_raw/oisst-avhrr-v02r01.YYYYMMDD.nc` × 15340 | 1982–2023 | 全球 | 0.25° 日度 | 23.9 GB（**第三轮补登**） | ✅ 就位（合并后仍保留） |
 | **E-OBS tg 合并** | `data/E-OBS/EOBS_tg_1983_2023.nc` | 1983–2023 | 欧洲 | 0.25° 日度 | 0.5 GB（14975 天 × 201 × 464） | ✅ 就位 |
 | **E-OBS tg 分段原始** | `data/E-OBS/tg_ens_mean_0.25deg_reg_*.nc` × 3 | 1980–2023 | 欧洲 | 0.25° 日度 | 0.46 GB | ✅ 就位 |
-| **ERA5 d2m** | `data/ERA5/d2m_global_daily/d2m_global_YYYY_MM.nc` × 573 | 1979–2026 | 全球 | 0.25° 日度 | 40.6 GB | ✅ 就位 |
+| **ERA5 d2m** | `data/ERA5/d2m_global_daily/d2m_global_YYYY_MM.nc` × 573 | 1979–2026 | 全球 | 0.25° 日度 | 40.6 GB（另有未登记 `yearly/` × 47 = 37.7 GiB，见 3a） | ✅ 就位 |
 | **ERA5 sp** | `data/ERA5/sp/pres.sfc.daily.era5.YYYY.nc` × 46 | 1979–2024 | 全球 | **1.0°** 日度 | 4.1 GB | ✅ 就位（⬜ 0.25° 欧洲框见 3b+） |
 | **ERA5 tmax** | `data/ERA5/tmax_eur_daily/tmax_eur_YYYY_MM.nc` × 1 | 1984–2023 | 欧洲 [66N,10W,30N,40E] | 0.25° 日度 | ~0（仅 1984-01） | ⬜ 待下载 |
 | **OAFlux evap** | `data/OAFlux/`（空） | 1991–2020 | 全球 | 1° 月度 | — | ⬜ 待下载 |
 | **CESM1-LE raw** | `data/CESM1-LE/raw/` × 18 文件 | 1850/1920–2080 | 全球 | ~1°（f09_g16） | 109.3 GB | 🔶 成员 001–003 部分 |
 | **CESM1-LE proc** | `data/CESM1-LE/proc/` × 21 文件 | 2000–2021 | 欧洲裁剪 | ~1°（f09_g16） | 14.0 GB | 🔶 成员 001–003 |
 
-**当前磁盘占用**: ~210 GB（数据实际存放在 `E:\2607compound\data\`，通过 NTFS Junction `D:\2607compound\data` 访问）
+**当前磁盘占用**: **实测 254.7 GiB / 273.4 GB**（16,053 文件，`E:\2607compound\data\`，
+经 NTFS Junction `D:\2607compound\data` 访问）。早期文档写的 "~210 GB" 既与自身分量之和不符
+（OISST 24 + E-OBS 0.5 + ERA5 45 + CESM 123 = 192.5），也未计入 OISST `temp_raw`（23.9 GB）
+与 ERA5 `d2m_global_daily/yearly/`（37.7 GiB）——已按实测更正。
+**E: 盘容量 465.8 GB、剩余 190.1 GB（2026-09-23 实测，exFAT）**，是 CESM 全量下载的硬前提。
 
 ---
 
@@ -36,7 +41,8 @@ D:\2607compound\                     ← 工作区根目录（代码/文档/结�
 │   ├── OISST/
 │   │   ├── oisst_v2.1_1982_2023.nc            # 全球合并件 (23.1 GB)
 │   │   ├── oisst_v2.1_eur_1983_2023.nc        # 欧洲裁剪件 (1.1 GB)
-│   │   └── temp_raw/                           # NOAA 按年原始文件
+│   │   └── temp_raw/                           # NOAA 原始文件 × 15340（**按日**，23.9 GB；
+│   │                                           #   `oisst-avhrr-v02r01.YYYYMMDD.nc`，早期写"按年"有误）
 │   ├── E-OBS/
 │   │   ├── EOBS_tg_1983_2023.nc               # 合并件 (0.5 GB)
 │   │   ├── tg_ens_mean_0.25deg_reg_1980-1994_v33.0e.nc
@@ -125,10 +131,21 @@ EOBS_MERGED_FILE = os.path.join(EOBS_DIR, "EOBS_tg_1983_2023.nc")
 > Mixed versions: v33.0e (1980–2010) + v29.0e (2011–2023). Analysis subset to 1983–2023.
 
 **数据集信息**:
-- 变量: `tg`（日平均气温, daily mean）
+- 变量: 分段原始文件为 `tg`（日平均气温, daily mean）；**合并件 `EOBS_tg_1983_2023.nc` 中已改名为 `T2m`**
+  （`load_data.py` 读取时依赖此名）
 - 分辨率: 0.25° × 0.25° 日度
-- 空间范围: 欧洲区域（约 25N–71.5N, 25W–45E）
+- 空间范围: 欧洲区域（**合并件实测** lat 25.375–75.375N / lon −40.375–75.375E；早期文档写的
+  "25N–71.5N, 25W–45E" 为估值，已按实测更正）
 - 网格: 201 lat × 464 lon
+
+**⚠️ 论文口径提示（未决）**: 论文 Methods 只写陆地用 E-OBS "daily near-surface temperature, T2m"，
+**未说明是日平均（tg）还是日最高（tx）**；本项目全程使用 `tg`。该选择已登记为偏差候选
+（`results/复现报告.md` §10 待办 6 / `results/规划一致性审查.md` 第二轮 P0-N1），
+tx 敏感性实验为低优先级待做项。
+
+**⚠️ 气候态跨版本边界**: 本项目气候态为 1983–2012，其中 **2011–2012 落在 v29.0e 段**、
+1983–2010 落在 v33.0e 段——即 90 分位阈值跨了 E-OBS 版本切换点。已做四项拼接检验
+（`results/方法与证据.md` §2：未发现 2011 伪影），但"统一版本重拼"仍是可选的最干净收尾。
 
 **下载地址**: https://cds.climate.copernicus.eu/datasets/insitu-gridded-observations-europe
 
@@ -308,11 +325,14 @@ CESM_EUROPE_LON = (-17.0, 47.0)
 | XGHG（海洋） | POP | SST | `B20TRLENS_RCP85.f09_g16.xghg` | 反事实 |
 
 **⚠️ 时间范围说明**:
-- 文件命名中的实际时段与文档早期描述不同：
-  - 成员 001 的历史段从 **1850** 起（`18500101-20051231`）
-  - 成员 002–020 的历史段从 **1920** 起（`19200101-20051231`）
-  - RCP85 延伸段到 **2080**（`20060101-20801231`）
-  - 分析实际只取 **2000–2021**（`config.py: CESM_PERIOD`）
+- 论文写的是 CESM1-LE「1920 to 2100, RCP8.5 from 2006」（`results/paper_text.txt:627`）；
+  但**本地实际档案要按实验区分**（第三轮更正，避免"档案至 2080"被误读成论文口径）：
+  - **ALL 实验**：RCP85 延伸段在本项目的 GDEX/AWS 清单里到 **2080**（已下载段
+    `20060102-20801231`）；论文声称到 2100，2081–2100 段本地未下载、未证实存在。
+  - **XGHG 单强迫实验**：**本身只到 2080**（`results/复现报告.md` §11.5）。
+  - 成员 001 的历史段从 **1850** 起（`18500101-20051231`），成员 002–020 从 **1920** 起。
+  - 分析实际只取 **2000–2021**（`config.py: CESM_PERIOD`），故上述差异不影响本复现结论。
+- 因此文档中凡写「档案至 2080」处，其准确含义是**本地已下载/可得段止于 2080**，不是论文时序。
 
 **自动化（推荐，已实爬验证源可用）**:
 ```powershell
@@ -334,6 +354,29 @@ python python\download_cesm1le.py gdex --members 20   # SST + XGHG 走 NCAR GDEX
 - 全量 20 成员 proc 子集约 100 GB（基于 P0 成员 001–003 的 14 GB 外推）
 - 如需全量原始文件（raw），每成员约 40 GB，20 成员约 800 GB（不推荐，除非有特殊需求）
 - 存储在 E: 盘（E:\2607compound\data\CESM1-LE\）
+  —— **E: 盘 2026-09-23 实测总 465.8 GB、剩余 190.1 GB**，故 raw 路径（~800 GB）在本机**不可行**；
+  proc 路径（~+100 GB）可行，但需在下载前后用 `Get-Volume` 确认余量。
+
+> ⚠️ **P0 阻塞项（第三轮审查 2026-09-23 发现，开跑全量前必须先修）**：
+> `run_phase6_download.bat` 第 2/3 步执行的是 `python python\download_cesm1le.py gdex --members 20`，
+> 其产出命名为 **`{var}_{exp}_{mem}_2000-2021.nc`**
+> （如 `trefht_xghg_004_2000-2021.nc`、`sst_all_004_2000-2021.nc`，见 `download_cesm1le.py:382`）；
+> 而 `python/phase6_cesm.py::find_t2m_segments/find_sst_segments`（`:111-136`）只识别
+> **raw 派生名**（`TREFHT_all_{m}_2000-2021_europe.nc`、`*xghg.{m}.cam.h1.TREFHT.*_2000-2021.nc`、
+> `*B20TRC5CNBDRD.f09_g16.{m}.pop.h.nday1.SST.*_2000-2021.nc`）。
+> 后果：`prepare` 对成员 004–020 打印「!! 无 TREFHT 段文件, 跳过」，`detect` 在成员 004
+> 抛 `FileNotFoundError`（`:274`）——**全量口径实际只会跑 3 个成员**（与 F5 修复的"静默只跑 3 成员"同类）。
+> 修法（三选一）：① 统一 `gdex` 输出命名；② 给 `find_*_segments` 加该命名分支；
+> ③ 全量改走 `download --urls <manifest>` + `trim`（raw 派生名，但需要 ~800 GB 空间，本机不可行）。
+>
+> ✅ **已按 ②+① 组合修复（2026-09-23，第三轮；仅改代码未运行）**：
+> - `python/phase6_cesm.py` **F11**：`find_t2m_segments` / `find_sst_segments` 现在同时接受
+>   gdex 命名与 aws/trim 派生名；`cmd_prepare` / `cmd_pairs` 不再硬编码
+>   `TREFHT_all_001_2000-2021_europe.nc`；新增 `_norm_latlon()` 兼容 `latitude/longitude`。
+> - `python/download_cesm1le.py`：`cmd_gdex` 对 ocn 件保留 **KMT/TLAT/TLONG**（否则下游 KeyError），
+>   且 `_mask_sst_box` **改为只掩膜、不做空间裁剪**——保持 POP 全局网格，使
+>   `coastal_pairs_cesm.csv` 的网格索引与文件来源无关。
+> - **仍需注意**：gdex 件若在本修复之前生成，需重下；首次运行前先 `py_compile` 与跑自检（均未执行）。
 
 ---
 

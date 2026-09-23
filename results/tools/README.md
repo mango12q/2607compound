@@ -19,5 +19,11 @@
 ## 约定
 
 - 脚本里的相对路径多按 `<repo>/results/xxx.py` 写成 `os.path.join(BASE, "results", ...)`；
-  用 `git mv` 归档后若有脚本报「找不到文件」，改它内部的 `results/` 相对段即可。
+  用 `git mv` 归档后若有脚本报「找不到文件」，改它内部的 `results/` 相对段即可
+  （第三轮审查已把**主文档里引用这些脚本的路径**更新为 `results/tools/<主题>/`，
+  但**脚本自身的内部常量/用法行**仍指向旧的 `results/` 顶层路径，见下条）。
+- **已知遗留（P2，未修）**：`results/tools/phase6审计/phase6_audit_detect.py:42` 的
+  `R_AUDIT` 常量仍指 `D:\2607compound\results\phase6_audit_detect.R`（实际在
+  `results/tools/phase6审计/`）；各脚本头部「用法」注释里的路径同样过期。
+  这些脚本是一次性复算机，运行前需先改路径。
 - 所有脚本都是**一次性研究脚本**，不保证互相 import；按需单独运行。

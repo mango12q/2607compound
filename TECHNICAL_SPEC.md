@@ -949,9 +949,9 @@ def get_grid_pair_info(
 **功能**: 识别复合海洋-陆地热浪。
 
 **复合日定义（2025-09-23 方案 B 定稿）**：
-- 图1a-i / 图1m / 图2 全系：逐日共超标（论文 L477 simultaneously exceed），由 compound_events.py 实现
-- 图1j-l 时序曲线：MHW 包络（论文 L520 fully encompasses），由 fig_jkl_mhw_envelope.py 预计算，fig1_compound_spatial.py 从 fig_jkl_envelope.json 读取
-- 论文引言/结果/模型 Methods 均用 encompassment（L30/L77/L104/L520），仅 L477 用 exceedance；两定义产出不同，本复现分别在不同面板使用，与论文实际做法一致
+- 图1a-i / 图1m / 图2 全系：逐日共超标（论文 L502-503 simultaneously exceed），由 compound_events.py 实现
+- 图1j-l 时序曲线：MHW 包络（论文 L505-506 fully encompasses），由 fig_jkl_mhw_envelope.py 预计算，fig1_compound_spatial.py 从 fig_jkl_envelope.json 读取
+- 论文引言/结果/模型 Methods 均用 encompassment（L30/L77/L104/L505-506），仅 L502-503 用 exceedance；两定义产出不同，本复现分别在不同面板使用，与论文实际做法一致
 
 ```python
 """
@@ -1508,6 +1508,23 @@ def calc_specific_humidity(
 
 ### 3.9 `attribution.py` — FAR/PR 计算 + Bootstrap
 
+> ⚠️ **状态（2026-09-23 第三轮审查）：本节是"设计规格"，不是已落地代码。**
+> `python/attribution.py` **不存在**；Phase 6 归因实际由单体脚本
+> `python/phase6_cesm.py::cmd_attrib`（`_annual_per_pair` / `_sweep_one` /
+> `_boot_indices` / `_emp_quantile` / `_pr_boot`）实现。
+> 阅读本节时请以下列**已实现语义**为准（差异已实测）：
+> 1. **统计单元**：与本节一致（池化区域年暴露，样本 = 模型年，440/组）✅。
+> 2. **FAR/PR 方向**：与本节一致（`FAR = 1 − P_fix/P_all`，`phase6_cesm.py:922`）✅。
+> 3. **边界语义不同**：代码中 `P_all = P_fix = 0` → **PR = nan、FAR = nan**（0/0 不是 ∞）；
+>    仅 `P_fix = 0` 且 `P_all > 0` → PR = inf、FAR = 1。本节下方 `calc_FAR` 的
+>    `if p_counterfactual <= 0: return 1.0` 未区分 0/0，**与实现不一致**。
+> 4. **CI 实现不同**：代码用**次序统计量**（`_emp_quantile`）而非 `np.percentile`，
+>    以免两端都是 `inf` 时算出 `inf − inf = nan`；点估计用全样本比例之比，不是 bootstrap 均值。
+> 5. **暂无 FAR 的置信区间**：`_sweep_one` 只输出 `PR_lo/PR_hi`（含仅有限样本的对照区间），
+>    而 `TECHNICAL_SPEC_PHASE_B.md` 的验收锚点要求 `FAR 0.72 [0.64–0.80]` 这类区间 →
+>    **Table 1 交付前必须补 `FAR_lo/FAR_hi`**。
+> 6. `joblib` / `Parallel` / `N_JOBS` 在本节出现，但代码中**零使用**（bootstrap 已足够轻）。
+
 **文件路径**: `python/attribution.py`  
 **功能**: 对 CESM1-LE 数据进行归因分析，计算 FAR 和 PR，使用并行 bootstrap。
 
@@ -1712,6 +1729,14 @@ def bootstrap_FAR_PRC(
 
 ### 3.9b `gev_return_period.py` — GEV 重现期（图 4）
 
+> ⚠️ **状态（2026-09-23 第三轮审查）：本节是"设计规格"，代码中零实现。**
+> `python/gev_return_period.py` **不存在**，`phase6_cesm.py` 也没有 GEV / 重现期环节；
+> `_annual_per_pair` 目前只产出**复合**口径的聚合列（med_mean / med_p90 / med_max / eur_p90），
+> 图 4a（海洋）、4b（陆地）所需的年暴露序列**尚未生成**。
+> 因此图 4 在 Phase 6 全量跑通后仍需补一个独立模块（或新增 `cmd_gev` 子命令）。
+> 本节的口径（1000 bootstrap + MLE、5/10/20/50/100 年、中位数 + 2.5–97.5% CI、
+> FixGHG→ALL 映射、marine/terrestrial/compound 三类）**仍是对论文的正确转写**，保留为待实现规格。
+
 **文件路径**: `python/gev_return_period.py`
 **功能**: 按论文 Methods "Return level and period estimation using GEV" 计算重现期变化（图 4a–c）。
 
@@ -1818,12 +1843,14 @@ def plot_figure1(output_dir=None):
 **功能**: 串联 **Phase 0–3**（数据预处理 → 热浪检测 → 沿海配对与复合事件 → 年度指标/CHR/共现概率）。  
 **当前实际步骤数**: 4 个 Phase（不是 6 步）；**不含归因与湿热环节**。
 
-> ⚠️ **规范与实现的差异说明**（2026-09-23 复核）：
+> ⚠️ **规范与实现的差异说明**（2026-09-23 第二轮复核；第三轮更正检测链路）：
 > 本节此前按"6 步含归因"的旧设计书写，与实现不符，已按实际代码重写要点。
 > - Phase 5（WBT/SH，图 5–6）与 Phase 6（CESM 归因，图 3–4）**尚未接入 run_all.py**；
->   Phase 6 目前是独立入口 `python/phase6_cesm.py`（prepare → pairs → detect → compound → attrib）。
-> - 陆地检测经 `detect_thw_wrapper` → `python/detect_thw.R`（**已归档脚本**）；
->   正式链路是 `python/detect_events.R`，缓存缺失时需注意此差异。
+>   Phase 6 目前是独立入口 `python/phase6_cesm.py`（pairs → prepare → detect → compound → attrib）。
+> - **✅ 第三轮更正**：`run_all.py` 现已改为**海陆双路都走正式链路 `python/detect_events.R`**
+>   （`run_all.py:47,73-95,161-181`，2026-09-23 提交 `e622993`）；
+>   `detect_thw_wrapper` → `detect_thw.R`（已归档脚本）**已不在主链路中**，
+>   仅保留供单点复核。此前的"THW 环节仍指向 detect_thw.R"说法已过期。
 > - 缓存命中时各 Phase 直接读 `results/intermediate/` 下已有产物（~1 min）；
 >   全量重检陆地约 22 min。
 
@@ -1854,8 +1881,10 @@ from config import (
     INTERMEDIATE_DIR, FIGURES_DIR, TABLES_DIR, LOGS_DIR,
 )
 
-import preprocess, load_data, detect_mhw, detect_thw_wrapper
+import preprocess, load_data, detect_mhw
 import coastal_mask, compound_events, calc_chr
+# ★ 第三轮更正：THW 不再经 detect_thw_wrapper / detect_thw.R，
+#   改为与 MHW 共用 detect_events.R（见 phase1_detection 内注释与 run_all.py:47,181）
 
 
 def phase0_preprocess():
@@ -1867,8 +1896,9 @@ def phase1_detection():
     """沿海配对 + MHW/THW 检测。缓存命中（COASTAL_PAIRS_CSV / MHW_EVENTS_CSV /
     THW_EVENTS_CSV 已存在）则直接读 CSV，否则调用检测。
 
-    ⚠️ THW 走 detect_thw_wrapper.detect_thw() → python/detect_thw.R（归档脚本）。
-    正式重检请改用 python/detect_events.R。
+    ✅ 第三轮更正：既有 MHW 也有 THW 都调用**正式链路** `python/detect_events.R`
+    （`run_all.py:73-95` 的 `_run_detect_events()`），不再使用 `detect_thw_wrapper`
+    与已归档的 `detect_thw.R`。
     """
     ...
 
@@ -1904,18 +1934,19 @@ if __name__ == "__main__":
 | 阶段 | 入口 | 主要产物 | 状态 |
 |---|---|---|---|
 | Phase 5 湿热应力（图5–6） | ⬜ `python/calc_wbt.py` + `fig5_sst_trend.py` + `fig6_wbt.py` | `wbt_daily.nc`、`sh_daily.nc`、`sst_trend.nc` | 未实现 |
-| Phase 6 归因（图3–4） | ✅ `python/phase6_cesm.py`（prepare/pairs/detect/compound/attrib） | `bootstrap_results.pkl`、`fig7_p0_validation.png`（P0 版） | P0 验证完成，全量未跑 |
+| Phase 6 归因（图3–4） | ✅ `python/phase6_cesm.py`（pairs → prepare → detect → compound → attrib） | `results/tables/phase6_attrib_sweep{tag}_*.csv`、`phase6_attrib_summary{tag}.csv`、`results/figures/fig3_attribution_sweep{tag}.png` | P0 验证完成（F1–F9 修复 + D7 口径已定），全量未跑 |
 
-Phase 6 的 bootstrap 调用形态与 §3.9 一致（**只传池化后的区域年暴露序列，不传成员列表**）：
+Phase 6 的 bootstrap 调用形态与 §3.9 的**统计单元**一致（**只传池化后的区域年暴露序列，不传成员列表**），
+但**函数名与产物以实际实现为准**（第三轮更正——`bootstrap_FAR_PRC` 这个名字在代码中不存在）：
 
 ```python
+# 实际实现：python/phase6_cesm.py 的 cmd_attrib → _annual_per_pair → _sweep_one/_boot_indices/_emp_quantile
 # 每类事件 / 每个区域各取一条 (member, year) 的区域年暴露序列，先池化为 440 模型年
-exposure_all = region_annual_exposure(cesm_all)     # shape (440,)
-exposure_fix = region_annual_exposure(cesm_fixghg)  # shape (440,)
-
-thresholds = np.arange(10, 100, 5)                  # 10, 15, …, 95 天
-attr = bootstrap_FAR_PRC(exposure_all, exposure_fix, thresholds,
-                         n_bootstrap=N_BOOTSTRAP, n_jobs=N_JOBS)
+#   --agg med_mean（D7.3 主口径；另有 med_p90 / med_max / eur_p90）
+#   --thr-step 1.0  → 0..100 天阈值扫描（D7.2），输出 PR/FAR 曲线与 62/78/72 参考线
+#   --boot indep    → 模型年独立重采样（D7.5；block = 成员内分层 + 块，作附录）
+#   --n-boot 1000
+# 产物：results/tables/phase6_attrib_sweep{tag}_{agg}.csv、phase6_attrib_summary{tag}.csv
 ```
 
 ---
@@ -2094,7 +2125,7 @@ def detect_thw(eobs_filepath: str, output_path: str, clim_period: tuple):
 | m | 共现概率（复合天数 ÷ 陆地热浪天数）空间分布，**2003–2023 平均** |
 
 **输出**: `results/figures/fig1_compound_spatial.pdf`
-**口径提醒**: j–l 用 **MHW 包络**（论文 L520 "fully encompasses"），a–i/m 用 **逐日共超标**（L477）；
+**口径提醒**: j–l 用 **MHW 包络**（论文 L505-506 "fully encompasses"），a–i/m 用 **逐日共超标**（L502-503）；
 详见 §3.6 与 `results/复现报告.md` 方案 B。
 
 ### 5.3 `fig2_chr.py` — 图 2
@@ -2297,13 +2328,30 @@ python python\run_all.py
 python python\figures.py
 python python\fig_jkl_mhw_envelope.py     # 补充图 S2
 
-# Phase 6 归因（独立入口，P0 验证版）
-python python\phase6_cesm.py prepare --members 3
+# Phase 6 归因（独立入口）
+# ⚠️ 2026-09-23 第三轮审查更正：本节原命令序列**逐字执行会失败**——
+#    detect 的 --tag 默认 "_x2"（写 thw_x2_*.csv），而 compound/attrib 的 --tag 默认 ""
+#    （读 thw_*.csv），成员全部走到「!! 缺事件表, 跳过」，attrib 在空表上抛 EmptyDataError。
+#    两端的 --tag 必须一致。以下为可执行序列（P0 3 成员）：
 python python\phase6_cesm.py pairs
-python python\phase6_cesm.py detect
-python python\phase6_cesm.py compound
-python python\phase6_cesm.py attrib
+python python\phase6_cesm.py prepare --members 3
+python python\phase6_cesm.py detect  --members 3 --baseline xghg --loo --tag _x2
+python python\phase6_cesm.py compound --members 3 --tag _x2 --compound-def envelope
+python python\phase6_cesm.py attrib  --members 3 --tag _x2 --compound-def envelope
+# 全量 20 成员：把 --members 改为 20（口径与决策见 results/复现报告.md §5 D7）
 ```
+
+> ✅ **Phase 6 全量开跑前的两条阻塞项已于 2026-09-23 修复（第三轮，仅改码、未运行验证）**：
+> ① **F11**：`find_t2m_segments` / `find_sst_segments` 现已同时接受 gdex 命名
+>    （`trefht_{exp}_{m}_2000-2021.nc` / `sst_{exp}_{m}_2000-2021.nc`）与 aws/trim 派生名；
+>    `cmd_prepare` / `cmd_pairs` 不再硬编码 `TREFHT_all_001_2000-2021_europe.nc`；
+>    `download_cesm1le.py::cmd_gdex` 现保留 KMT/TLAT/TLONG，且 `_mask_sst_box` 只掩膜不裁剪
+>    （保全局 POP 网格 ⇒ pairs 索引与文件来源解耦）。
+> ② **F10**：`_load_sst_points` 已对 POP SST 时间轴整体回退 1 天
+>    （POP `time` = 平均区间右端 ⇒ 标签 = 物理日 + 1）。
+> **首次运行前请先做静态检查**（本轮未执行）：`py_compile` 三个改动文件 +
+> `python results\phase6_selftest.py`；旧 `_x/_x2/_x3` 产物属未校正口径，需用新 `--tag` 重跑
+> `detect` + `compound`。
 
 > ⚠️ `run_all.py` **没有** `--skip-attribution` / `--n-jobs` 等参数——它是 Phase 0–3 的
 > 四段式脚本，归因与湿热分析不由它调度（见 §3.13）。

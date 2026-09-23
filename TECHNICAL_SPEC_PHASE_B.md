@@ -55,7 +55,9 @@ def load_cesm1le_dir(forcing: str) -> xr.Dataset:
   → 每组 **440 个成员-年**（= 论文的 440 模型年）；两组共 880 个成员-年
 - ⚠️ **模型侧检测基准期见步骤 2b**（不能沿用观测的 1983–2012）
 - 输出每个成员的 compound_events（建议保存为 per-member 的 NetCDF 或汇总为一个大表）
-- **注意**: 检测耗时较长（P0 实测 27 s/成员，全量 40 成员约 20 min + I/O），建议并行化
+- **注意**: 检测耗时——P0（3 成员）实测 27 s/成员；**全量 40 个模拟在 leave-one-out 下会显著变慢**
+  （每个成员都要重建一次阈值池：读 19 个成员的 SST/T2m，审计实测单池约 3.1 s/成员，
+  推算全量约 40–60 min，**未实测**）。建议并行化并按成员断点续跑。
 
 ### 步骤 2b：模型侧检测基准期（⚠️ 论文未明示，口径已定）
 
@@ -66,7 +68,8 @@ def load_cesm1le_dir(forcing: str) -> xr.Dataset:
 
 > **XGHG 集合合并反事实基准 + leave-one-out**
 > 把**除当前被检测成员外**的全部 XGHG 成员的 2000–2021 日值合并池化，
-> 计算逐 dayofyear 90 分位阈值（SST 逐 doy 池化；T2m 按 heatwaveR 11 天窗语义合并池化），
+> 计算逐 dayofyear 90 分位阈值（**SST 与 T2m 同走 11 天滑动窗口**，
+> 与 heatwaveR `ts2clm` 语义一致；见 `phase6_cesm.py::_pooled_threshold`，`kind='sst'|'t2m'` 共用同一实现），
 > 再对 ALL 与 XGHG 两组分别检测。
 
 **为什么是 leave-one-out**：把被检测成员自身也放进阈值池（in-sample）会
@@ -83,7 +86,11 @@ def load_cesm1le_dir(forcing: str) -> xr.Dataset:
    缓存名带成员名单指纹 `thresh_{sst,t2m}_xghg_v3_w11_loo_<members>.npz`）。
    3 成员实测：LOO 使 XGHG 复合暴露 +4.2%/+11.0%/+29.1%，阈值 |Δ| 均 0.07–0.12 °C（SST）/0.24 °C（T2m）。
    **注意**：3 成员下 LOO 后池只剩 2 个，成员数噪声会高估影响；20 成员时（19 vs 20）小得多。
-   详见 `results/Phase6审计报告.md §5`。
+   详见 `results/phase6审计报告.md §5`。
+   > ★ **第三轮补充（2026-09-23 已改码、未运行）**：模型侧还有两处**口径正确性**修复必须随全量一起生效——
+   > **F10** POP SST 时间标签校正（`_load_sst_points` 时间轴回退 1 天；否则 MHW 掩码比 THW 晚 1 天）；
+   > **F11** 文件发现兼容 gdex 命名 + `cmd_gdex` 保留 KMT/TLAT/TLONG、`_mask_sst_box` 不裁剪
+   > （否则 20 成员全量在数据层静默退回 3 个成员）。详见 `results/规划一致性审查.md` 第三轮。
 2. 三项口径（leave-one-out / in-sample / ALL 自身）的 PR-FAR 曲线需同图对比并写入复现报告。
 3. 本节口径与理由必须同步进 `results/复现报告.md` 的偏差清单。
 
@@ -92,7 +99,16 @@ def load_cesm1le_dir(forcing: str) -> xr.Dataset:
 
 ### 步骤 3：识别复合热浪并计算年度天数
 
-**涉及文件**: `python/compound_events.py`、`python/calc_chr.py`
+**涉及文件**: `python/compound_events.py`、`python/calc_chr.py`、`python/phase6_cesm.py`
+
+> ⚠️ **模型侧复合定义（D7.1，2026-09-23 用户拍板）**：CESM 侧一律用 **MHW 包络**
+> （论文**模型** Methods `results/paper_text.txt:546`："a compound heatwave day is defined as a day
+> when a marine heatwave fully encompasses a terrestrial heatwave"），
+> 实现为 `phase6_cesm.py::_envelope_mask` / `_mask_to_segments`，
+> CLI 默认 `--compound-def envelope`；逐日共超标口径（论文观测 Methods L503）保留为
+> `--compound-def exceed` 作敏感性。**注意**：观测侧主图（图1a–i/1m/图2）仍用共超标，
+> 故本复现的观测与模型两端口径**不同**，而论文 L544-545 声称"同一套方法一致地用于两者"——
+> 该不一致已登记于 `results/复现报告.md` §5.1#1/#2，属论文原文自相矛盾下的取舍。
 
 **函数要求**:
 ```python
@@ -138,10 +154,27 @@ def bootstrap_FAR_PRC(all_data, fixghg_data, thresholds, n_bootstrap=1000, n_job
 - 概率计算：`p = (区域年暴露时间 >= threshold).sum() / 440`（样本 = 模型年，非格点-年）
 - FAR/PR 公式（论文 Eq.2/3）：`FAR = 1 - P_counterfactual / P_factual`（= 1 − P_FixGHG/P_ALL），
   `PR = P_factual / P_counterfactual`
-- 除零保护：`P_counterfactual <= 0` 时 `FAR=1`, `PR=inf`
-- 并行：`joblib.Parallel(n_jobs=n_jobs, backend='loky', verbose=5)`
-- 中间保存：每 100 次迭代保存一次 `pickle.dump`
-- 置信区间：5% 和 95% 分位数
+- 除零保护（**按实际实现更正**）：`P_counterfactual = 0` 且 `P_factual > 0` → `FAR = 1`, `PR = inf`；
+  **`P_factual = P_counterfactual = 0` → `PR = nan`（0/0 不是 ∞）**。
+- 置信区间：5% / 95% 分位数，用**次序统计量**实现（不是 `np.percentile`）——
+  两端都是 `inf` 时 `np.percentile` 会算出 `inf − inf = nan`，把"上界为 ∞"这个正确结论变成 nan。
+- 点估计：用**全样本**比例之比，不是 bootstrap 分布的均值（旧文档写的 `PR_mean` 已作废）。
+
+**✅ 已实现口径（D7.2/D7.3/D7.5，2026-09-23 用户拍板；第三轮补入本节）**:
+
+| 决策 | 口径 | CLI |
+|---|---|---|
+| D7.2 | 归因输出 = **0–100 天阈值扫描**（步长 1 天），并标注论文 Fig.3c 三条年份参考线 **2003=62 / 2022=78 / 2023=72** 天；不再只报单点阈值 | `--thr-step 1.0` |
+| D7.3 | 聚合主口径 = **`med_mean`**（区域暴露均值）；`med_p90` 作敏感性、`med_max`（旧 P0 口径）降为参考；另有 `eur_p90` | `--agg med_mean med_p90 med_max` |
+| D7.5 | bootstrap 主口径 = **模型年独立重采样**（论文 Methods `:585-587` 字面）；成员内分层 + 块的 `block` 模式作附录稳健性检验 | `--boot indep`（默认）/ `--boot block` |
+| — | 迭代次数 | `--n-boot 1000` |
+
+- 并行：**实际实现未用 joblib**（样本是 440 个标量，秒级；`joblib`/`N_JOBS` 在 `phase6_cesm.py` 中零使用）。
+- 中间产物（实际）：`results/tables/phase6_attrib_sweep{tag}_{agg}.csv`、
+  `phase6_attrib_summary{tag}.csv`、`results/figures/fig3_attribution_sweep{tag}.png`
+  （旧文档写的 `bootstrap_results.pkl` 与 `pickle` 落盘**不存在**）。
+- ⬜ **缺口**：`_sweep_one` 目前**只输出 PR 的置信区间**，无 `FAR_lo/FAR_hi`；
+  而 B.5 的 Table 1 锚点要求 `FAR 0.72 [0.64–0.80]` 这类区间 → **Table 1 交付前必须补**。
 
 ### 步骤 5：GEV 重现期分析（图 4a–c）
 
@@ -274,6 +307,11 @@ function fig4_return_period(return_thresholds, return_period_ALL, return_period_
 > 但 B.3 的 7 个步骤中没有它的位置。**正式版必须补一步**：用三个观测阈值
 > （62 / 78 / 72 天）在 FAR/PR 曲线上取样，输出 `results/tables/table1.csv`。
 > 注意 2022 的 PR 上界为 **∞**（反事实概率为 0），需按 `calc_PR` 的除零保护写成 `inf` 而非数值。
+>
+> ⚠️ **第三轮补充（2026-09-23）**：Table 1 还缺**先决条件**——`_sweep_one` 目前只输出 PR 的
+> 置信区间（`PR_lo/PR_hi` 及仅有限样本的对照区间），**没有 FAR 的区间**；而本表要求的
+> `FAR 0.72 [0.64–0.80]` 形态必须有 `FAR_lo/FAR_hi`。故交付顺序为：
+> 先给 `_sweep_one` 补 FAR 次序统计量区间 → 再在 62/78/72 三点取样 → 最后写 `table1.csv`。
 
 ## B.6 阶段 B 的磁盘管理
 

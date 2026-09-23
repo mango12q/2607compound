@@ -98,8 +98,6 @@ def mhw_events_to_daily(events: pd.DataFrame, time, lat, lon) -> xr.DataArray:
 
 ### 步骤 4：陆地热浪检测
 
-### 步骤 4：陆地热浪检测
-
 **涉及文件**: `python/detect_events.R`（正式）／`python/detect_thw.R`（**已归档，勿重跑**）
 
 **调用约定（实际签名）**:
@@ -172,8 +170,8 @@ def calc_standalone_days(thw_events, mhw_events, grid_pairs, time, lat, lon) -> 
 
 **技术细节**:
 - ⚠️ **实现现状（方案 B）**：`python/compound_events.py` 实现的是**逐日共超标**
-  （论文 L477 "simultaneously exceed"），用于图1a–i / 图1m / 图2；
-  图1 j–l 曲线另用 **MHW 包络**（论文 L520 "fully encompasses"），
+  （论文 L502-503 "simultaneously exceed"），用于图1a–i / 图1m / 图2；
+  图1 j–l 曲线另用 **MHW 包络**（论文 L505-506 "fully encompasses"），
   由 `python/fig_jkl_mhw_envelope.py` 预计算 → `results/tables/fig_jkl_envelope.json`。
   `is_event_contained`（下）为事件级涵盖判定，保留供包络口径复用。
 - 独立判定：THW 按日扣除共超标日（保证 复合日 + 独立日 = 全部 THW 日）
@@ -288,6 +286,7 @@ function fig2_chr(lon, lat, compound_days_mean, standalone_days_mean, CHR_ts, CH
 | 验证项 | 期望值 | 容差 | 验证方法 | 现状 |
 |--------|--------|------|----------|------|
 | 2022 年地中海复合暴露天数 | ~78 天 | ±5 天 | 对比 Table 1 | ⚠ 未命中（主图口径 20.7；见复现报告 §6） |
+| 图2c 早期（1983–2002）CHR "在 1 附近" | ~1 | - | 对比正文 | ⚠ 中位数仅 **0.374**（0.06–0.79，约低 2.7 倍）；2003 起中位数 1.20 ✅（第三轮补登，见复现报告 §4/§1.4） |
 | 2023 年 CHR 峰值 | 3.5 | ±0.2 | 对比正文 | ✅ 3.19（−9%） |
 | 共现概率（地中海） | >0.8 | - | 对比图 1m | ✅ max 0.879 |
 | 图2a 复合天数（若干南欧/东欧沿岸 > 20 天/年） | >20 | - | 对比图 2a | ✅ p95 = 22.3 |

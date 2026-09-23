@@ -338,20 +338,21 @@ def cmd_manifest(args):
 
 
 def _mask_sst_box(ds):
-    """POP 曲线网格: 按 TLAT/TLON 掩膜到欧洲框(略放宽)后裁掉全空行列。"""
+    """POP 曲线网格: 按 TLAT/TLON 掩膜到欧洲框。
+
+    ★ 第三轮（2026-09-23）：**不再做 isel 裁剪**。
+    原因：`results/intermediate/cesm/coastal_pairs_cesm.csv` 缓存的是**全局 POP 网格索引**
+    （审计实测海点索引 277–365 / 26–87）。若 gdex 件按欧洲框裁掉前若干行列，索引整体位移；
+    一旦 pairs 与 detect 来自不同来源（raw/trim ↔ gdex）就会**静默错配**。
+    因此这里只做 NaN 掩膜、保持全局网格形状（体积代价由 zlib 压缩吸收）。
+    """
     tlat, tlon = ds["TLAT"], ds["TLON"]
     lon2 = (tlon + 180) % 360 - 180
     mask = (tlat >= 26) & (tlat <= 76) & (lon2 >= -25) & (lon2 <= 55)
     ds = ds.where(mask)
-    mv = np.asarray(mask.values)
-    js = np.where(mv.any(axis=1))[0]
-    iis = np.where(mv.any(axis=0))[0]
-    if len(js) == 0 or len(iis) == 0:
+    if not bool(np.asarray(mask.values).any()):
         raise RuntimeError("SST 欧洲框掩膜为空")
-    vdim = ds["SST"].dims[-2]
-    hdim = ds["SST"].dims[-1]
-    return ds.isel({vdim: slice(int(js[0]), int(js[-1]) + 1),
-                    hdim: slice(int(iis[0]), int(iis[-1]) + 1)})
+    return ds
 
 
 def cmd_gdex(args):
@@ -388,12 +389,33 @@ def cmd_gdex(args):
             parts = []
             for r in sorted(segs, key=lambda x: x["seg_start"]):
                 ds = xr.open_dataset(r["dods_url"])  # netCDF4 DAP
-                ds = ds[[var]]                        # 只取目标变量, 大幅减少传输
+                # ★ 第三轮（2026-09-23）：只取目标变量会丢掉 POP 曲线网格的静态场，
+                #   而下游 `phase6_cesm.py` 必需它们——
+                #     · `cmd_pairs` / `_load_sst_points` 读 KMT（湿点掩膜）与 TLAT/TLONG
+                #     · `_mask_sst_box` 本身也要 TLAT/TLONG
+                #   故 ocn 件显式保留这三者（体积可忽略）；atm 仍只取目标变量。
+                keep = [var]
+                if comp == "ocn":
+                    keep += [v for v in ("KMT", "TLAT", "TLONG")
+                             if v in ds.variables and v not in keep]
+                ds = ds[keep]
                 ds = _slice_time_period(ds)
                 if comp == "atm":
                     ds = _crop_europe(ds)
                 parts.append(_load_with_retry(ds))
-            merged = xr.concat(parts, dim="time").sortby("time") if len(parts) > 1 else parts[0]
+            if len(parts) > 1:
+                # 静态场不参与时间维拼接，只从首段取一份；否则会被 concat 广播成
+                # (nseg, nlat, nlon)，下游按 2-D 索引 `kmt[pj, pi]` 会出错。
+                p0 = parts[0]
+                statics = {v: p0[v] for v in p0.variables
+                           if v not in p0.dims and v not in (var, "time")}
+                merged = xr.concat([p[[var]] for p in parts], dim="time").sortby("time")
+                merged = merged.drop_vars([v for v in statics if v in merged.variables],
+                                          errors="ignore")
+                if statics:
+                    merged = merged.assign(statics)
+            else:
+                merged = parts[0]
             if comp == "ocn":
                 merged = _mask_sst_box(merged)
             tmp = out + ".part.nc"
