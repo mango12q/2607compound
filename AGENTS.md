@@ -4,7 +4,9 @@
 
 学术复现项目，非典型软件仓库。目标：复现论文 *Compound coastal marine–terrestrial heatwaves associated with humid-heat stress in Europe*（Scientific Reports 2025）。
 
-**当前进度（2026-09-23）**：Phase 1-4（观测链路：检测→配对→复合→图1/图2/S1/S2）完成；图1j-l 已切换为 MHW 包络口径（方案 B），共超标口径备份为 fig1_compound_spatial_exceedance_backup.*，锚点基本命中；Phase 6 P0（CESM 3 成员管线 + v2 反事实基准）验证通过，全量未跑；Phase 5（湿热应力）与 Phase 7（写作）未开始。详见 `results/复现报告.md`。
+**当前进度（2026-09-23）**：Phase 1-4（观测链路：检测→配对→复合→图1/图2/S1/S2）完成；图1j-l 已切换为 MHW 包络口径（方案 B），共超标口径备份为 fig1_compound_spatial_exceedance_backup.*；**图1j/l 的绝对量级已定稿为"未复现项"**（定性一致、定量不可复现、原文口径不足以唯一确定——见 `results/复现报告.md` §6，停止口径搜索）；Phase 6 P0（CESM 3 成员管线 + v2 反事实基准）验证通过，全量未跑；Phase 5（湿热应力）与 Phase 7（写作）未开始。详见 `results/复现报告.md`。
+
+**2026-09-23 第三批：下载脚本就绪 + 图1j/l 定稿**：① Phase 5/6 下载脚本全部编辑就绪并 dry-run 验证（**均未运行**）——新增 `python/download_era5_sp025.py`（0.25° sp 欧洲框，数据集 3b+），给 `download_era5_tmax.py` 补 `--dry-run`，新增两个一键入口 `run_phase5_downloads.bat` / `run_phase6_download.bat`；② 图1j/l 定稿为未复现项（THW 硬约束 23.2/35.1/48.3 天 ⇒ 共超标口径封顶；MHW 包络对区域框高度敏感；8 区域框扫描无一口径满足论文四约束）；③ 修正 `diagnose_subbasin.py` 的归一化（`Σwi·d/n` → `Σwi·d/Σwi`），并据此**撤销**复现报告与修订报告中不可复算的"西地中海弧 76.0/68.5 唯一全面命中"结论。详见 `results/复现报告.md` §6 与 `results/S1读取与图6年份判据.md`。
 
 **2026-09-23 规划文件一致性审查与修正**：对照论文 Methods/Results 全文审查全部规划文档，6 处实质性不一致已修正——① FAR 公式写反（SPEC §3.9 / PHASE_B，实际代码本正确）；② 归因统计单元改为"区域年暴露时间池化 440 模型年"（论文口径）；③ 新增 GEV 重现期规范（SPEC §3.9b + PHASE_B 步骤5；图4 marine/terrestrial/compound 三类，2.5–97.5% CI 与图3 的 5–95% 区分，config 新增 `GEV_RETURN_PERIODS`/`GEV_CI`）；④ `DATA_REQUIREMENTS` 立项 ERA5 sp 0.25° 欧洲框下载任务（数据集 3b+，现 sp 为 1.0° 偏差）；⑤ PHASE_A 图1 面板年份/区域、PHASE_C 蒸发/SST 验证锚点按论文更正；⑥ `docs/复现方案.md` 全面同步（E-OBS 1983–2023、复合定义方案 B、MHW 工具 R heatwaveR、XGHG=GHG 固定已实证 co2vmr 恒定 303 ppm）。详见 `results/规划文件与论文一致性审查.md`。
 
@@ -25,10 +27,17 @@
 偏离两包默认（TRUE/31 天窗），理由见 `results/复现报告.md` D2。
 
 下载工具：
-- `python/download_cesm1le.py` + `run_p0_download.bat` — CESM1-LE（AWS zarr / GDEX，断点续传，走系统代理）
-- `python/download_era5_tmax.py` — ERA5 日最高气温（CDS daily-statistics；需 CDS 凭据，已配置）
+- `python/download_cesm1le.py` + `run_p0_download.bat`（P0 3 成员）/ `run_phase6_download.bat`（全量 20 成员）
+  — CESM1-LE（AWS zarr / GDEX，断点续传，走系统代理）
+- `python/download_era5_tmax.py` — ERA5 日最高气温（CDS daily-statistics；支持 `--dry-run`）
+- `python/download_era5_sp025.py` — ERA5 **0.25°** 地表气压欧洲框（数据集 3b+；支持 `--dry-run`）
 - `python/download_oaflux_evap.py` — OAFlux 蒸发（WHOI 多镜像自动降级）
+- `run_phase5_downloads.bat` — 一键跑 tmax + sp 0.25° + OAFlux（Phase 5 的全部输入）
 - `scripts/translate_to_word.py` — 读取 `pdf_extract/` 图片生成中文翻译 Word（注意：其引用的图片文件名与当前 `pdf_extract/` 实际文件名不一致，需先核对）
+
+> 下载脚本 2026-09-23 已全部就绪并 dry-run 验证通过（**尚未运行**）：
+> tmax 待下 479 个月、sp 0.25° 待下 480 个月、OAFlux 待下、CESM 待下 17 个成员。
+> 建议先跑 Phase 5 那三项（几小时），同时后台启动 CESM 全量（4–5 天）。
 
 ## 目录结构（已建成；`data` 为 NTFS Junction → `E:\2607compound\data`）
 
@@ -83,9 +92,12 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
 |------|----------|
 | 一键复现 Phase 0-3 | `python python\run_all.py`（缓存命中 ~1 min；全量重检陆地 ~22 min）|
 | 出图 1/2/S1/S2 | `python python\figures.py` + `python python\fig_jkl_mhw_envelope.py` |
-| 下 ERA5 tmax | `python python\download_era5_tmax.py`（`--merge` 合并） |
-| 下 OAFlux | `python python\download_oaflux_evap.py` |
-| 下 CESM1-LE | `run_p0_download.bat`（P0）/ `python python\download_cesm1le.py aws|gdex --members 20` |
+| **下 Phase 5 全部输入** | `run_phase5_downloads.bat`（= ERA5 tmax + ERA5 sp 0.25° + OAFlux） |
+| **下 CESM 全量** | `run_phase6_download.bat`（20 成员，~750 GB，4–5 天） |
+| 下 ERA5 tmax | `python python\download_era5_tmax.py [--dry-run]`（`--merge` 合并） |
+| 下 ERA5 sp 0.25° | `python python\download_era5_sp025.py [--dry-run]`（数据集 3b+） |
+| 下 OAFlux | `python python\download_oaflux_evap.py [--probe]` |
+| 下 CESM1-LE | `run_p0_download.bat`（P0 3 成员）/ `python python\download_cesm1le.py aws\|gdex --members 20` |
 | Phase 6 归因（P0） | `python python\phase6_cesm.py prepare --members 3` → `pairs` → `detect` → `compound` → `attrib` |
 | 检查数据完整性 | `python python\verify_data.py` |
 | 环境搭建 | 见 §技术栈；关键包 xarray/cartopy/heatwaveR(R)/cdsapi |
@@ -100,4 +112,6 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
 - `results/复现报告.md` — 进度、锚点验证总表、方法学决策记录（D1–D6）、偏差清单 §5.1
 - `results/规划文件与论文一致性审查.md` — 第一轮审查（2026-09-23）
 - `results/规划文件与论文一致性审查_第二轮复核.md` — 第二轮独立复核（2026-09-23），
-  含第一轮的错误更正与 5 项未解决的方法学问题（**Phase 5/6 开工前必须先读**）
+  含第一轮的错误更正与 5 项方法学问题的处置（**Phase 5/6 开工前必须先读**）
+- `results/S1读取与图6年份判据.md` — 读取论文 Supplementary Fig. S1：图6 非复合年判据（D）
+  + 图1j/l 缺口的量化定位（**读 §五 的定稿结论即可**）

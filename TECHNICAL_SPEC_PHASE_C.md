@@ -19,9 +19,15 @@
    （"Daily maximum WBT is estimated from ERA5 reanalysis using maximum temperature,
    dew point temperature, and surface pressure"）。具体近似式论文未给，见
    `TECHNICAL_SPEC.md` §3.8 的 Stull / 迭代双实现，经锚点验证后定稿。
-2. **sp 分辨率偏差**：论文声明 ERA5 相关变量均为 0.25°，现有 sp 为 1.0°；
-   0.25° 欧洲框下载任务已立项（数据集 3b+）。在就位前，WBT/SH 会在 1.0° 气压场上
-   混合 0.25° 温露场——**属需登记的降级**，不得无声带过。
+2. **数据下载脚本已就绪（2026-09-23，均未运行）**：
+   - `python/download_era5_tmax.py`（0.25° 欧洲框，479 个月待下，支持 `--dry-run`）
+   - `python/download_era5_sp025.py`（**0.25° 欧洲框**，480 个月待下，支持 `--dry-run`）
+   - `python/download_oaflux_evap.py`（多镜像自动降级，`--probe` 只探测）
+   - 一键入口：`run_phase5_downloads.bat`
+3. **sp 分辨率偏差修正路径**：论文声明 ERA5 相关变量均为 0.25°，现有 sp 为 1.0°；
+   数据集 3b+ 的 0.25° 欧洲框脚本已就绪。**在 0.25° 件就位前不要开始算 WBT/SH**——
+   否则会在 1.0° 气压场上混合 0.25° 温露场，属需登记的降级。
+   若最终决定不下载，必须在复现报告偏差清单中写明理由，不得无声带过。
 
 ## C.3 处理流程（10 个步骤）
 

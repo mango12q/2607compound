@@ -1,4 +1,4 @@
-﻿# 数据下载要求
+# 数据下载要求
 
 > **最后更新**: 2026-09-23（本次：新增 3b+ 0.25° sp 欧洲框下载任务、OISST v2.1/v2.0 版本口径说明；
 > 体量按第二轮复核实测值刷新；数据状态与 `config.py` 对齐）
@@ -180,7 +180,17 @@ EOBS_MERGED_FILE = os.path.join(EOBS_DIR, "EOBS_tg_1983_2023.nc")
 **为什么需要**: 论文 Methods 声明 WBT/SH 相关 ERA5 变量均为 0.25°；现有 sp 为 1.0° 全球件，
 把 1.0° 重采样到 0.25° 不产生新信息，属方法学降级。0.25° sp 就位后 WBT/SH 全变量统一 0.25°。
 CDS 数据集与 tmax 相同（`derived-era5-single-levels-daily-statistics`，sp 取逐日均值
-`daily_statistic=mean`）；复用 `download_era5_tmax.py` 框架改变量与输出目录即可。
+`daily_statistic = daily_mean`）。
+
+**自动化下载（脚本已就绪，2026-09-23；尚未运行）**:
+```powershell
+python python\download_era5_sp025.py --dry-run   # 只列计划: 0 已就位 / 480 待下载, 不联网不写盘
+python python\download_era5_sp025.py             # 1984-2023 按月下载+校验, 断点续传
+python python\download_era5_sp025.py --merge     # 生成 data\ERA5\ERA5_sp_1984_2023_daily.nc
+```
+- 变量短名 `sp`，单位 Pa；脚本内置量纲校验（首时次必须在 9.0e4–1.06e5 Pa，
+  可捕获"下错变量"这类错误）
+- **不覆盖**现有 1.0° 全球件 `data/ERA5/sp/`（保留作对照）
 
 > 决策记录：若最终不下载，则必须在复现报告偏差清单中明确 "sp 1.0° 重采样到 0.25°"
 > 的降级理由，不得默认无声降级。
@@ -195,10 +205,11 @@ CDS 数据集与 tmax 相同（`derived-era5-single-levels-daily-statistics`，s
 | 空间范围 | 欧洲 [N=66, W=-10, S=30, E=40] |
 | 分辨率 | 0.25° 日度 |
 | 预计总大小 | ~1–2 GB |
-| 当前进度 | 仅 1984-01（1 个文件） |
+| 当前进度 | 仅 1984-01（1 个文件）；dry-run 实测 1 已就位 / **479 待下载** |
 
 **自动化下载**:
 ```powershell
+python python\download_era5_tmax.py --dry-run # 只列计划, 不联网不写盘
 python python\download_era5_tmax.py          # 1984-2023 按月下载+校验, 断点续传
 python python\download_era5_tmax.py --merge  # 生成 data\ERA5\ERA5_tmax_1984_2023_daily.nc
 ```
@@ -348,17 +359,27 @@ python python\verify_data.py
 
 ## 下载优先级建议
 
+> **2026-09-23 更新**：下载脚本已全部就绪（**均未运行**）。
+> 两个一键入口：`run_phase5_downloads.bat`（tmax + sp 0.25° + OAFlux）、
+> `run_phase6_download.bat`（CESM1-LE 全量 20 成员）。
+
 | 优先级 | 数据集 | 状态 | 剩余工作 |
 |--------|--------|------|----------|
 | **P0** | OISST | ✅ 完成 | — |
 | **P0** | E-OBS | ✅ 完成 | — |
-| **P0** | ERA5 d2m + sp | ✅ 完成 | — |
-| **P1** | ERA5 tmax | ⬜ 待下载 | 运行 `python\download_era5_tmax.py` |
-| **P1** | OAFlux | ⬜ 待下载 | 运行 `python\download_oaflux_evap.py` |
-| **P1** | ERA5 sp 0.25°（欧洲框） | ⬜ 待下载 | 新增任务：修正论文分辨率偏差（数据集 3b+） |
-| **P2** | CESM1-LE 全量 | 🔶 P0 已就位 | `run_p0_download.bat` 验证通过后跑全量 20 成员 |
+| **P0** | ERA5 d2m | ✅ 完成 | — |
+| **P1** | ERA5 tmax | ⬜ 待下载 | `python\download_era5_tmax.py`（479 个月） |
+| **P1** | ERA5 sp 0.25°（欧洲框） | ⬜ 待下载 | `python\download_era5_sp025.py`（480 个月，数据集 3b+） |
+| **P1** | OAFlux | ⬜ 待下载 | `python\download_oaflux_evap.py` |
+| **P2** | CESM1-LE 全量（20 成员） | 🔶 成员 001–003 就位 | `run_phase6_download.bat`（~750 GB，4–5 天） |
 
-**建议**: 先补齐 P1 数据（tmax + OAFlux），跑通 Phase 5（湿热应力）观测流程，再下载 CESM1-LE 全量做归因分析。
+**建议顺序**：
+1. **Phase 5 数据优先**（tmax + sp 0.25° + OAFlux）—— 这是 Phase 5（图5–6）的**唯一阻塞**；
+   100 km 海岸缓冲、图6c 规格、S1 非复合年判据**均已就绪**，数据一到即可全跑。
+2. **同时启动 CESM 全量**（后台，4–5 天连续）—— Phase 6（图3–4）全靠它，宜尽早并行。
+
+**注意**：不要再用备查的 1.0° 全球 sp 件（`data/ERA5/sp/`）做 WBT/SH，
+除非在复现报告中登记该降级；0.25° 件就位后以后者为准。
 
 ---
 
@@ -370,12 +391,13 @@ python python\verify_data.py
 E:\2607compound\data\              ← 数据盘
 ├── OISST/                         # 24 GB (全球 23.1 + 欧洲 1.1)
 ├── E-OBS/                         # 1 GB
-├── ERA5/                          # 47 GB (d2m 40.6 + sp 4.1 + tmax ~2)
+├── ERA5/                          # 现在 45 GB (d2m 40.6 + sp 4.1)
+│                                  # 补齐后 +3 GB (tmax ~2 + sp 0.25° ~1)
 ├── OAFlux/                        # 0.1 GB
-└── CESM1-LE/                      # 已有 132 GB (raw 117 + proc 15)
-                                   # 全量 20 成员 proc 约 +100 GB
+└── CESM1-LE/                      # 已有 123 GB (raw 109 + proc 14)
+                                   # 全量 20 成员约再 +750 GB
 
-总计（全量完成后）: ~310 GB
+总计（全量完成后）: ~950 GB
 建议 E:\ 盘预留: 400 GB
 ```
 

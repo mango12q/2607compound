@@ -1,7 +1,13 @@
-"""diagnose_subbasin.py — 检验"论文 78 天 = 西地中海子盆地均值"假设。
+"""diagnose_subbasin.py — 分盆地统计 2022/2023 的复合天数（逐日共超标 V4 / MHW包络 V1）
 
-对 R 严格事件, 分别按 逐日共超标(V4) 与 MHW包络(V1) 计,
-分盆地统计 2022/2023 的 cos 加权均值 (over pairs)。
+对 R 严格事件，按 **cos 加权平均**（Σ wi·d / Σ wi）统计 —— 与正式实现
+`python/fig_jkl_mhw_envelope.py` 的归一化保持一致。
+
+⚠️ 归一化修正（2026-09-23）：本脚本原先用 `Σ wi·d / n`（n = 框内配对数），
+而 `fig_jkl_mhw_envelope.py` 用 `Σ wi·d / Σ wi`，两者对同一区域会给出相差
+~1.5–2× 的数字，导致 `复现报告.md` §6 曾出现无法复算的"西地中海弧 76.0/68.5"。
+现统一为 Σ wi 归一化；本脚本与 sweep 脚本（`results/fig1j_region_sweep.py`）
+的数字自此可比。
 """
 import os
 
@@ -39,13 +45,15 @@ def main():
     for bname, ((la0, la1), (lo0, lo1)) in BOXES.items():
         acc = {"V4": {}, "V1": {}}
         n = 0
+        wtot = 0.0
         for _, p in pairs.iterrows():
             if not (la0 <= p.land_lat <= la1 and lo0 <= p.land_lon <= lo1):
                 continue
+            n += 1
+            wi = float(np.cos(np.deg2rad(p.land_lat)))
+            wtot += wi
             t_ev = tg.get((p.land_lat, p.land_lon), [])
             o_ev = og.get((p.ocean_lat, p.ocean_lon), [])
-            n += 1
-            wi = np.cos(np.deg2rad(p.land_lat))
             # V4: 逐日共超标
             lm = np.zeros(NT, dtype=bool)
             om = np.zeros(NT, dtype=bool)
@@ -65,12 +73,14 @@ def main():
                     for y in (2022, 2023):
                         days = int((_day_years[max(mi0, 0):min(mi1, NT - 1) + 1] == y).sum())
                         acc["V1"][y] = acc["V1"].get(y, 0) + wi * days
-        line = f"{bname} (n={n}): "
+        denom = max(wtot, 1e-9)
+        line = f"{bname} (n={n}, Σwi={wtot:.1f}): "
         for v in ("V4", "V1"):
             d = acc[v]
-            line += f"  {v} 2022={d.get(2022, 0) / max(n, 1):5.1f} 2023={d.get(2023, 0) / max(n, 1):5.1f}"
+            line += f"  {v} 2022={d.get(2022, 0) / denom:5.1f} 2023={d.get(2023, 0) / denom:5.1f}"
         print(line)
     print("论文(正文引述): 2022~78, 2023~72, 近年峰值>62, 曲线<90")
+    print("归一化: Σ wi·d / Σ wi （与 fig_jkl_mhw_envelope.py 一致）")
 
 
 if __name__ == "__main__":
