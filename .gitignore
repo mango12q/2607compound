@@ -10,6 +10,9 @@ logs/
 results/paper_text.txt
 results/paper_supp_text.txt
 
+# 补充材料 S1 原图及其派生截图（版权内容的位图派生，脚本入库、产物不入库）
+results/s1/
+
 # Python 缓存
 __pycache__/
 *.pyc
