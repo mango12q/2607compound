@@ -1,4 +1,4 @@
-﻿# 阶段 C 技术规范：湿热分析（图 5、图 6）
+# 阶段 C 技术规范：湿热分析（图 5、图 6）
 
 ## C.1 阶段目标
 
@@ -8,12 +8,20 @@
 
 | 数据集 | 路径 | 大小 | 格式 |
 |--------|------|------|------|
-| ERA5 tmax | `E:\2607compound\data\ERA5\ERA5_tmax_1984_2023_daily.nc` | ~8 GB | NetCDF |
-| ERA5 d2m | `E:\2607compound\data\ERA5\ERA5_d2m_1984_2023_daily.nc` | ~8 GB | NetCDF |
-| ERA5 sp | `E:\2607compound\data\ERA5\ERA5_sp_1984_2023_daily.nc` | ~8 GB | NetCDF |
-| OAFlux | `E:\2607compound\data\OAFlux\OAFlux_evap_1991_2020_monthly.nc` | ~0.1 GB | NetCDF |
+| ERA5 tmax（日最高） | `D:\2607compound\data\ERA5\tmax_eur_daily\tmax_eur_YYYY_MM.nc`（按月，0.25° 欧洲框 [66N,10W,30N,40E]） | ~1–2 GB（全量） | NetCDF |
+| ERA5 d2m（2m 露点） | `D:\2607compound\data\ERA5\d2m_global_daily\d2m_global_YYYY_MM.nc`（按月 × 573，0.25° 全球） | 40.6 GB | NetCDF |
+| ERA5 sp（地表气压） | `D:\2607compound\data\ERA5\sp\pres.sfc.daily.era5.YYYY.nc`（按年 × 46，**1.0°** 全球） | 4.1 GB | NetCDF |
+| ERA5 sp 0.25°（欧洲框） | `D:\2607compound\data\ERA5\sp_eur_daily\`（⬜ 待下载，见 DATA_REQUIREMENTS 数据集 3b+） | ~1 GB | NetCDF |
+| OAFlux | `D:\2607compound\data\OAFlux\OAFlux_evap_1991_2020_monthly.nc`（⬜ 待下载） | ~0.1 GB | NetCDF |
 
-**注意**: WBT 公式未定，需确认论文使用 ERA5 提供变量还是手工计算后再绘制图 5–6。
+**注意**:
+1. **WBT 公式已由论文明确**：由 ERA5 的 **Tmax + 露点温度 + 地表气压**估算**日最高 WBT**
+   （"Daily maximum WBT is estimated from ERA5 reanalysis using maximum temperature,
+   dew point temperature, and surface pressure"）。具体近似式论文未给，见
+   `TECHNICAL_SPEC.md` §3.8 的 Stull / 迭代双实现，经锚点验证后定稿。
+2. **sp 分辨率偏差**：论文声明 ERA5 相关变量均为 0.25°，现有 sp 为 1.0°；
+   0.25° 欧洲框下载任务已立项（数据集 3b+）。在就位前，WBT/SH 会在 1.0° 气压场上
+   混合 0.25° 温露场——**属需登记的降级**，不得无声带过。
 
 ## C.3 处理流程（9 个步骤）
 
@@ -158,11 +166,16 @@ def calc_wbt_sh_stats(WBT: xr.DataArray, SH: xr.DataArray, compound_daily: xr.Da
 - SH 阈值：19 g/kg
 - 重现期计算：对地中海区域平均序列拟合 GEV 分布
 
-### 步骤 9：导出 .mat 供 MATLAB 绘图
+### 步骤 9：导出 .mat 供 MATLAB 绘图 —— ⬜ **已弃用，不再执行**
 
-**输出文件**: `results/intermediate/trend_fields.mat`、`results/intermediate/humid_extreme_stats.mat`
+> **状态：作废**。项目已全面切换 Python (matplotlib + cartopy)，`matlab/` 目录不存在。
+> 改为 NetCDF / JSON 落盘：`results/intermediate/sst_trend.nc`、`sh_daily.nc`、
+> `wbt_daily.nc`、`results/tables/fig_stats_*.json`。
+> 下方变量清单仅作历史设计对照。
 
-**trend_fields.mat 变量清单**:
+**原设计（存档）**: 输出 `results/intermediate/trend_fields.mat`、`humid_extreme_stats.mat`
+
+**trend_fields 变量清单**:
 
 | 变量名 | 维度 | 说明 |
 |--------|------|------|
@@ -172,7 +185,7 @@ def calc_wbt_sh_stats(WBT: xr.DataArray, SH: xr.DataArray, compound_daily: xr.Da
 | `evap_trend` | (lat, lon) | 蒸发趋势 (cm/yr/decade) |
 | `sh_trend` | (lat, lon) | 比湿趋势 (g/kg/decade) |
 
-**humid_extreme_stats.mat 变量清单**:
+**humid_extreme_stats 变量清单**:
 
 | 变量名 | 维度 | 说明 |
 |--------|------|------|
@@ -183,40 +196,20 @@ def calc_wbt_sh_stats(WBT: xr.DataArray, SH: xr.DataArray, compound_daily: xr.Da
 | `return_period_WBT` | (threshold,) | WBT 重现期 |
 | `return_period_SH` | (threshold,) | SH 重现期 |
 
-## C.4 阶段 C 的 MATLAB 绘图代码
+## C.4 阶段 C 的绘图代码 —— ⬜ **MATLAB 版已弃用，仅作对照**
 
-**涉及文件**: `matlab/fig5_sst_trend.m`、`matlab/fig6_wbt.m`
+> **状态：作废**。实际用 Python (matplotlib + cartopy) 出图，`matlab/` 目录不存在。
+> 下方代码**不要执行**；面板布局已按论文 Fig.5、Fig.6 caption 核对，保留供实现
+> `python/fig5_sst_trend.py` / `python/fig6_wbt.py` 时对照。
 
-### `matlab/fig5_sst_trend.m`
+**图 6 面板补充口径（论文 caption / 正文，必须实现）**:
 
-```matlab
-function fig5_sst_trend(lon, lat, sst_trend, evap_trend, sh_trend)
-% fig5_sst_trend — 图 5: SST/蒸发/湿度趋势
-%
-% 布局:
-%   a: SST 趋势 (°C/decade)，范围 [−0.1, 0.6]
-%   b: 蒸发趋势 (cm/yr/decade)
-%   c: 比湿趋势 (g/kg/decade)
-%
-% 区域: 地中海 [lat 30-46, lon 5-36]
-%
-% Output: results/figures/fig5.pdf
-```
-
-### `matlab/fig6_wbt.m`
-
-```matlab
-function fig6_wbt(...)
-% fig6_wbt — 图 6: WBT 和湿度分析
-%
-% 布局 (a-f):
-%   a: WBT >= 25.5°C 天数频率（复合 vs 非复合）
-%   b: SH >= 19 g/kg 天数频率（复合 vs 非复合）
-%   c: WBT 重现期
-%   d-f: 空间分布图
-%
-% Output: results/figures/fig6.pdf
-```
+| 面板 | 关键口径 |
+|---|---|
+| a | **年度** WBT ≥ 25.5 °C 天数，复合年（2003/2022/2023）vs 非复合年 |
+| b | **年度** SH ≥ 19 g/kg 天数，同上分组 |
+| c | WBT 极端值 **22–28 °C** 范围的重现期（年），统计窗口为 **JJA 90 天夏季**（June–August）——⚠️ **不是 JAS**（图 5 才是 JAS） |
+| d–f | 2003 / 2022 / 2023 三个复合年的复合日 **平均（正文）/ 最大（caption）** WBT 空间分布；与地形相关，低海拔变化大 |
 
 ## C.5 阶段 C 的验证标准
 
@@ -224,16 +217,29 @@ function fig6_wbt(...)
 |--------|--------|------|----------|
 | WBT 范围 | -20°C 到 40°C | - | 合理性检查 |
 | 2023 年地中海 WBT≥25.5°C 天数 | ~40 天 | ±5 天 | 对比正文 |
-| SST 趋势（地中海夏季） | ~0.2–0.3°C/decade | ±0.1 | 对比已知文献 |
-| 蒸发趋势符号 | 负趋势（地中海水域） | - | 物理合理性 |
+| 非复合年 WBT≥25.5°C 天数 | < 5 天 | ±3 天 | 对比正文 |
+| SST 趋势（地中海夏季 JAS，1994–2023） | ~0.5°C/decade（论文 "up to 0.5"） | ±0.15 | 对比论文正文/图5a |
+| 蒸发趋势符号 | 正趋势（增强）：论文锚点局部 >10 cm yr⁻¹ decade⁻¹（JAS） | - | 对比论文正文/图5b |
+| SH 趋势（ERA5 JAS 1994–2023） | 达 0.3 g kg⁻¹ decade⁻¹ | ±0.1 | 对比论文正文/图5c |
+| 图6c 重现期：2023 年 WBT≈26 °C | ~3–4 年（复合年）vs 非复合年 2000 约 60 年 | - | 对比论文正文/图6c |
+| 图6d–f 2023 年 WBT 空间 | 大片 >25 °C、局部 >26 °C | - | 对比论文正文/图6d–f |
+
+> ⚠️ **两项待定规则（Phase 5 开工前必须落实，见第二轮复核 §三）**：
+> 1. **非复合年的可操作判据**：论文 Fig.6 caption 写 11 个、正文写 10 个非复合年，
+>    并说明依据 Supplementary Fig. S1 的检测结果。步骤 8 现在的"该年有复合热浪天数"
+>    不可用（2010–2023 几乎年年有）。需补一个阈值型判据（如地中海&黑海区域年复合天数 ≤ N）。
+> 2. **100 km 海岸缓冲**：论文 Fig.6 的空间域是"地中海海岸向内 100 km 的陆地格点"。
+>    `config.py` 目前**没有** `COASTAL_BUFFER_KM`，也无任何缓冲实现——Phase 5 必须补上。
 
 ## C.6 阶段 C 的磁盘管理
 
 **⚠️ 数据清理由用户手动执行，必须用户确认当前阶段完成才能进入下一阶段。**
 
 画完图 5、图 6 并与原文目视比对一致后，**由用户手动删除**以下原始数据：
-- `E:\2607compound\data\ERA5\` 下全部 3 个 `.nc` 文件（释放 ~24 GB）
-- `E:\2607compound\data\OAFlux\OAFlux_evap_1991_2020_monthly.nc`（释放 ~0.1 GB）
+- `D:\2607compound\data\ERA5\d2m_global_daily\`（573 个文件，释放 ~40 GB；如后续不再做 WBT 敏感性实验）
+- `D:\2607compound\data\OAFlux\OAFlux_evap_1991_2020_monthly.nc`（释放 ~0.1 GB）
+- ⚠️ 保留 `tmax_eur_daily/`（体积小）与 0.25° `sp_eur_daily/`（供复现核对分辨率口径）
+
 
 **必须保留**:
 - `results/intermediate/` 下的 `.nc` 和 `.mat` 文件（共数 GB）

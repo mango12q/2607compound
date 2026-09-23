@@ -1,4 +1,4 @@
-﻿# 技术规范文档：论文复现项目
+# 技术规范文档：论文复现项目
 
 ## 文档信息
 
@@ -30,17 +30,19 @@
 ### 1.1 复现目标
 
 使用 **Python + R** 混合语言复现论文全部结果：
-- Python 负责数据 I/O、热浪检测、复合事件识别、WBT 计算、归因分析、全部绘图输出
-- R 负责陆地热浪检测（`heatwaveR`，通过 `subprocess` 调用）
+- Python 负责数据 I/O、复合事件识别、WBT 计算、归因统计、全部绘图输出
+- R 负责**海陆统一**的热浪检测（`heatwaveR`，通过 `subprocess` 调用 `Rscript`）
 - 所有输出图表需与原文一致（图 1–6、补充图 S1、表 1）
 
 ### 1.2 技术栈
 
 | 语言/工具 | 用途 | 版本要求 |
 |-----------|------|----------|
-| **Python** | 数据 I/O、热浪检测、复合事件识别、bootstrap 归因 | ≥ 3.10（当前 3.13 可用） |
-| **R** | 陆地热浪检测（`heatwaveR`） | ≥ 4.0 |
+| **Python** | 数据 I/O、复合事件识别、bootstrap 归因、绘图 | ≥ 3.10（当前 3.13 可用） |
+| **R** | 海陆统一热浪检测（`heatwaveR`，经 `Rscript`） | ≥ 4.0（当前 4.6.1，heatwaveR 0.5.5） |
 | **conda** | Python 环境管理（推荐） | 最新版 |
+
+> MATLAB **不在**技术栈内——绘图已全部由 Python (matplotlib + cartopy) 承担。
 
 ### 1.3 必需工具箱
 
@@ -53,11 +55,12 @@
 | Python | `matplotlib` | 全部论文图表输出 |
 | Python | `cartopy` | 欧洲沿海地图投影与海陆渲染 |
 | Python | `joblib` | bootstrap 并行 |
-| Python | `rpy2` | 调用 R 的 `heatwaveR` |
-| Python | `scipy.io` | 导出 `.mat` 文件 |
-| R | `heatwaveR` (v0.4.6) | 陆地热浪检测 |
+| Python | `pandas` | 事件表与中间产物处理 |
+| Python | `scipy.io` | `.mat` 导出（⬜ 已弃用，仅历史设计需要） |
+| R | `heatwaveR` (v0.5.5 本机 / 论文标 v0.4.6) | 海陆统一热浪检测 |
 | R | `ncdf4` | NetCDF 读取 |
-| — | — | — |
+| R | `doParallel` + `foreach` | 逐格点检测并行 |
+| — | `marineHeatWaves` (v0.15.0) | ⬜ 仅单格点核验用（DEPRECATED，见 §3.3） |
 
 ### 1.4 硬件要求
 
@@ -72,82 +75,94 @@
 
 ## 2. 项目目录结构
 
+> 标注约定：`✅` 已就位/已实现；`⬜` 规划中（Phase 5/6 尚未开始）。
+> 与 `python/config.py` 的真实路径常量保持一致；数据盘通过 Junction 访问。
+
 ```
-E:\2607compound\
-├── README.md                    # 项目说明
+D:\2607compound\                 # 工作区根目录
+├── AGENTS.md                    # 项目速览（进度、可运行文件、约束）
 ├── TECHNICAL_SPEC.md            # 本文档（技术规范）
-├── DATA_REQUIREMENTS.md         # 数据下载要求（单独文件）
-├── verify_data.py               # 数据完整性校验脚本
+├── TECHNICAL_SPEC_PHASE_A/B/C.md
+├── DATA_REQUIREMENTS.md         # 数据下载要求
+├── docs/                        # 论文 PDF、补充材料、复现方案
 │
-├── data/                        # 所有原始数据（按 DATA_REQUIREMENTS.md 下载）
+├── data/                        # NTFS Junction → E:\2607compound\data
 │   ├── OISST/
-│   │   └── oisst_v2.1_1982_2023.nc
+│   │   ├── oisst_v2.1_1982_2023.nc        ✅ 全球合并件（720×1440，15340 天）
+│   │   ├── oisst_v2.1_eur_1983_2023.nc    ✅ 欧洲裁剪件
+│   │   └── temp_raw/                       ✅ NOAA 按年原始文件
 │   ├── E-OBS/
-│   │   └── EOBS_tg_1984_2023.nc
+│   │   ├── EOBS_tg_1983_2023.nc           ✅ 合并件（201×464，14975 天）
+│   │   └── tg_ens_mean_0.25deg_reg_*.nc   ✅ 3 段原始（v33.0e ×2 + v29.0e）
 │   ├── ERA5/
-│   │   ├── ERA5_tmax_1984_2023_daily.nc
-│   │   ├── ERA5_d2m_1984_2023_daily.nc
-│   │   └── ERA5_sp_1984_2023_daily.nc
+│   │   ├── d2m_global_daily/              ✅ 按月 × 573（0.25°）
+│   │   ├── sp/                            ✅ 按年 × 46（**1.0°**，待 0.25° 欧洲框替换）
+│   │   ├── tmax_eur_daily/                ⬜ 按月（0.25°，仅 1984-01 就位）
+│   │   └── sp_eur_daily/                  ⬜ 0.25° 欧洲框（数据集 3b+）
 │   ├── OAFlux/
-│   │   └── OAFlux_evap_1991_2020_monthly.nc
+│   │   └── OAFlux_evap_1991_2020_monthly.nc  ⬜ 1° 月度
 │   └── CESM1-LE/
-│       ├── ALL/
-│       │   ├── b.e11.B20TRC5CNBDRD.001.cam.h1.TREFHT.185001-202312.nc
-│       │   ├── b.e11.B20TRC5CNBDRD.002.cam.h1.TREFHT.185001-202312.nc
-│       │   └── ... (共 20 个成员)
-│       └── FixGHG/
-│           ├── b.e11.B20TRC5CNBDRD.FixGHG.001.cam.h1.TREFHT.185001-202312.nc
-│           └── ... (共 20 个成员)
+│       ├── raw/                           🔶 全时段原始（b.e11.B20TRC5CNBDRD / BRCP85C5CNBDRD
+│       │                                     的 pop.h.nday1.SST；B20TRLENS_RCP85.f09_g16.xghg）
+│       └── proc/                          🔶 裁剪到 2000–2021 欧洲框（TREFHT_all_*+ xghg 段）
 │
-├── python/                       # Python 处理+绘图代码
-│   ├── __init__.py
-│   ├── config.py                 # 路径配置、常量
+├── python/                       # 全部处理 + 绘图代码
+│   ├── config.py                 # 路径配置、常量（唯一权威）
 │   ├── load_data.py              # 数据加载与预处理
 │   ├── preprocess.py             # 原始数据合并预处理
-│   ├── detect_mhw.py             # 海洋热浪检测 (marineHeatWaves)
-│   ├── detect_thw.py             # 陆地热浪检测（纯 Python 实现）
-│   ├── detect_thw_wrapper.py     # THW 检测入口（调用 detect_thw）
-│   ├── detect_events.py          # 共享事件检测逻辑
-│   ├── coastal_mask.py           # 沿海格点掩码与配对 (KDTree)
-│   ├── compound_events.py        # 复合事件识别
-│   ├── calc_chr.py               # 复合热浪比 (CHR)
-│   ├── calc_wbt.py               # 湿球温度 (WBT) 计算
-│   ├── attribution.py            # FAR/PR 计算 + bootstrap
-│   ├── fig1_compound_spatial.py  # 图 1: a-i 空间分布, j-l 时间序列, m 共现概率
-│   ├── fig2_chr.py               # 图 2: a-d CHR 对比
-│   ├── fig3_attribution.py       # 图 3: a-d FAR/PR 曲线
-│   ├── fig4_return_period.py     # 图 4: a-c 重现期
-│   ├── fig5_sst_trend.py         # 图 5: a-c SST/蒸发/湿度趋势
-│   ├── fig6_wbt.py               # 图 6: a-f WBT/湿度分析
-│   ├── table1_attribution.py     # 表 1: 归因结果
-│   ├── supp_fig1.py              # 补充图 S1
-│   ├── figures.py                # 一键生成全部图表
-│   ├── verify_data.py            # 数据完整性校验
-│   └── run_all.py                # 一键运行完整流程
+│   ├── detect_events.R           ✅ **海陆统一检测正式链路**（heatwaveR）
+│   ├── detect_thw.R              ⚠️ 已归档（吞错风险，勿重跑，见 §4.1 注）
+│   ├── detect_thw_wrapper.py     # R 检测入口（当前指向 detect_thw.R）
+│   ├── detect_mhw.py             ⚠️ Python 侧 MHW 检测，仅单格点核验用（DEPRECATED）
+│   ├── detect_thw.py             ⚠️ 纯 Python 复刻，仅交叉验证用（DEPRECATED）
+│   ├── coastal_mask.py           # 沿海格点掩码与配对（KDTree）
+│   ├── compound_events.py        # 复合事件识别（逐日共超标）
+│   ├── fig_jkl_mhw_envelope.py   # 图1 j–l 的 MHW 包络口径预计算
+│   ├── calc_chr.py               # 复合热浪比 (CHR) 与共现概率
+│   ├── calc_wbt.py               ⬜ 湿球温度 (WBT) / 比湿
+│   ├── attribution.py            ⬜ FAR/PR 计算 + bootstrap
+│   ├── gev_return_period.py      ⬜ GEV 重现期（图 4）
+│   ├── phase6_cesm.py            ✅ Phase 6 CESM1-LE 归因管线（P0 验证版）
+│   ├── fig1_compound_spatial.py  ✅ 图 1: a–i 空间分布, j–l 时间序列, m 共现概率
+│   ├── fig2_chr.py               ✅ 图 2: a 复合天数, b standalone, c CHR 时序, d CHR 空间
+│   ├── fig3_attribution.py       ⬜ 图 3: a–d FAR/PR 曲线
+│   ├── fig4_return_period.py     ⬜ 图 4: a–c 重现期
+│   ├── fig5_sst_trend.py         ⬜ 图 5: a–c SST/蒸发/湿度趋势
+│   ├── fig6_wbt.py               ⬜ 图 6: a–f WBT/湿度分析
+│   ├── table1_attribution.py     ⬜ 表 1: 归因结果
+│   ├── supp_fig1.py              ⬜ 补充图 S1（论文 S1 = 1984–2023 年际空间分布）
+│   ├── figures.py                # 一键出图（当前：图1/图2/S1）
+│   ├── verify_data.py            # 数据/中间产物完整性校验
+│   ├── run_all.py                # 一键运行 Phase 0–3
+│   └── download_*.py             # OISST / ERA5 / OAFlux / CESM1-LE 下载工具
 │
 ├── results/                      # 中间结果与最终输出
 │   ├── intermediate/             # 中间产物（可随时删除重算）
-│   │   ├── mhw_events_OISST.nc
-│   │   ├── thw_events_EOBS.nc
-│   │   ├── compound_events.nc
-│   │   └── bootstrap_results.mat
+│   │   ├── mhw_events_R_global.csv        ✅ MHW 事件（全球索引）
+│   │   ├── thw_events_R.csv               ✅ THW 事件
+│   │   ├── coastal_pairs.csv              ✅ 沿海配对（2039 对 / 1434 唯一海点）
+│   │   ├── compound_events.nc             ✅ 复合日场
+│   │   ├── standalone_days.nc             ✅ 独立陆地热浪日场
+│   │   ├── annual_*.nc / CHR_annual.nc / cooccurrence_prob_annual.nc
+│   │   └── bootstrap_results.pkl          ⬜ Phase 6 产物（pickle，非 .mat）
 │   ├── figures/                  # 最终图表
-│   │   ├── fig1.pdf
-│   │   ├── fig2.pdf
-│   │   ├── fig3.pdf
-│   │   ├── fig4.pdf
-│   │   ├── fig5.pdf
-│   │   ├── fig6.pdf
-│   │   └── supp/
-│   │       └── figS1.pdf
+│   │   ├── fig1_compound_spatial.pdf|png  ✅
+│   │   ├── fig2_chr.pdf|png               ✅
+│   │   ├── figS1_jkl_maxcell.*            ✅ 补充（j–l 格点最大值版）
+│   │   ├── figS2_jkl_mhw_envelope.*       ✅ 补充（MHW 包络口径）
+│   │   ├── fig3.pdf … fig6.pdf            ⬜
+│   │   └── supp/figS1.pdf                 ⬜ 论文 S1 尚未复现
 │   └── tables/                   # 表格数据
-│       └── table1.csv
+│       ├── fig_stats_new.json / fig_jkl_envelope.json  ✅ 数值快照
+│       ├── cesm1le_download_manifest.csv               ✅
+│       └── table1.csv                                  ⬜
 │
-└── logs/                         # 运行日志
-    ├── download.log
-    ├── detection.log
-    └── attribution.log
+└── logs/                         # 运行日志与文档备份
 ```
+
+**命名真相提醒**：CESM1-LE 的 "FixGHG" 在本项目中指 **XGHG** 单强迫实验
+（`b.e11.B20TRLENS_RCP85.f09_g16.xghg`），不是 `B20TRC5CNBDRD.FixGHG`——
+后者是早期文档的误写。完整清单见 `DATA_REQUIREMENTS.md` 数据集 5。
 
 ---
 
@@ -167,7 +182,7 @@ import os
 # ──────────────────────────────────────────────
 # 路径配置
 # ──────────────────────────────────────────────
-BASE_DIR = r"E:\2607compound"
+BASE_DIR = r"D:\2607compound"   # data 为 NTFS Junction → E:\2607compound\data
 
 DATA_DIR = os.path.join(BASE_DIR, "data")
 OISST_DIR = os.path.join(DATA_DIR, "OISST")
@@ -193,7 +208,9 @@ PERCENTILE = 90                  # 90 百分位阈值
 # ──────────────────────────────────────────────
 # 复合事件参数
 # ──────────────────────────────────────────────
-COASTAL_BUFFER_KM = 100          # 分析缓冲区（km）
+MAX_GRID_DIST_DEG = 0.5          # 陆点→最近海点的最大配对距离（度）
+COASTAL_BUFFER_KM = 100          # ⬜ 图6 分析域：地中海海岸向内 100 km（论文口径）
+                                 #    ⚠️ 目前 config.py 中尚未定义该项，Phase 5 需补
 WBT_THRESHOLD = 25.5             # WBT 阈值 (°C)
 SH_THRESHOLD = 19.0              # 比湿阈值 (g/kg)
 
@@ -203,12 +220,20 @@ SH_THRESHOLD = 19.0              # 比湿阈值 (g/kg)
 N_BOOTSTRAP = 1000               # 自助采样次数
 CI_ALPHA = (0.05, 0.95)          # 置信区间 (5%, 95%)
 N_JOBS = -1                      # 并行核心数 (-1 = 全部)
+GEV_RETURN_PERIODS = (5, 10, 20, 50, 100)  # 图4 重现期（年）
+GEV_CI = (0.025, 0.975)          # 图4 用 2.5–97.5% CI（图3 用 CI_ALPHA 5–95%）
 
 # ──────────────────────────────────────────────
-# CESM1-LE 成员列表
+# CESM1-LE 成员列表与数据路径
 # ──────────────────────────────────────────────
 CESM_ALL_MEMBERS = [f"{i:03d}" for i in range(1, 21)]     # 001–020
-CESM_FIXGHG_MEMBERS = [f"{i:03d}" for i in range(1, 21)]  # 001–020
+CESM_FIXGHG_MEMBERS = [f"{i:03d}" for i in range(1, 21)]  # 001–020（= XGHG 实验）
+CESM_RAW_DIR = os.path.join(CESM_DIR, "raw")     # RDA/GDEX 下载的全时段原始文件
+CESM_PROC_DIR = os.path.join(CESM_DIR, "proc")   # 裁剪到分析时段后的文件
+CESM_PERIOD = ("2000-01-01", "2021-12-31")       # 论文 L522：2000–2021
+CESM_P0_MEMBERS = 3                              # P0 先跑通用前 N 个成员
+CESM_EUROPE_LAT = (28.0, 74.0)                   # f09 大气网格裁剪框
+CESM_EUROPE_LON = (-17.0, 47.0)
 
 # ──────────────────────────────────────────────
 # 欧洲沿海区域定义（用于裁剪和分析）
@@ -294,7 +319,7 @@ def load_eobs(filepath: Optional[str] = None) -> xr.Dataset:
         ds: 包含 T2m 的 xarray Dataset
     """
     if filepath is None:
-        filepath = os.path.join(EOBS_DIR, "EOBS_tg_1984_2023.nc")
+        filepath = os.path.join(EOBS_DIR, "EOBS_tg_1983_2023.nc")
     
     ds = xr.open_dataset(filepath, chunks={'time': 365})
     
@@ -314,36 +339,51 @@ def load_eobs(filepath: Optional[str] = None) -> xr.Dataset:
 
 def load_era5_var(varname: str, filepath: Optional[str] = None) -> xr.DataArray:
     """
-    加载 ERA5 单个变量。
-    
-    Parameters:
+    加载 ERA5 单个变量（多文件自动合并）。
+
+    参数:
         varname: 变量名 ('tmax', 'd2m', 'sp')
-        filepath: 文件路径
-    
-    Returns:
+        filepath: 文件路径（可选）
+
+    返回:
         da: xarray DataArray
+
+    实际数据组织（见 DATA_REQUIREMENTS.md 数据集 3）——三个变量都不在单文件里：
+        d2m  : data/ERA5/d2m_global_daily/d2m_global_YYYY_MM.nc   （按月 × 573，0.25° 全球）
+        sp   : data/ERA5/sp/pres.sfc.daily.era5.YYYY.nc           （按年 × 46，1.0° 全球）
+        tmax : data/ERA5/tmax_eur_daily/tmax_eur_YYYY_MM.nc       （按月，0.25° 欧洲框）
+    注意：sp 目前为 1.0°，论文口径为 0.25°；0.25° 欧洲框见 DATA_REQUIREMENTS 数据集 3b+。
     """
-    if filepath is None:
-        fname_map = {
-            'tmax': 'ERA5_tmax_1984_2023_daily.nc',
-            'd2m': 'ERA5_d2m_1984_2023_daily.nc',
-            'sp': 'ERA5_sp_1984_2023_daily.nc',
-        }
-        filepath = os.path.join(ERA5_DIR, fname_map[varname])
-    
-    ds = xr.open_dataset(filepath, chunks={'time': 365})
-    
-    # ERA5 变量名映射
-    era5_name_map = {
-        'tmax': 'maximum_temperature_at_2_metres_since_previous_post_processing',
-        'd2m': '2_metre_dewpoint_temperature',
-        'sp': 'surface_pressure',
+    patterns = {
+        'tmax': os.path.join(ERA5_DIR, 'tmax_eur_daily', 'tmax_eur_*.nc'),
+        'd2m':  os.path.join(ERA5_DIR, 'd2m_global_daily', 'd2m_global_*.nc'),
+        'sp':   os.path.join(ERA5_DIR, 'sp', 'pres.sfc.daily.era5.*.nc'),
     }
-    
-    var_key = era5_name_map.get(varname, varname)
+
+    # ERA5 变量名映射（与各下载脚本写入的 netCDF 变量名一致）
+    era5_name_map = {
+        'tmax': 'mx2t',   # CDS 请求名 maximum_2m_temperature_since_previous_post_processing
+        'd2m': 'd2m',
+        'sp': 'sp',
+    }
+
+    if filepath is not None:
+        ds = xr.open_dataset(filepath, chunks={'time': 365})
+        var_key = era5_name_map.get(varname, varname)
+        if var_key not in ds:
+            var_key = next(iter(ds.data_vars))
+    else:
+        ds = xr.open_mfdataset(
+            patterns[varname], chunks={'time': 365},
+            combine='by_coords', parallel=True,
+        )
+        var_key = era5_name_map.get(varname, varname)
+        if var_key not in ds:
+            var_key = next(iter(ds.data_vars))
+
     da = ds[var_key]
     da.name = varname
-    
+
     return da
 
 
@@ -363,30 +403,35 @@ def load_cesm1le_member(
 ) -> xr.Dataset:
     """
     加载单个 CESM1-LE 成员的 T2m + SST。
-    
+
     Parameters:
         member_id: 成员编号，如 '001', '002', ...
-        forcing: 'ALL' 或 'FixGHG'
+        forcing: 'ALL' 或 'XGHG'（= 论文的 FixGHG 反事实实验）
         filepath: 可选，手动指定文件路径
-    
+
     Returns:
-        ds: 包含 TREFHT (T2m) 和 TEMP_0m (SST) 的 Dataset
+        ds: 包含 TREFHT (T2m) 和 SST 的 Dataset
+
+    ⚠️ 实际数据组织（见 DATA_REQUIREMENTS.md 数据集 5、python/config.py）：
+      - 不存在 `CESM1-LE/ALL/` 与 `CESM1-LE/FixGHG/` 目录，也不存在
+        `b.e11.B20TRC5CNBDRD.{id}.cam.h1.TREFHT.185001-202312.nc` 这类文件名。
+      - ALL 大气：AWS zarr → `TREFHT_all_{id}_2000-2021_europe.nc`（proc/）
+      - ALL 海洋：`b.e11.B20TRC5CNBDRD.f09_g16.{id}.pop.h.nday1.SST.*.nc`
+      - 反事实  ：`b.e11.B20TRLENS_RCP85.f09_g16.xghg.{id}.cam.h1.TREFHT.*.nc`
+                  + `...xghg.{id}.pop.h.nday1.SST.*.nc`（两段式 1920–2005 / 2006–2080）
+      - 成员 001 的历史段自 1850 起，002–020 自 1920 起；分析只取 2000–2021。
+      - SST 在 POP 网格上（非高斯大气网格），与 TREFHT 不同网格，
+        需按 `python/phase6_cesm.py` 的湿点映射方案处理。
     """
     if filepath is None:
-        if forcing == "ALL":
-            filepath = os.path.join(
-                CESM_DIR, "ALL",
-                f"b.e11.B20TRC5CNBDRD.{member_id}.cam.h1.TREFHT.185001-202312.nc"
-            )
-        else:
-            filepath = os.path.join(
-                CESM_DIR, "FixGHG",
-                f"b.e11.B20TRC5CNBDRD.FixGHG.{member_id}.cam.h1.TREFHT.185001-202312.nc"
-            )
-    
+        raise ValueError(
+            "CESM1-LE 文件名随实验/变量/分段而变，请显式传入 filepath，"
+            "或直接使用 python/phase6_cesm.py 的 prepare/pairs 阶段产物。"
+        )
+
     # 使用 dask 惰性加载，避免一次性读入内存
     ds = xr.open_dataset(filepath, chunks={'time': 365, 'lat': 10, 'lon': 10})
-    
+
     # 统一变量名
     rename_dict = {}
     if 'TREFHT' in ds.data_vars:
@@ -396,28 +441,27 @@ def load_cesm1le_member(
         ds['TEMP'] = ds['TEMP'].sel(lev=0, method='nearest')
         rename_dict['TEMP'] = 'SST'
     ds = ds.rename(rename_dict)
-    
-    ds['T2m'].attrs['units'] = 'K'
-    ds['SST'].attrs['units'] = 'K'
-    
+
     return ds
 
 
 def load_cesm1le_dir(forcing: str = "ALL") -> xr.Dataset:
     """
-    加载整个 CESM1-LE 目录（所有成员），使用 open_mfdataset 自动合并。
-    
+    加载 proc/ 下某实验的全部成员，使用 open_mfdataset 自动合并。
+
     Parameters:
-        forcing: 'ALL' 或 'FixGHG'
-    
+        forcing: 'ALL' 或 'XGHG'
+
     Returns:
         ds: 合并后的 Dataset，维度为 (member, time, lat, lon)
+
+    注意：proc/ 目录中 ALL 与 XGHG 的文件混放，需按文件名模式区分（见下方 pattern）。
     """
     if forcing == "ALL":
-        pattern = os.path.join(CESM_DIR, "ALL", "*.nc")
+        pattern = os.path.join(CESM_PROC_DIR, "TREFHT_all_*_2000-2021_europe.nc")
     else:
-        pattern = os.path.join(CESM_DIR, "FixGHG", "*.nc")
-    
+        pattern = os.path.join(CESM_PROC_DIR, "*xghg.*")
+
     ds = xr.open_mfdataset(
         pattern,
         chunks={'time': 365, 'member': 1},
@@ -425,7 +469,7 @@ def load_cesm1le_dir(forcing: str = "ALL") -> xr.Dataset:
         concat_dim='member',
         parallel=True
     )
-    
+
     return ds
 
 
@@ -497,8 +541,14 @@ def preprocess_all() -> Dict[str, xr.Dataset]:
 
 ### 3.3 `detect_mhw.py` — 海洋热浪检测
 
+> ⚠️ **状态：DEPRECATED（仅单格点核验用）**。论文 Code availability 同时列出
+> `heatwaveR` (v0.4.6, R) 与 `marineHeatWaves` (v0.15.0, Python)；本项目自 2025-09-18 起
+> **海陆检测统一走 R `heatwaveR`**（`python/detect_events.R`），因其语义经源码核验与
+> `marineHeatWaves` 一致（见 `results/THW_R_vs_Python_结论.md`）。
+> 本节保留原 Python 实现仅作单格点交叉验证与历史对照，**不是正式链路**。
+
 **文件路径**: `python/detect_mhw.py`  
-**功能**: 调用 `marineHeatWaves` 检测海洋热浪。
+**功能**: 调用 `marineHeatWaves` 检测海洋热浪（仅核验用）。
 
 ```python
 """
@@ -641,142 +691,73 @@ def mhw_events_to_daily(
 
 ---
 
-### 3.4 `detect_thw.R` — 陆地热浪检测（R 脚本）
+### 3.4 `detect_events.R` — 海陆统一热浪检测（R 脚本，**正式链路**）
 
-**文件路径**: `python/detect_thw.R`  
-**功能**: 使用 `heatwaveR` 检测陆地热浪。
+**文件路径**: `python/detect_events.R`
+**功能**: 用 `heatwaveR` 对海（OISST SST）陆（E-OBS T2m）做**同一份代码**的逐格点检测。
+**输出**: 事件 CSV（MHW → `mhw_events_R_global.csv`；THW → `thw_events_R.csv`）
 
-```r
-#!/usr/bin/env Rscript
-# detect_thw.R — 陆地热浪检测 (heatwaveR)
-#
-# 用法:
-#   Rscript detect_thw.R <eobs_file> <output_file> <clim_start> <clim_end>
-#
-# 示例:
-#   Rscript detect_thw.R data/E-OBS/EOBS_tg_1984_2023.nc results/thw_events.rds 1983 2012
+**关键参数（必须与论文一致）**:
 
-suppressPackageStartupMessages(library(heatwaveR))
-suppressPackageStartupMessages(library(ncdf4))
-suppressPackageStartupMessages(library(doParallel))
-suppressPackageStartupMessages(library(foreach))
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| `pctile` | 90 | 90 分位阈值 |
+| `windowHalfWidth` | 5 | 11 天滑动窗口（heatwaveR 默认） |
+| `smoothPercentile` | **FALSE** | ⚠️ **偏离两包默认（TRUE / 31 天窗）**，见下方注 |
+| `minDuration` | 5 | 超标日游程 ≥ 5 天（不含间隙） |
+| `maxGap` | 2 | 桥接 ≤ 2 天间隙 |
+| 气候期 | 1983-01-01 – 2012-12-31 | 论文口径 |
 
-args <- commandArgs(trailingOnly = TRUE)
+> **⚠️ 已知偏离（必须在复现报告中保留）**：论文使用的是两包**默认**参数，其中
+> `ts2clm(smoothPercentile = TRUE, smoothPercentileWidth = 31)`。本项目为隔离
+> "11 天窗口 vs 单日分位"变量而显式设为 `FALSE`。抽样实验（90 个沿海对，
+> `results/exp_smooth_compare.py`）显示影响 < 5%（地中海 2022 复合天数 16.9→15.8、
+> 2023 32.5→32.9），故保留 FALSE。若需严格对齐包默认可开启重跑（陆地约 30 min）。
+> 详见 `results/复现报告.md` D2 / §5.1#4。
 
-if (length(args) < 4) {
-  stop("Usage: Rscript detect_thw.R <eobs_file> <output_file> <clim_start> <clim_end>")
-}
+**CLI（实际签名，`python/detect_events.R`）**:
 
-eobs_file <- args[1]
-output_file <- args[2]
-clim_start <- as.integer(args[3])
-clim_end <- as.integer(args[4])
-
-cat(sprintf("Loading E-OBS from: %s\n", eobs_file))
-
-# 读取 NetCDF
-nc <- nc_open(eobs_file)
-t2m <- ncvar_get(nc, "T2m")  # (lon, lat, time) — 注意 E-OBS 通常是 (lon, lat, time)
-lat <- ncvar_get(nc, "latitude")
-lon <- ncvar_get(nc, "longitude")
-time <- ncvar_get(nc, "time")
-nc_close(nc)
-
-# 转置为 (time, lat, lon)
-t2m <- aperm(t2m, c(3, 2, 1))
-
-cat(sprintf("Data shape: %d time x %d lat x %d lon\n", dim(t2m)[1], dim(t2m)[2], dim(t2m)[3]))
-
-# 设置日期
-start_date <- as.Date(paste0(clim_start, "-01-01"))
-dates <- seq(start_date, by = "day", length.out = dim(t2m)[1])
-
-# 逐格点检测热浪
-nlat <- dim(t2m)[2]
-nlon <- dim(t2m)[3]
-
-cat("Detecting terrestrial heatwaves...\n")
-
-# 使用 foreach 并行
-registerDoParallel(cores = parallel::detectCores() - 1)
-
-all_events <- foreach(li = 1:nlat, .combine = c) %:%
-  foreach(lo = 1:nlon, .combine = rbind) %dopar% {
-    
-    temp_ts <- t2m[, li, lo]
-    
-    # 跳过全 NA 格点
-    if (all(is.na(temp_ts))) {
-      return(NULL)
-    }
-    
-    # 转换为 ts 对象
-    # heatwaveR 需要至少两年的数据
-    if (sum(!is.na(temp_ts)) < 730) {
-      return(NULL)
-    }
-    
-    tryCatch({
-      # 检测热浪
-      events <- heatwaveR::detect_event(
-        temp_ts,
-        climatology = TRUE,
-        threshold = 90,
-        minDuration = 5,
-        maxGap = 2,
-        start_date = min(dates, na.rm = TRUE)
-      )
-      
-      if (!is.null(events$event) && nrow(events$event) > 0) {
-        ev <- events$event
-        ev$lat_idx <- li
-        ev$lon_idx <- lo
-        ev$lat <- lat[li]
-        ev$lon <- lon[lo]
-        return(ev)
-      } else {
-        return(NULL)
-      }
-    }, error = function(e) {
-      # 某些格点可能检测失败，跳过
-      return(NULL)
-    })
-  }
-
-stopImplicitCluster()
-
-cat(sprintf("Total THW events detected: %d\n", nrow(all_events)))
-
-# 保存结果
-saveRDS(all_events, output_file)
-cat(sprintf("Saved to: %s\n", output_file))
+```bash
+Rscript python/detect_events.R <nc_file> <varname> <output_csv> \
+        <clim_start> <clim_end> [domains_file|-] [min_dur] [max_gap] [n_workers] [work_dir]
+# 例（海洋）:
+Rscript python/detect_events.R data/OISST/oisst_v2.1_eur_1983_2023.nc sst \
+        results/intermediate/mhw_events_R.csv 1983 2012
+# 例（陆地，域限配对点）:
+Rscript python/detect_events.R data/E-OBS/EOBS_tg_1983_2023.nc T2m \
+        results/intermediate/thw_events_R_v2.csv 1983 2012 \
+        results/intermediate/domains_ocean_pairs.csv 5 2 12
 ```
 
-**Python 调用方式**:
-```python
-import subprocess
-import os
+**Python 调用方式**（实际实现：`python/detect_thw_wrapper.py`，指向 `detect_thw.R`；
 
-def detect_thw(eobs_filepath: str, output_path: str, clim_period: tuple):
-    """调用 R 脚本检测陆地热浪。"""
+```python
+import subprocess, os
+from config import RSCRIPT_PATH, DETECT_THW_R_SCRIPT, HW_MIN_DURATION, HW_MAX_GAP, R_WORKERS
+
+def detect_thw(eobs_filepath, output_csv, clim_period, work_dir=None):
+    """调用 R 脚本检测陆地热浪，返回事件 DataFrame（CSV 落地）。"""
+    if work_dir is None:
+        work_dir = output_csv + ".work"
     result = subprocess.run(
-        [
-            "Rscript",
-            os.path.join("python", "detect_thw.R"),
-            eobs_filepath,
-            output_path,
-            str(clim_period[0]),
-            str(clim_period[1]),
-        ],
-        capture_output=True,
-        text=True,
-        check=True
+        [RSCRIPT_PATH, DETECT_THW_R_SCRIPT,
+         eobs_filepath, output_csv,
+         str(clim_period[0]), str(clim_period[1]),
+         str(HW_MIN_DURATION), str(HW_MAX_GAP), str(R_WORKERS),
+         work_dir, eobs_filepath],
+        capture_output=True, text=True, check=True,
     )
     print(result.stdout)
-    if result.returncode != 0:
-        print("STDERR:", result.stderr)
-        raise RuntimeError("R heatwaveR detection failed")
+    if result.stderr:
+        print("R stderr:", result.stderr)
+    return pd.read_csv(output_csv)   # 列名 date_start/date_end → event_start/event_end
 ```
+
+**§4.1 的 `detect_thw.R` 为历史存档**：该脚本存在 `return`-in-`tryCatch` 静默吞错
+的潜在 bug，**已弃用、勿重跑**（其产物 `thw_events_R.csv` 已通过逐行回归与
+`detect_events.R` 的 `thw_events_R_v2.csv` 比对一致，故缓存可继续使用）。
+`python/run_all.py` 的 THW 环节当前仍指向 `detect_thw_wrapper` → `detect_thw.R`：
+**缓存缺失时会走到存档脚本**，正式重检请直接调用 `detect_events.R`。
 
 ---
 
@@ -794,7 +775,16 @@ from scipy.ndimage import binary_erosion, generate_binary_structure
 from typing import List, Tuple, Dict
 import xarray as xr
 
-from config import COASTAL_BUFFER_KM
+from config import MAX_GRID_DIST_DEG, COASTAL_PAIRS_CSV
+
+# ⚠️ 实际签名与返回类型（python/coastal_mask.py）：
+#   find_coastal_grid_pairs(land_mask, ocean_mask, *, max_dist_deg=MAX_GRID_DIST_DEG,
+#                           save_path=COASTAL_PAIRS_CSV) -> pd.DataFrame
+#   配对走 KDTree 最近邻，距离上限 MAX_GRID_DIST_DEG = 0.5°，返回列：
+#   [land_lat_idx, land_lon_idx, ocean_lat_idx, ocean_lon_idx,
+#    land_lat, land_lon, ocean_lat, ocean_lon, dist_deg]
+#   实测产出 2039 对 / 1434 个唯一海洋格点。
+#   下方为等价教学版（4-邻域等距，故"取首个相邻海点"与"最近邻"一致）。
 
 
 def build_land_mask(eobs: xr.Dataset) -> xr.DataArray:
@@ -1378,65 +1368,73 @@ def calc_WBT_iterative(
     tol: float = 0.01
 ) -> xr.DataArray:
     """
-    使用迭代方法精确计算湿球温度。
-    
-    通过求解以下方程的根:
-    e_ws(T_w) - e_w(T_w, p) * (A / p) * (B - C * T_w)
-    
-    其中:
-    - e_ws: 饱和水汽压（T_w 的函数）
-    - e_w: 实际水汽压（由露点温度计算）
-    - A, B, C:  psychrometric 常数
-    
-    本实现使用数值迭代（简化版）:
-    T_w(n+1) = T * atan(0.151977 * sqrt(RH + 8.313659)) + ...
-    
-    为简化，这里使用二分法或固定点迭代。
-    
+    湿球温度的精确解：对 psychrometric 方程做牛顿迭代。
+
+    物理方程（T_w 为未知量，能量平衡 + 饱和混合比）：
+        e_w_sat(T_w) - e(Tdew) - gamma * p * (T - T_w) = 0
+    其中
+        e_w_sat(x) = 6.112 * exp(17.67 * x / (x + 243.5))   [hPa] x 温度下的饱和水汽压
+        e(Tdew)    = e_w_sat(Tdew)                          [hPa] 实际水汽压（由露点定）
+        gamma      = 0.00066 * (1 + 0.00115 * Tdew)         [1/°C] 湿度计常数
+        p          = sp / 100                                [hPa]
+
+    ⚠️ 修正记录：本节原实现存在两处缺陷——
+      ① `es_current` 计算后从未使用；
+      ② 迭代式 `WBT_new = T - (T - Tdew) / (1 + gamma * p / 10)` **不依赖** `WBT_guess`，
+         因此第一次循环即满足 tol 并 break，所谓"迭代"实际只等于一次解析近似。
+      现改为对 f(T_w) = e_w_sat(T_w) - e(Tdew) - gamma * p * (T - T_w) 求根的
+      牛顿迭代，f'(T_w) 用 de_sat/dT 的解析式。
+
     Parameters:
         tmax: 日最高气温 (°C)
         d2m: 露点温度 (°C)
         sp: 地表气压 (Pa)
         max_iter: 最大迭代次数
-        tol: 收敛容差
-    
+        tol: 收敛容差 (°C)
+
     Returns:
         WBT: 湿球温度 (°C)
     """
-    # 先从露点计算实际水汽压
-    e = 6.112 * np.exp(17.67 * d2m / (d2m + 243.5))  # hPa
-    
-    # 气压转换为 hPa
-    p = sp.values / 100.0  # Pa -> hPa
-    
-    # 初始猜测：使用 Stull 公式
-    WBT_guess = calc_WBT_stull(tmax, d2m, sp).values
-    
-    # 迭代优化（简化版）
+    T = np.asarray(tmax.values, dtype=np.float64)
+    Td = np.asarray(d2m.values, dtype=np.float64)
+    p = np.asarray(sp.values, dtype=np.float64) / 100.0        # Pa -> hPa
+
+    def es(t):
+        return 6.112 * np.exp(17.67 * t / (t + 243.5))
+
+    def des_dt(t):
+        return es(t) * 17.67 * 243.5 / (t + 243.5) ** 2
+
+    e = es(Td)                                   # 实际水汽压（由露点定）
+    gamma = 0.00066 * (1.0 + 0.00115 * Td)       # 湿度计常数 [1/°C]
+
+    # 初值：Stull (2011) 近似（注意 Stull 用的是 RH，此处用等价形式）
+    RH = np.clip(e / es(T) * 100.0, 0.0, 100.0)
+    Tw = (T * np.arctan(0.151977 * np.sqrt(RH + 8.313659))
+          + np.arctan(T + RH) - np.arctan(RH - 1.676331)
+          + 0.00391838 * RH ** 1.5 * np.arctan(0.023101 * RH)
+          - 4.686035)
+    Tw = np.where(np.isfinite(Tw), Tw, Td)       # 兜底
+
     for _ in range(max_iter):
-        # 计算当前猜测下的饱和水汽压
-        es_current = 6.112 * np.exp(17.67 * WBT_guess / (WBT_guess + 243.5))
-        
-        # 计算新的 WBT 估计
-        # 简化 psychrometric 方程
-        gamma = 0.00066 * (1 + 0.00115 * e)  # psychrometric 常数近似
-        WBT_new = tmax.values - (tmax.values - d2m.values) / (1 + gamma * p / 10)
-        
-        # 检查收敛
-        if np.max(np.abs(WBT_new - WBT_guess)) < tol:
+        f = es(Tw) - e - gamma * p * (T - Tw)
+        df = des_dt(Tw) + gamma * p
+        step = np.where(np.abs(df) > 1e-12, f / df, 0.0)
+        Tw_new = Tw - step
+        if np.nanmax(np.abs(Tw_new - Tw)) < tol:
+            Tw = Tw_new
             break
-        
-        WBT_guess = WBT_new
-    
+        Tw = Tw_new
+
     WBT_da = xr.DataArray(
-        WBT_guess,
+        Tw,
         dims=tmax.dims,
         coords=tmax.coords,
         name='WBT'
     )
     WBT_da.attrs['long_name'] = 'Wet-Bulb Temperature (iterative)'
     WBT_da.attrs['units'] = 'degC'
-    
+
     return WBT_da
 
 
@@ -1530,7 +1528,7 @@ def calc_FAR(p_factual: float, p_counterfactual: float) -> float:
     """
     可归因风险比例 (Fraction of Attributable Risk)。
     
-    FAR = 1 - P_factual / P_counterfactual
+    FAR = 1 - P_counterfactual / P_factual   （= 1 − P_FixGHG / P_ALL，论文 Eq.2）
     
     表示: 事件在没有 GHG 强迫下不会发生的概率。
     
@@ -1543,7 +1541,7 @@ def calc_FAR(p_factual: float, p_counterfactual: float) -> float:
     """
     if p_counterfactual <= 0:
         return 1.0
-    return 1.0 - (p_factual / p_counterfactual)
+    return 1.0 - (p_counterfactual / p_factual)
 
 
 def calc_PR(p_factual: float, p_counterfactual: float) -> float:
@@ -1571,110 +1569,90 @@ def calc_PR(p_factual: float, p_counterfactual: float) -> float:
 # ──────────────────────────────────────────────
 
 def calc_probability(
-    ds: xr.Dataset,
-    threshold: float,
-    varname: str = 'T2m'
+    exposure_annual: np.ndarray,
+    threshold: float
 ) -> float:
     """
-    计算给定阈值下事件发生的概率（超过阈值的天数比例）。
-    
+    计算给定阈值下事件发生的概率（论文口径，Methods L522 起）。
+
+    论文：把每个成员每年的"区域聚合暴露时间"（地中海&黑海 / 欧洲全岸
+    的复合天数）作为样本；ALL 与 FixGHG 各 440 个模型年（20 成员 ×
+    22 年，2000–2021）。概率 = 暴露 ≥ 阈值的模型年占比。
+    注意：统计样本是"模型-年"，不是"格点-年"。
+
     Parameters:
-        ds: CESM1-LE Dataset (member, time, lat, lon)
-        threshold: 复合热浪天数阈值（注意：这里实际处理的是已检测的热浪天数）
-        varname: 变量名
-    
+        exposure_annual: 区域年暴露时间 (member, year) 或展平数组；
+                         上游由复合日数经区域聚合得到
+        threshold: 复合热浪暴露天数阈值（图3 x 轴 / Table 1 阈值）
+
     Returns:
         prob: 概率值 (0-1)
     """
-    # 将温度数据转换为热浪天数（需先检测热浪）
-    # 这里简化：假设输入已经是热浪天数
-    data = ds[varname]
-    
-    # 计算每年每个格点的热浪天数
-    annual_days = data.groupby('time.year').sum(dim='time')
-    
-    # 计算超过阈值的概率
-    exceed_count = (annual_days >= threshold).sum().values
-    total_count = annual_days.size
-    
-    if total_count == 0:
+    data = np.asarray(exposure_annual).ravel()
+    if data.size == 0:
         return 0.0
-    
-    return float(exceed_count) / float(total_count)
+    return float((data >= threshold).sum()) / float(data.size)
 
 
 def single_bootstrap_iteration(
-    all_data: xr.Dataset,
-    fixghg_data: xr.Dataset,
-    threshold: float,
-    all_members: list,
-    fixghg_members: list,
-    n_all: int = 20,
-    n_fixghg: int = 20
+    all_exposure: np.ndarray,
+    fixghg_exposure: np.ndarray,
+    threshold: float
 ) -> Tuple[float, float]:
     """
-    单次 bootstrap 迭代：有放回抽样成员，计算 FAR 和 PR。
-    
+    单次 bootstrap 迭代：有放回抽样模型年，计算 FAR 和 PR。
+
     Parameters:
-        all_data: ALL 强迫数据
-        fixghg_data: FixGHG 数据
-        threshold: 复合热浪天数阈值
-        all_members: ALL 成员列表
-        fixghg_members: FixGHG 成员列表
-        n_all: ALL 抽样成员数
-        n_fixghg: FixGHG 抽样成员数
-    
+        all_exposure: ALL 区域年暴露池化样本（20 成员 × 22 年 = 440）
+        fixghg_exposure: FixGHG 区域年暴露池化样本（440）
+        threshold: 复合热浪暴露天数阈值
+
     Returns:
         far_val, pr_val
     """
-    # 有放回抽样
-    all_sample_idx = np.random.choice(all_members, size=n_all, replace=True)
-    fixghg_sample_idx = np.random.choice(fixghg_members, size=n_fixghg, replace=True)
-    
-    all_sample = all_data.sel(member=all_sample_idx)
-    fixghg_sample = fixghg_data.sel(member=fixghg_sample_idx)
-    
+    # 有放回抽样（论文 Methods：从原始模型年样本中重采样）
+    all_sample = np.random.choice(all_exposure, size=all_exposure.size, replace=True)
+    fixghg_sample = np.random.choice(fixghg_exposure, size=fixghg_exposure.size, replace=True)
+
     # 计算概率
     p_all = calc_probability(all_sample, threshold)
     p_fixghg = calc_probability(fixghg_sample, threshold)
-    
-    # 计算 FAR 和 PR
+
+    # 计算 FAR 和 PR（论文 Eq.2/3）
     far = calc_FAR(p_all, p_fixghg)
     pr = calc_PR(p_all, p_fixghg)
-    
+
     return far, pr
 
 
 def bootstrap_FAR_PRC(
-    all_data: xr.Dataset,
-    fixghg_data: xr.Dataset,
+    all_data: np.ndarray,
+    fixghg_data: np.ndarray,
     thresholds: np.ndarray,
     n_bootstrap: int = N_BOOTSTRAP,
-    n_jobs: int = N_JOBS,
-    all_members: Optional[list] = None,
-    fixghg_members: Optional[list] = None
+    n_jobs: int = N_JOBS
 ) -> Dict[str, np.ndarray]:
     """
     并行 bootstrap 计算 FAR 和 PR 曲线。
-    
-    这是整个项目最耗时的步骤（预计 2-4 周，取决于 CPU 核数）。
+
+    开销说明：样本是**池化后的 440 个模型年标量**（非逐日格点场），
+    1000 次 × 若干阈值在单机上为秒级到分钟级。
+    本项目真正的计算瓶颈在**前一步**——40 个 CESM 成员的逐格点热浪检测。
     
     Parameters:
-        all_data: ALL 强迫 CESM1-LE 数据 (member, time, lat, lon)
-        fixghg_data: FixGHG 数据
-        thresholds: 复合热浪天数阈值数组
+        all_data: ALL 区域年暴露时间 (member, year)，池化后 440 模型年
+                  （上游已完成复合检测与区域聚合，见 calc_probability）
+        fixghg_data: FixGHG 区域年暴露时间（同上）
+        thresholds: 复合热浪暴露天数阈值数组（图3 x 轴，如 10, 15, …, 95 天）
         n_bootstrap: 自助采样次数
         n_jobs: 并行核心数
-        all_members: ALL 成员 ID 列表
-        fixghg_members: FixGHG 成员 ID 列表
     
     Returns:
         results: 包含 FAR/PR 均值、置信区间的字典
     """
-    if all_members is None:
-        all_members = all_data.member.values.tolist()
-    if fixghg_members is None:
-        fixghg_members = fixghg_data.member.values.tolist()
+    # 池化为模型年样本（member × year → 440 个模型年）
+    all_exposure = np.asarray(all_data).ravel()
+    fixghg_exposure = np.asarray(fixghg_data).ravel()
     
     n_thresh = len(thresholds)
     
@@ -1687,8 +1665,7 @@ def bootstrap_FAR_PRC(
         results_thresh = []
         for ti, thresh in enumerate(thresholds):
             far_val, pr_val = single_bootstrap_iteration(
-                all_data, fixghg_data, thresh,
-                all_members, fixghg_members
+                all_exposure, fixghg_exposure, thresh
             )
             results_thresh.append((far_val, pr_val))
         return results_thresh
@@ -1729,6 +1706,70 @@ def bootstrap_FAR_PRC(
 
 ---
 
+### 3.9b `gev_return_period.py` — GEV 重现期（图 4）
+
+**文件路径**: `python/gev_return_period.py`
+**功能**: 按论文 Methods "Return level and period estimation using GEV" 计算重现期变化（图 4a–c）。
+
+**论文口径（必须遵循）**:
+- 输入：ALL 与 FixGHG 的**区域年暴露时间**（地中海&黑海）；图 4 覆盖三类事件：
+  a 沿海海洋热浪天数、b 沿海陆地热浪天数、c 复合 MHW-THW 天数。
+- 第一步：对 FixGHG 年值去缺测后做 **1000 次有放回 bootstrap**，每次用 **MLE 拟合 GEV**，
+  经逆 CDF 求 5/10/20/50/100 年重现水平；报告**中位数 + 2.5–97.5% CI**。
+- 第二步：把 FixGHG 的各重现水平映射到 ALL 的**等效重现期**；对 ALL 重复 bootstrap 估计其不确定性。
+- 置信区间与图 3 不同：图 3 FAR/PR 用 **5–95%**（`CI_ALPHA`），图 4 用 **2.5–97.5%**（`GEV_CI`）。
+
+```python
+from scipy.stats import genextreme
+
+def fit_return_levels(annual_values: np.ndarray,
+                      n_bootstrap: int = N_BOOTSTRAP,
+                      seed: int = 42) -> dict:
+    """FixGHG 年值 → GEV 重现水平分布（1000 bootstrap, MLE）。
+
+    Returns: {rp: {'median', 'ci_lower', 'ci_upper'}}，rp ∈ GEV_RETURN_PERIODS
+    """
+    rng = np.random.default_rng(seed)
+    vals = annual_values[np.isfinite(annual_values)]      # 先去缺测
+    levels = {rp: [] for rp in GEV_RETURN_PERIODS}
+    for _ in range(n_bootstrap):
+        sample = rng.choice(vals, size=vals.size, replace=True)
+        c, loc, scale = genextreme.fit(sample)            # MLE
+        for rp in GEV_RETURN_PERIODS:
+            levels[rp].append(genextreme.ppf(1 - 1 / rp, c, loc=loc, scale=scale))
+    out = {}
+    for rp, arr in levels.items():
+        arr = np.asarray(arr)
+        out[rp] = {'median': float(np.median(arr)),
+                   'ci_lower': float(np.quantile(arr, GEV_CI[0])),
+                   'ci_upper': float(np.quantile(arr, GEV_CI[1]))}
+    return out
+
+
+def map_return_period(all_annual: np.ndarray,
+                      return_levels: dict,
+                      n_bootstrap: int = N_BOOTSTRAP,
+                      seed: int = 43) -> dict:
+    """FixGHG 重现水平 → ALL 等效重现期（对 ALL 重复 bootstrap 估计不确定性）。"""
+    rng = np.random.default_rng(seed)
+    vals = all_annual[np.isfinite(all_annual)]
+    rps = {rp: [] for rp in return_levels}
+    for _ in range(n_bootstrap):
+        sample = rng.choice(vals, size=vals.size, replace=True)
+        c, loc, scale = genextreme.fit(sample)
+        for rp, st in return_levels.items():
+            p = genextreme.cdf(st['median'], c, loc=loc, scale=scale)
+            rps[rp].append(1.0 / (1.0 - p) if p < 1 else np.inf)
+    return {rp: {'median': float(np.median(a)),
+                 'ci_lower': float(np.quantile(a, GEV_CI[0])),
+                 'ci_upper': float(np.quantile(a, GEV_CI[1]))}
+            for rp, a in rps.items()}
+```
+
+> 实现注意：`genextreme.fit` 默认 MLE；若极端分位不稳定，可锁定 location/scale
+> 或改用 L 矩估计并记录敏感性。图 4 每个面板对 marine / terrestrial / compound
+> 三类年暴露序列各执行一遍上述流程。
+
 ### 3.10 `fig1_compound_spatial.py` — 图 1: 复合事件空间分布与时间序列
 
 **文件路径**: `python/fig1_compound_spatial.py`  
@@ -1760,265 +1801,140 @@ def plot_figure1(output_dir=None):
 ### 3.12 `figures.py` — 一键生成全部图表
 
 **文件路径**: `python/figures.py`  
-**功能**: 统一入口，按顺序生成图 1-6、补充图 S1、表 1。
+**功能**: 统一入口，生成图 1、图 2、补充图 S1（图 S2 由 fig_jkl_mhw_envelope.py 出；图 3–6 尚未实现）。
 
 ---
 
 ### 3.11 `run_all.py` — 一键运行入口
 
 **文件路径**: `python/run_all.py`  
-**功能**: 串联所有步骤，一键运行完整流程。
+**功能**: 串联 **Phase 0–3**（数据预处理 → 热浪检测 → 沿海配对与复合事件 → 年度指标/CHR/共现概率）。  
+**当前实际步骤数**: 4 个 Phase（不是 6 步）；**不含归因与湿热环节**。
+
+> ⚠️ **规范与实现的差异说明**（2026-09-23 复核）：
+> 本节此前按"6 步含归因"的旧设计书写，与实现不符，已按实际代码重写要点。
+> - Phase 5（WBT/SH，图 5–6）与 Phase 6（CESM 归因，图 3–4）**尚未接入 run_all.py**；
+>   Phase 6 目前是独立入口 `python/phase6_cesm.py`（prepare → pairs → detect → compound → attrib）。
+> - 陆地检测经 `detect_thw_wrapper` → `python/detect_thw.R`（**已归档脚本**）；
+>   正式链路是 `python/detect_events.R`，缓存缺失时需注意此差异。
+> - 缓存命中时各 Phase 直接读 `results/intermediate/` 下已有产物（~1 min）；
+>   全量重检陆地约 22 min。
 
 ```python
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """
-run_all.py — 一键运行完整复现流程
+run_all.py — 一键运行入口（Phase 0-3）
 
-Usage:
-    python run_all.py                          # 全量运行
-    python run_all.py --skip-download          # 跳过下载（数据已就绪）
-    python run_all.py --skip-detection         # 跳过热浪检测
-    python run_all.py --skip-attribution       # 跳过归因分析（最耗时）
-    python run_all.py --help                   # 查看帮助
-
-预计总运行时间（含归因）: 2-4 周（取决于 CPU 核数）
+Phase 0: 数据预处理（合并 OISST / E-OBS）
+Phase 1: 热浪检测（MHW + THW）
+Phase 2: 沿海配对 + 复合事件识别
+Phase 3: CHR / 共现概率计算
 """
-import argparse
-import os
-import sys
-import time
-from datetime import datetime
+import os, sys, time
+import numpy as np, pandas as pd, xarray as xr
 
-# 确保 python/ 在 sys.path 中
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'python'))
+sys.path.insert(0, os.path.dirname(__file__))
 
 from config import (
-    DATA_DIR, INTERMEDIATE_DIR, RESULTS_DIR,
-    CLIM_PERIOD, N_BOOTSTRAP, N_JOBS,
-    CESM_ALL_MEMBERS, CESM_FIXGHG_MEMBERS
+    OISST_MERGED_FILE, EOBS_MERGED_FILE,
+    SST_CLIM_FILE, T2M_CLIM_FILE,
+    MHW_EVENTS_CSV, THW_EVENTS_CSV,
+    COASTAL_PAIRS_CSV,
+    COMPOUND_NC, STANDALONE_NC,
+    ANNUAL_COMPOUND_NC, ANNUAL_STANDALONE_NC, ANNUAL_THW_NC,
+    CHR_ANNUAL_NC, COOCCURRENCE_PROB_NC,
+    CLIM_PERIOD,
+    INTERMEDIATE_DIR, FIGURES_DIR, TABLES_DIR, LOGS_DIR,
 )
-from load_data import preprocess_all, load_oisst, load_eobs, load_era5_var
-from detect_mhw import detect_mhw_all_grids, mhw_events_to_daily
-from detect_thw import detect_thw  # R 调用
-from coastal_mask import (
-    build_land_mask, build_ocean_mask,
-    find_coastal_grid_pairs, get_grid_pair_info
-)
-from compound_events import (
-    identify_compound_events,
-    compound_events_to_daily,
-    calc_standalone_days
-)
-from calc_chr import calc_CHR, calc_cooccurrence_prob, calc_annual_days
-from calc_wbt import calc_WBT, calc_specific_humidity
-from attribution import bootstrap_FAR_PRC, load_cesm1le_dir
-from figures import generate_all_figures
+
+import preprocess, load_data, detect_mhw, detect_thw_wrapper
+import coastal_mask, compound_events, calc_chr
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Run full heatwave attribution pipeline")
-    parser.add_argument('--skip-download', action='store_true', help='Skip data download')
-    parser.add_argument('--skip-detection', action='store_true', help='Skip heatwave detection')
-    parser.add_argument('--skip-attribution', action='store_true', help='Skip attribution analysis')
-    parser.add_argument('--n-jobs', type=int, default=N_JOBS, help='Number of parallel jobs')
-    return parser.parse_args()
+def phase0_preprocess():
+    """合并 OISST / E-OBS（已存在则跳过）。对应 preprocess.merge_oisst / merge_eobs。"""
+    ...
 
 
-def log(msg: str):
-    """带时间戳的日志输出。"""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] {msg}")
+def phase1_detection():
+    """沿海配对 + MHW/THW 检测。缓存命中（COASTAL_PAIRS_CSV / MHW_EVENTS_CSV /
+    THW_EVENTS_CSV 已存在）则直接读 CSV，否则调用检测。
+
+    ⚠️ THW 走 detect_thw_wrapper.detect_thw() → python/detect_thw.R（归档脚本）。
+    正式重检请改用 python/detect_events.R。
+    """
+    ...
+
+
+def phase2_compound(data, mhw_df, thw_df, pairs_df):
+    """identify_compound_events（逐日共超标）→ compound_events.nc / standalone_days.nc"""
+    ...
+
+
+def phase3_metrics(compound_daily, standalone_daily):
+    """年度天数 → CHR / 共现概率 → annual_*.nc / CHR_annual.nc / cooccurrence_prob_annual.nc
+
+    关键口径：陆地热浪总天数 = 复合日 ∪ standalone 日
+        all_thw_daily = xr.where(compound_daily > 0, 1, standalone_daily)
+    （**不是** mhw_daily —— 后者是海洋热浪日场）
+    """
+    ...
 
 
 def main():
-    args = parse_args()
-    
-    os.makedirs(INTERMEDIATE_DIR, exist_ok=True)
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    os.makedirs(os.path.join(RESULTS_DIR, "figures"), exist_ok=True)
-    os.makedirs(os.path.join(RESULTS_DIR, "tables"), exist_ok=True)
-    
-    # ──────────────────────────────────────────────
-    # Step 1: 加载数据
-    # ──────────────────────────────────────────────
-    log("[Step 1/6] Loading and preprocessing data...")
-    t0 = time.time()
-    
-    data = preprocess_all()
-    oisst = data['oisst']
-    eobs = data['eobs']
-    era5_tmax = data['era5_tmax']
-    era5_d2m = data['era5_d2m']
-    era5_sp = data['era5_sp']
-    
-    log(f"Data loaded in {time.time() - t0:.1f}s")
-    
-    # ──────────────────────────────────────────────
-    # Step 2: 热浪检测
-    # ──────────────────────────────────────────────
-    if not args.skip_detection:
-        log("[Step 2/6] Detecting marine heatwaves...")
-        t0 = time.time()
-        
-        mhw_events = detect_mhw_all_grids(oisst['SST'], CLIM_PERIOD)
-        mhw_daily = mhw_events_to_daily(
-            mhw_events, oisst.time, oisst.lat, oisst.lon
-        )
-        mhw_events.to_netcdf(os.path.join(INTERMEDIATE_DIR, "mhw_events.nc"))
-        mhw_daily.to_netcdf(os.path.join(INTERMEDIATE_DIR, "mhw_daily.nc"))
-        log(f"MHW detection done: {len(mhw_events)} events in {time.time() - t0:.1f}s")
-        
-        log("[Step 2b/6] Detecting terrestrial heatwaves (R/heatwaveR)...")
-        t0 = time.time()
-        
-        thw_output = os.path.join(INTERMEDIATE_DIR, "thw_events.rds")
-        detect_thw(
-            os.path.join(DATA_DIR, "E-OBS", "EOBS_tg_1984_2023.nc"),
-            thw_output,
-            CLIM_PERIOD
-        )
-        log(f"THW detection done in {time.time() - t0:.1f}s")
-        
-        # 加载 R 结果
-        import rpy2.robjects as ro
-        thw_events = ro.r('readRDS')(thw_output)
-        # 转换为 pandas DataFrame（需要 rpy2 的 pandas 接口）
-        from rpy2.robjects import pandas2ri
-        with pandas2ri.localconverter():
-            thw_events_df = ro.conversion.rpy2py(thw_events)
-    else:
-        log("[Step 2/6] Skipping detection, loading cached results...")
-        mhw_daily = xr.open_dataarray(os.path.join(INTERMEDIATE_DIR, "mhw_daily.nc"))
-        # ... 加载其他缓存
-    
-    # ──────────────────────────────────────────────
-    # Step 3: 沿海格点配对与复合事件识别
-    # ──────────────────────────────────────────────
-    log("[Step 3/6] Building coastal mask and identifying compound events...")
-    t0 = time.time()
-    
-    land_mask = build_land_mask(eobs)
-    ocean_mask = build_ocean_mask(oisst)
-    pairs = find_coastal_grid_pairs(
-        land_mask.values, ocean_mask.values,
-        eobs.lat.values, eobs.lon.values
-    )
-    pair_df = get_grid_pair_info(pairs, eobs.lat, eobs.lon)
-    
-    compound_events = identify_compound_events(mhw_events, thw_events_df, pair_df)
-    compound_daily = compound_events_to_daily(
-        compound_events, eobs.time, eobs.lat, eobs.lon
-    )
-    standalone_daily = calc_standalone_days(
-        thw_events_df, mhw_events, pair_df,
-        eobs.time, eobs.lat, eobs.lon
-    )
-    
-    # 保存
-    compound_events.to_csv(os.path.join(INTERMEDIATE_DIR, "compound_events.csv"))
-    compound_daily.to_netcdf(os.path.join(INTERMEDIATE_DIR, "compound_daily.nc"))
-    standalone_daily.to_netcdf(os.path.join(INTERMEDIATE_DIR, "standalone_daily.nc"))
-    
-    log(f"Compound events identified in {time.time() - t0:.1f}s")
-    
-    # ──────────────────────────────────────────────
-    # Step 4: 计算 CHR 和 WBT
-    # ──────────────────────────────────────────────
-    log("[Step 4/6] Calculating CHR and WBT...")
-    t0 = time.time()
-    
-    # 年度天数
-    compound_days = calc_annual_days(compound_daily)
-    standalone_days = calc_annual_days(standalone_daily)
-    thw_days = calc_annual_days(mhw_daily)  # 陆地热浪总天数
-    
-    CHR = calc_CHR(compound_days, standalone_days)
-    cooccurrence_prob = calc_cooccurrence_prob(compound_days, thw_days)
-    
-    # CHR 时间序列（地中海平均）
-    CHR_ts = calc_spatial_mean(CHR, lat_range=(30, 45), lon_range=(5, 35))
-    # CHR 空间分布（2003-2023 平均）
-    CHR_spatial = CHR.sel(time=slice(2003, 2023)).mean(dim='time')
-    
-    # WBT
-    WBT = calc_WBT(era5_tmax, era5_d2m, era5_sp, method='stull')
-    SH = calc_specific_humidity(era5_d2m, era5_sp)
-    
-    # WBT 年度统计
-    WBT_compound = WBT.where(compound_daily == 1).groupby('time.year').mean()
-    WBT_noncompound = WBT.where(standalone_daily == 1).groupby('time.year').mean()
-    
-    log(f"CHR and WBT calculated in {time.time() - t0:.1f}s")
-    
-    # ──────────────────────────────────────────────
-    # Step 5: 归因分析（最耗时）
-    # ──────────────────────────────────────────────
-    if not args.skip_attribution:
-        log("[Step 5/6] Running attribution analysis (this is the slowest step)...")
-        t0 = time.time()
-        
-        log("Loading CESM1-LE data...")
-        cesm_all = load_cesm1le_dir("ALL")
-        cesm_fixghg = load_cesm1le_dir("FixGHG")
-        
-        # 定义阈值范围
-        thresholds = np.arange(10, 100, 5)  # 10, 15, 20, ..., 95 天
-        
-        log(f"Running {N_BOOTSTRAP} bootstrap iterations...")
-        attr_results = bootstrap_FAR_PRC(
-            cesm_all, cesm_fixghg, thresholds,
-            n_bootstrap=N_BOOTSTRAP,
-            n_jobs=args.n_jobs,
-            all_members=CESM_ALL_MEMBERS,
-            fixghg_members=CESM_FIXGHG_MEMBERS
-        )
-        
-        log(f"Attribution done in {time.time() - t0:.1f}s")
-        
-        # 保存中间结果
-        import pickle
-        with open(os.path.join(INTERMEDIATE_DIR, "attr_results.pkl"), 'wb') as f:
-            pickle.dump(attr_results, f)
-    else:
-        log("[Step 5/6] Skipping attribution...")
-        attr_results = None
-    
-    # ──────────────────────────────────────────────
-    # Step 6: 生成全部图表
-    # ──────────────────────────────────────────────
-    log("[Step 6/6] Generating figures...")
-    
-    generate_all_figures()
-    
-    log("=" * 60)
-    log("ALL DONE! Results and figures saved to:")
-    log(f"  {INTERMEDIATE_DIR}")
-    log(f"  {FIGURES_DIR}")
-    log("=" * 60)
+    phase0_preprocess()
+    data, mhw_df, thw_df, pairs_df = phase1_detection()
+    compound_daily, standalone_daily, pairs_df = phase2_compound(data, mhw_df, thw_df, pairs_df)
+    results = phase3_metrics(compound_daily, standalone_daily)
 
 
 if __name__ == "__main__":
     main()
 ```
 
+**Phase 5 / Phase 6 尚未接入本入口**，各自的入口与产物为：
+
+| 阶段 | 入口 | 主要产物 | 状态 |
+|---|---|---|---|
+| Phase 5 湿热应力（图5–6） | ⬜ `python/calc_wbt.py` + `fig5_sst_trend.py` + `fig6_wbt.py` | `wbt_daily.nc`、`sh_daily.nc`、`sst_trend.nc` | 未实现 |
+| Phase 6 归因（图3–4） | ✅ `python/phase6_cesm.py`（prepare/pairs/detect/compound/attrib） | `bootstrap_results.pkl`、`fig7_p0_validation.png`（P0 版） | P0 验证完成，全量未跑 |
+
+Phase 6 的 bootstrap 调用形态与 §3.9 一致（**只传池化后的区域年暴露序列，不传成员列表**）：
+
+```python
+# 每类事件 / 每个区域各取一条 (member, year) 的区域年暴露序列，先池化为 440 模型年
+exposure_all = region_annual_exposure(cesm_all)     # shape (440,)
+exposure_fix = region_annual_exposure(cesm_fixghg)  # shape (440,)
+
+thresholds = np.arange(10, 100, 5)                  # 10, 15, …, 95 天
+attr = bootstrap_FAR_PRC(exposure_all, exposure_fix, thresholds,
+                         n_bootstrap=N_BOOTSTRAP, n_jobs=N_JOBS)
+```
+
 ---
 
 ## 4. R 代码详细规范
 
-### 4.1 `detect_thw.R` — 陆地热浪检测
+### 4.1 `detect_thw.R` — 陆地热浪检测（**历史存档，勿重跑**）
+
+> ⚠️ **状态：已归档**。本脚本存在 `return`-in-`tryCatch` 的静默吞错风险
+> （见下方 `error = function(e) return(NULL)`），**正式链路是 `python/detect_events.R`**（§3.4）。
+> 保留本节仅作历史对照；其产物 `thw_events_R.csv` 已与 `detect_events.R` 的
+> `thw_events_R_v2.csv` 逐行回归比对一致，缓存可继续使用。
+> 下方代码中的 `saveRDS` / `.rds` 写法为原始设计，实际产物是 **CSV**。
 
 **文件路径**: `python/detect_thw.R`  
 **功能**: 使用 `heatwaveR` 逐格点检测陆地热浪。
 
 ```r
 #!/usr/bin/env Rscript
-# detect_thw.R — 陆地热浪检测 (heatwaveR)
+# detect_thw.R — 陆地热浪检测 (heatwaveR)  【已归档】
 #
 # 用法:
-#   Rscript detect_thw.R <eobs_file> <output_file> <clim_start> <clim_end>
+#   Rscript detect_thw.R <eobs_file> <output_csv> <clim_start> <clim_end>
 #
 # 示例:
-#   Rscript detect_thw.R data/E-OBS/EOBS_tg_1984_2023.nc results/thw_events.rds 1983 2012
+#   Rscript detect_thw.R data/E-OBS/EOBS_tg_1983_2023.nc results/intermediate/thw_events_R.csv 1983 2012
 
 suppressPackageStartupMessages(library(heatwaveR))
 suppressPackageStartupMessages(library(ncdf4))
@@ -2161,31 +2077,51 @@ def detect_thw(eobs_filepath: str, output_path: str, clim_period: tuple):
 
 ### 5.2 `fig1_compound_spatial.py` — 图 1
 
-**文件**: `python/fig1_compound_spatial.py`  
-**面板**: a-i 年度复合热浪天数（9 个最多年份的 3×3 地图）、j-l 时空平均时间序列（复合/独立/总 THW）、m 多年均值共现概率地图  
+**文件**: `python/fig1_compound_spatial.py`
+**面板（严格按论文 Fig. 1 caption）**:
+
+| 面板 | 内容 |
+|---|---|
+| a–i | 9 个**论文指定年份**的复合热浪天数空间分布：**2003, 2006, 2010, 2012, 2018, 2019, 2020, 2022, 2023** |
+| j–l | 复合热浪天数**时间序列**（1983–2023）× **三个区域**：地中海（含黑海）/ 波罗的海沿岸 / 全欧洲海岸 |
+| m | 共现概率（复合天数 ÷ 陆地热浪天数）空间分布，**2003–2023 平均** |
+
 **输出**: `results/figures/fig1_compound_spatial.pdf`
+**口径提醒**: j–l 用 **MHW 包络**（论文 L520 "fully encompasses"），a–i/m 用 **逐日共超标**（L477）；
+详见 §3.6 与 `results/复现报告.md` 方案 B。
 
 ### 5.3 `fig2_chr.py` — 图 2
 
-**文件**: `python/fig2_chr.py`  
-**面板**: a 各区域年度复合天数堆叠柱状图、b 独立天数堆叠柱状图、c CHR 时间序列、d CHR 多年均值空间分布  
+**文件**: `python/fig2_chr.py`
+**面板（严格按论文 Fig. 2 caption）**:
+
+| 面板 | 内容 |
+|---|---|
+| a | 复合 MHW–THW 天数**空间分布**（2003–2023 平均）—— **不是**区域柱状图 |
+| b | stand-alone 陆地热浪天数**空间分布**（2003–2023 平均） |
+| c | CHR 时间序列（1983–2023），含 y=1 参考线 |
+| d | CHR **空间分布**（2003–2023 平均） |
+
 **输出**: `results/figures/fig2_chr.pdf`
+**统计口径**: 图2 a/b 为区间**均值场**；图2 d 为区间**总和之比**（论文 caption "ratio ... over the
+period 2003–2023" 的字面读法，见 `复现报告.md` D4）；图2 c 为逐年 cos 加权总和之比。
 
 ### 5.4 `figures.py` — 一键生成
 
-**文件**: `python/figures.py`  
-**功能**: 统一入口，按顺序调用 fig1–6、supp_fig1、table1 的生成函数。
+**文件**: `python/figures.py`
+**功能（当前实现）**: 统一入口，调用 **图 1、图 2、补充图 S1** 的生成函数。
+补充图 S2 由独立脚本 `python/fig_jkl_mhw_envelope.py` 生成；**图 3–6 与表 1 尚未实现**。
 
 ```python
 from fig1_compound_spatial import plot_figure1
 from fig2_chr import plot_figure2
-# ...
 
 def generate_all_figures():
     plot_figure1()
     plot_figure2()
-    # ...
 ```
+
+> 规划中的完整形态（Phase 5/7 完成后）才包含 fig3–fig6、supp_fig1、table1。
 
 ---
 
@@ -2268,33 +2204,47 @@ def plot_figure1(output_dir=None):
 
 ### 8.1 数据完整性校验
 
+**实际脚本**: `python/verify_data.py`（**不是**硬编码路径清单——它全部走 `config.py` 常量），
+检查的是**预处理产物与中间产物**，不是原始下载数据（原始数据完整性由各下载脚本内置校验保障）。
+
 ```python
-# verify_data.py
-import os
+# python/verify_data.py（要点）
+from config import (
+    OISST_MERGED_FILE, EOBS_MERGED_FILE,      # 合并件
+    SST_CLIM_FILE, T2M_CLIM_FILE,             # 气候态
+    MHW_EVENTS_CSV, THW_EVENTS_CSV,           # 检测结果
+    COASTAL_PAIRS_CSV,                        # 沿海配对
+    COMPOUND_NC, STANDALONE_NC,               # 复合 / 独立日场
+)
 
-required = {
-    "data/OISST/oisst_v2.1_1982_2023.nc": 3e9,
-    "data/E-OBS/EOBS_tg_1984_2023.nc": 2e9,
-    "data/ERA5/ERA5_tmax_1984_2023_daily.nc": 8e9,
-    "data/ERA5/ERA5_d2m_1984_2023_daily.nc": 8e9,
-    "data/ERA5/ERA5_sp_1984_2023_daily.nc": 8e9,
-    "data/OAFlux/OAFlux_evap_1991_2020_monthly.nc": 1e8,
-}
-
-for path, min_size in required.items():
-    if not os.path.exists(path):
-        print(f"❌ Missing: {path}")
-    elif os.path.getsize(path) < min_size:
-        print(f"⚠️ Too small: {path}")
-    else:
-        print(f"✅ {path}")
+def verify_all():
+    check_nc_file(OISST_MERGED_FILE, "OISST merged",
+                  expected_dims={'time': 15340, 'lat': 720, 'lon': 1440})
+    check_nc_file(EOBS_MERGED_FILE, "E-OBS merged",
+                  expected_dims={'time': 14975, 'lat': 201, 'lon': 464})
+    check_nc_file(SST_CLIM_FILE, "SST climatology", min_size_mb=10)
+    check_nc_file(T2M_CLIM_FILE, "T2m climatology", min_size_mb=1)
+    check_file(MHW_EVENTS_CSV, "MHW events CSV", min_size_mb=0.1)
+    check_file(THW_EVENTS_CSV, "THW events CSV", min_size_mb=0.1)
+    check_file(COASTAL_PAIRS_CSV, "Coastal pairs CSV", min_size_mb=0.1)
+    check_nc_file(COMPOUND_NC, "Compound events NC", min_size_mb=1)
+    check_nc_file(STANDALONE_NC, "Standalone days NC", min_size_mb=1)
 ```
+
+**期望维度依据**（勿再写旧值）：
+
+| 文件 | time | lat × lon | 说明 |
+|---|---|---|---|
+| `oisst_v2.1_1982_2023.nc` | 15340 | 720 × 1440 | 1982-01-01 – 2023-12-31 |
+| `EOBS_tg_1983_2023.nc` | **14975** | 201 × 464 | 1983-01-01 – 2023-12-31（**原写 14245 是 1984 起口径，已废**） |
+| `sst_climatology_1983_2012.nc` | 365 | 720 × 1440 | 逐 dayofyear 90 分位 |
+| `t2m_climatology_1983_2012.nc` | 366 | 201 × 464 | 逐 dayofyear 90 分位 |
 
 ### 8.2 关键数值验证
 
 | 验证项 | 期望值 | 容差 | 验证方法 |
 |--------|--------|------|----------|
-| 2022 年地中海 MHW 天数 | ~78 天 | ±5 天 | 对比 Table 1 |
+| 2022 年地中海复合暴露天数 | ~78 天 | ±5 天 | 对比 Table 1 |
 | 2023 年 CHR 峰值 | 3.5 | ±0.2 | 对比正文 |
 | 2022 年 FAR (Mediterranean) | 0.95 | ±0.02 | 对比 Table 1 |
 | WBT ≥ 25.5°C 天数 (2023) | ~40 天 | ±5 天 | 对比正文 |
@@ -2311,7 +2261,7 @@ for path, min_size in required.items():
 conda create -n heatwave python=3.13 -y
 conda activate heatwave
 
-pip install xarray dask numpy scipy matplotlib joblib scipy.io rpy2
+pip install xarray dask numpy scipy matplotlib joblib pandas cdsapi
 
 # R 环境（需单独安装 R）
 # 然后在 R 中运行:
@@ -2332,21 +2282,29 @@ python verify_data.py
 ### 9.3 运行完整流程
 
 ```bash
-# 全量运行（含归因分析，预计 2-4 周）
-cd E:\2607compound
-python python/run_all.py
+# Phase 0-3：预处理 → 检测 → 复合 → 年度指标（缓存命中 ~1 min；全量重检陆地 ~22 min）
+cd D:\2607compound
+python python\run_all.py
 
-# 跳过归因（仅测试数据流程）
-python python/run_all.py --skip-attribution
+# 出图（当前：图1 / 图2 / 补充图 S1）
+python python\figures.py
+python python\fig_jkl_mhw_envelope.py     # 补充图 S2
 
-# 指定并行核心数
-python python/run_all.py --n-jobs 16
+# Phase 6 归因（独立入口，P0 验证版）
+python python\phase6_cesm.py prepare --members 3
+python python\phase6_cesm.py pairs
+python python\phase6_cesm.py detect
+python python\phase6_cesm.py compound
+python python\phase6_cesm.py attrib
 ```
+
+> ⚠️ `run_all.py` **没有** `--skip-attribution` / `--n-jobs` 等参数——它是 Phase 0–3 的
+> 四段式脚本，归因与湿热分析不由它调度（见 §3.11）。
 
 ### 9.4 生成全部图表
 
 ```bash
-python python/figures.py
+python python\figures.py
 ```
 
 ---
@@ -2355,20 +2313,22 @@ python python/figures.py
 
 ### Q1: CESM1-LE 数据太大，下载不完怎么办？
 
-A: 可以先下载 1-2 个成员测试流程。完整归因分析需要全部 40 个成员，但观测分析（图 1-2, 5-6）只需 OISST + E-OBS + ERA5。
+A: 可以先下载 1–3 个成员测试流程（`run_p0_download.bat`）。完整归因分析需要
+**20 个 ALL 成员 + 20 个 XGHG 成员**；观测分析（图 1–2、5–6）只需 OISST + E-OBS + ERA5。
 
 ### Q2: R 的 `heatwaveR` 检测太慢怎么办？
 
-A: 已使用 `foreach` + `doParallel` 并行。如果仍慢，可以考虑：
+A: 已使用 `foreach` + `doParallel` 并行（`R_WORKERS`，本机 12 worker）。如果仍慢，可以考虑：
 - 只检测欧洲区域（裁剪空间范围）
-- 降低时间分辨率（如用月度数据近似）
+- 只检测近岸配对点（MHW 侧实际只检测 1434 个唯一海点）
 
-### Q3: Bootstrap 跑了几天没反应，是不是卡住了？
+### Q3: Bootstrap 跑了很久没反应，是不是卡住了？
 
-A: 正常现象。1000 次 × 40 成员 = 4 万次计算，每次需遍历数十年数据。建议：
-- 先用 `--n-jobs 1` 跑 10 次测试
-- 确认无误后再全量并行
-- 每 100 次保存一次中间结果
+A: **不是**。按论文口径（§3.9），bootstrap 的样本是**区域年暴露时间池化后的 440 个模型年**
+（不是 40 个成员 × 数十年逐日数据），因此 1000 次 × 若干阈值在单机上只需秒级到分钟级。
+真正的耗时在**前一步**：40 个 CESM 成员的逐格点热浪检测。建议：
+- 先用 `--members 3` 跑通 P0 管线，再放全量
+- 检测阶段的逐成员产物落盘，支持断点续跑
 
 ### Q4: 32GB 内存不够用怎么办？
 

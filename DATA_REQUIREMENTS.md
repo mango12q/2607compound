@@ -1,229 +1,307 @@
 ﻿# 数据下载要求
 
-## 数据清单总览
+> **最后更新**: 2026-09-23（本次：新增 3b+ 0.25° sp 欧洲框下载任务、OISST v2.1/v2.0 版本口径说明；
+> 体量按第二轮复核实测值刷新；数据状态与 `config.py` 对齐）
 
-| 数据集 | 时间范围 | 空间范围 | 分辨率 | 预计大小 | 用途 |
-|--------|----------|----------|--------|----------|------|
-| **OISST v2** | 1982–2023 | 全球 | 0.25° 日度 | ~3 GB | 海洋热浪检测 |
-| **E-OBS tg** | 1984–2023 | 欧洲 | 0.25° 日度 | ~2 GB | 陆地热浪检测 |
-| **ERA5 tmax** | 1984–2023 | 全球 | 0.25° 日度 | ~8 GB | WBT 计算 |
-| **ERA5 d2m** | 1984–2023 | 全球 | 0.25° 日度 | ~8 GB | WBT 计算 |
-| **ERA5 sp** | 1984–2023 | 全球 | 0.25° 日度 | ~8 GB | WBT 计算 |
-| **OAFlux** | 1991–2020 | 全球 | 1° 月度 | ~100 MB | 蒸发趋势 |
-| **CESM1-LE ALL** | 1850–2023 | 全球 | ~1° | ~200 GB | 归因分析 |
-| **CESM1-LE FixGHG** | 1850–2023 | 全球 | ~1° | ~200 GB | 归因分析 |
+## 当前数据状态总览
 
-**总数据量**: ~430 GB
+> 下表体量为 **2026-09-23 实测值**（`Get-ChildItem | Measure-Object Length -Sum`），
+> 与早期按下载清单估算的值可能略有出入。
 
-### 下载自动化脚本（2025-09-22 更新）
+| 数据集 | 实际文件/目录 | 时间范围 | 空间范围 | 分辨率 | 实际大小 | 状态 |
+|--------|-------------|----------|----------|--------|----------|------|
+| **OISST v2.1 全球** | `data/OISST/oisst_v2.1_1982_2023.nc` | 1982–2023 | 全球 | 0.25° 日度 | 23.1 GB（15340 天 × 720 × 1440） | ✅ 就位 |
+| **OISST v2.1 欧洲裁剪** | `data/OISST/oisst_v2.1_eur_1983_2023.nc` | 1983–2023 | 欧洲 | 0.25° 日度 | 1.1 GB | ✅ 就位 |
+| **E-OBS tg 合并** | `data/E-OBS/EOBS_tg_1983_2023.nc` | 1983–2023 | 欧洲 | 0.25° 日度 | 0.5 GB（14975 天 × 201 × 464） | ✅ 就位 |
+| **E-OBS tg 分段原始** | `data/E-OBS/tg_ens_mean_0.25deg_reg_*.nc` × 3 | 1980–2023 | 欧洲 | 0.25° 日度 | 0.46 GB | ✅ 就位 |
+| **ERA5 d2m** | `data/ERA5/d2m_global_daily/d2m_global_YYYY_MM.nc` × 573 | 1979–2026 | 全球 | 0.25° 日度 | 40.6 GB | ✅ 就位 |
+| **ERA5 sp** | `data/ERA5/sp/pres.sfc.daily.era5.YYYY.nc` × 46 | 1979–2024 | 全球 | **1.0°** 日度 | 4.1 GB | ✅ 就位（⬜ 0.25° 欧洲框见 3b+） |
+| **ERA5 tmax** | `data/ERA5/tmax_eur_daily/tmax_eur_YYYY_MM.nc` × 1 | 1984–2023 | 欧洲 [66N,10W,30N,40E] | 0.25° 日度 | ~0（仅 1984-01） | ⬜ 待下载 |
+| **OAFlux evap** | `data/OAFlux/`（空） | 1991–2020 | 全球 | 1° 月度 | — | ⬜ 待下载 |
+| **CESM1-LE raw** | `data/CESM1-LE/raw/` × 18 文件 | 1850/1920–2080 | 全球 | ~1°（f09_g16） | 109.3 GB | 🔶 成员 001–003 部分 |
+| **CESM1-LE proc** | `data/CESM1-LE/proc/` × 21 文件 | 2000–2021 | 欧洲裁剪 | ~1°（f09_g16） | 14.0 GB | 🔶 成员 001–003 |
 
-| 数据集 | 自动化脚本 | 状态 |
-|--------|-----------|------|
-| OISST | （已下载完成） | ✅ 就位 |
-| E-OBS tg | （已下载完成） | ✅ 就位 |
-| ERA5 tmax | `python/download_era5_tmax.py`（CDS daily-statistics API，断点续传+合并） | ⬜ 待运行 |
-| ERA5 d2m | （已下载完成，`ERA5/d2m_global_daily/` 按月文件，0.25° 全球日值） | ✅ 就位 |
-| ERA5 sp | （已下载完成，`ERA5/sp/pres.sfc.daily.era5.*.nc`，1.0° 全球日值） | ✅ 就位 |
-| OAFlux evap | `python/download_oaflux_evap.py`（WHOI 官方多镜像自动降级+强校验+合并） | ⬜ 待运行 |
-| CESM1-LE | `run_p0_download.bat`（双击 P0）/ `python/download_cesm1le.py --members 20`（全量） | 🔶 已下 ~126 GB，断点续传 |
+**当前磁盘占用**: ~210 GB（数据实际存放在 `E:\2607compound\data\`，通过 NTFS Junction `D:\2607compound\data` 访问）
 
 ---
 
-## 目录结构要求
+## 目录结构（实际）
 
-下载完成后，`data/` 目录结构必须如下：
+`config.py` 中 `BASE_DIR = r"D:\2607compound"`，`DATA_DIR = os.path.join(BASE_DIR, "data")`。
+`D:\2607compound\data` 是 NTFS Junction → `E:\2607compound\data`。
 
 ```
-E:\2607compound\data\
-├── OISST\
-│   └── oisst_v2.1_1982_2023.nc
-├── E-OBS\
-│   └── EOBS_tg_1984_2023.nc
-├── ERA5\
-│   ├── ERA5_tmax_1984_2023_daily.nc
-│   ├── ERA5_d2m_1984_2023_daily.nc
-│   └── ERA5_sp_1984_2023_daily.nc
-├── OAFlux\
-│   └── OAFlux_evap_1991_2020_monthly.nc
-└── CESM1-LE\
-    ├── ALL\
-    │   ├── b.e11.B20TRC5CNBDRD.001.cam.h1.TREFHT.185001-202312.nc
-    │   ├── b.e11.B20TRC5CNBDRD.002.cam.h1.TREFHT.185001-202312.nc
-    │   └── ... (共 20 个成员)
-    └── FixGHG\
-        ├── b.e11.B20TRC5CNBDRD.FixGHG.001.cam.h1.TREFHT.185001-202312.nc
-        └── ... (共 20 个成员)
+D:\2607compound\                     ← 工作区根目录（代码/文档/结果）
+├── data/                            ← NTFS Junction → E:\2607compound\data
+│   ├── OISST/
+│   │   ├── oisst_v2.1_1982_2023.nc            # 全球合并件 (23.1 GB)
+│   │   ├── oisst_v2.1_eur_1983_2023.nc        # 欧洲裁剪件 (1.1 GB)
+│   │   └── temp_raw/                           # NOAA 按年原始文件
+│   ├── E-OBS/
+│   │   ├── EOBS_tg_1983_2023.nc               # 合并件 (0.5 GB)
+│   │   ├── tg_ens_mean_0.25deg_reg_1980-1994_v33.0e.nc
+│   │   ├── tg_ens_mean_0.25deg_reg_1995-2010_v33.0e.nc
+│   │   └── tg_ens_mean_0.25deg_reg_2011-2023_v29.0e.nc
+│   ├── ERA5/
+│   │   ├── d2m_global_daily/                   # 按月分文件 × 573 (40.6 GB)
+│   │   │   ├── d2m_global_1979_01.nc
+│   │   │   └── ...
+│   │   ├── sp/                                 # 按年分文件 × 46 (4.1 GB)
+│   │   │   ├── pres.sfc.daily.era5.1979.nc
+│   │   │   └── ...
+│   │   ├── tmax_eur_daily/                     # 按月分文件 (待下载)
+│   │   │   └── tmax_eur_1984_01.nc
+│   │   └── t2m/                                # (空)
+│   ├── OAFlux/                                 # (空, 待下载)
+│   └── CESM1-LE/
+│       ├── raw/                                # 全时段原始文件 × 18 (109.3 GB)
+│       └── proc/                               # 裁剪 2000-2021 欧洲子集 × 21 (14.0 GB)
+├── python/
+├── results/
+├── logs/
+└── ...
 ```
 
 ---
 
-## 数据集 1：OISST v2（NOAA）
+## 数据集 1：OISST v2.1（NOAA）
 
 **用途**: 海洋热浪检测（SST）
 
-**下载地址**: https://www.ncei.noaa.gov/products/optimum-interpolation-sst
+**状态**: ✅ 已下载完成
 
-**操作步骤**:
+**已就位文件**:
+- `data/OISST/oisst_v2.1_1982_2023.nc` — 全球合并件，23.1 GB（15340 天 × 720 × 1440）
+- `data/OISST/oisst_v2.1_eur_1983_2023.nc` — 欧洲区域裁剪件，1.1 GB
+- `data/OISST/temp_raw/` — 按年原始 NetCDF 文件
 
-1. **打开网页**: https://www.ncei.noaa.gov/products/optimum-interpolation-sst
-2. **点击 "Access Data"**（通常在页面中间位置）
-3. **选择数据版本**: 找到 **"OISST v2.1 (1981–present)"** 或最新版本
-4. **选择数据格式**: 点击 **"NetCDF"** 格式链接
-5. **在下载页面**:
-   - 时间范围：**1982-01-01** 至 **2023-12-31**
-   - 变量：勾选 **`sst`**（海表温度）
-   - 空间范围：默认全球（无需修改）
-   - 格式：NetCDF
-6. **点击 "Download"** 或 "Submit"
-7. **保存文件到**: `E:\2607compound\data\OISST\oisst_v2.1_1982_2023.nc`
+**config.py 关键路径**:
+```python
+OISST_MERGED_FILE = os.path.join(OISST_DIR, "oisst_v2.1_1982_2023.nc")
+```
 
-**预期文件大小**: ~3 GB
+**数据集信息**:
+- 来源: NOAA NCEI Optimum Interpolation SST v2.1
+- 变量: `sst`（海表温度）
+- 分辨率: 0.25° × 0.25° 日度
+- 网格: 720 lat × 1440 lon
+- 时间范围: 1982-01-01 至 2023-12-31
+- ⚠️ 版本口径: 论文正文写 OISST v2.0（引 Reynolds et al. 2007）；本项目使用 NOAA 现行
+  **v2.1**（v2.0 的维护版本、同一 0.25° 日值产品线）。v2.0 已停更且 2023 年数据仅 v2.1 提供，
+  属记录在案的可接受偏差
 
-**注意事项**:
-- 如果网页只提供按年下载，需逐年下载后合并
-- 合并命令（Python）:
-  ```python
-  import xarray as xr
-  ds = xr.open_mfdataset('OISST/*.nc', combine='by_coords')
-  ds.to_netcdf('OISST/oisst_v2.1_1982_2023.nc')
-  ```
+**下载地址**（备查）: https://www.ncei.noaa.gov/products/optimum-interpolation-sst
 
 ---
 
 ## 数据集 2：E-OBS（Copernicus Climate Data Store）
 
-**用途**: 陆地热浪检测（T2m）
+**用途**: 陆地热浪检测（日平均气温 tg）
+
+**状态**: ✅ 已下载完成
+
+**⚠️ 时间范围修正**: 实际分析使用 **1983–2023**（气候态基准期 1983–2012），不是早期文档写的 1984–2023。
+
+**已就位文件**:
+
+| 文件 | 版本 | 时间段 | 大小 |
+|------|------|--------|------|
+| `tg_ens_mean_0.25deg_reg_1980-1994_v33.0e.nc` | v33.0e | 1980–1994 | 167 MB |
+| `tg_ens_mean_0.25deg_reg_1995-2010_v33.0e.nc` | v33.0e | 1995–2010 | 181 MB |
+| `tg_ens_mean_0.25deg_reg_2011-2023_v29.0e.nc` | v29.0e | 2011–2023 | 146 MB |
+| **EOBS_tg_1983_2023.nc** (合并件) | — | 1983–2023 | 499 MB |
+
+**config.py 关键路径**:
+```python
+EOBS_RAW_FILES = [
+    os.path.join(EOBS_DIR, "tg_ens_mean_0.25deg_reg_1980-1994_v33.0e.nc"),
+    os.path.join(EOBS_DIR, "tg_ens_mean_0.25deg_reg_1995-2010_v33.0e.nc"),
+    os.path.join(EOBS_DIR, "tg_ens_mean_0.25deg_reg_2011-2023_v29.0e.nc"),
+]
+EOBS_MERGED_FILE = os.path.join(EOBS_DIR, "EOBS_tg_1983_2023.nc")
+```
+
+**版本说明**（`config.py: EOBS_VERSION_NOTE`）:
+> Mixed versions: v33.0e (1980–2010) + v29.0e (2011–2023). Analysis subset to 1983–2023.
+
+**数据集信息**:
+- 变量: `tg`（日平均气温, daily mean）
+- 分辨率: 0.25° × 0.25° 日度
+- 空间范围: 欧洲区域（约 25N–71.5N, 25W–45E）
+- 网格: 201 lat × 464 lon
 
 **下载地址**: https://cds.climate.copernicus.eu/datasets/insitu-gridded-observations-europe
 
-doubao的链接 https://www.doubao.com/thread/x8PXIKs2BPXh1GfNR
-
-**操作步骤**:
-
-1. **打开网页**: https://cds.climate.copernicus.eu/datasets/ecv-for-temp-ens
-2. **注册/登录**: 需要免费注册 Copernicus 账号（点击 "Register"）
-3. **登录后点击 "Download data"**
-4. **选择选项**:
-   - **Version**: 选择最新版本（如 `26.0e` 或 `27.0`）
-   - **Variable**: 选择 **`tg`**（日平均气温）
-   - **Time range**: `1984-01-01` 至 `2023-12-31`
-   - **Spatial coverage**: 默认欧洲区域（无需修改）
-   - **Format**: `NetCDF`
-5. **点击 "Submit"** 提交订单
-6. **等待邮件通知**（通常几分钟到几小时）
-7. **下载完成后**，将文件移动到 `E:\2607compound\data\E-OBS\EOBS_tg_1984_2023.nc`
-
-**预期文件大小**: ~2 GB
-
 **注意事项**:
-- 需要注册账号，下载有延迟
-- 如果只需要欧洲区域，可在下载时裁剪空间范围以减小文件大小
-- E-OBS 文件名通常包含版本号，如 `TG_STAID02665_v27.0e.nc`，需统一重命名
+- 文件是 E-OBS **网格数据**（`tg_ens_mean_0.25deg_reg_*` 格式），不是站点数据
+- E-OBS 数据集按时间段分段发布（约 15 年一段），需下载多段后用 xarray 合并
+- `EOBS_tg_1983_2023.nc` 由上述 3 个分段文件合并生成，分析子集从 1983 年起
 
 ---
 
 ## 数据集 3：ERA5（Copernicus Climate Data Store）
 
-**用途**: WBT 计算（需要 tmax, d2m, sp）
+**用途**: WBT 计算（Phase 5 湿热应力需要 tmax, d2m, sp 三个变量）
 
-**当前状态（2025-09-22）**: d2m（0.25° 全球日值 1979-2024）、sp（1.0° 全球日值 1984-2024）已就位；**tmax 缺失**，用下方脚本下载。
+### 3a. ERA5 d2m（2m 露点温度）— ✅ 已就位
 
-**自动化（推荐）**:
+| 项目 | 实际值 |
+|------|--------|
+| 目录 | `data/ERA5/d2m_global_daily/` |
+| 文件格式 | `d2m_global_YYYY_MM.nc`（按月分文件 × 573） |
+| 时间范围 | 1979-01 至 2026-09 |
+| 空间范围 | 全球 |
+| 分辨率 | 0.25° 日度 |
+| 总大小 | 40.6 GB |
+
+### 3b. ERA5 sp（地表气压）— ✅ 已就位
+
+| 项目 | 实际值 |
+|------|--------|
+| 目录 | `data/ERA5/sp/` |
+| 文件格式 | `pres.sfc.daily.era5.YYYY.nc`（按年分文件 × 46） |
+| 时间范围 | 1979–2024 |
+| 空间范围 | 全球 |
+| 分辨率 | **1.0°** 日度（⚠️ 不是 0.25°） |
+| 总大小 | 4.1 GB |
+
+### 3b+. ERA5 sp 0.25°（欧洲框）— ⬜ 待下载（P1，修正论文分辨率偏差）
+
+| 项目 | 目标值 |
+|------|--------|
+| 目录 | `data/ERA5/sp_eur_daily/` |
+| 文件格式 | `sp_eur_YYYY_MM.nc`（按月分文件） |
+| 时间范围 | 1984–2023（与 tmax 一致，覆盖图 5c/6 分析期） |
+| 空间范围 | 欧洲 [N=66, W=-10, S=30, E=40]（与 tmax 下载框一致） |
+| 分辨率 | **0.25°** 日度（论文口径） |
+| 预计总大小 | ~1 GB |
+| 当前进度 | 未开始 |
+
+**为什么需要**: 论文 Methods 声明 WBT/SH 相关 ERA5 变量均为 0.25°；现有 sp 为 1.0° 全球件，
+把 1.0° 重采样到 0.25° 不产生新信息，属方法学降级。0.25° sp 就位后 WBT/SH 全变量统一 0.25°。
+CDS 数据集与 tmax 相同（`derived-era5-single-levels-daily-statistics`，sp 取逐日均值
+`daily_statistic=mean`）；复用 `download_era5_tmax.py` 框架改变量与输出目录即可。
+
+> 决策记录：若最终不下载，则必须在复现报告偏差清单中明确 "sp 1.0° 重采样到 0.25°"
+> 的降级理由，不得默认无声降级。
+
+### 3c. ERA5 tmax（日最高气温）— ⬜ 待下载
+
+| 项目 | 目标值 |
+|------|--------|
+| 目录 | `data/ERA5/tmax_eur_daily/` |
+| 文件格式 | `tmax_eur_YYYY_MM.nc`（按月分文件） |
+| 时间范围 | 1984–2023 |
+| 空间范围 | 欧洲 [N=66, W=-10, S=30, E=40] |
+| 分辨率 | 0.25° 日度 |
+| 预计总大小 | ~1–2 GB |
+| 当前进度 | 仅 1984-01（1 个文件） |
+
+**自动化下载**:
 ```powershell
-python python\download_era5_tmax.py        # 1984-2023 按月下载+校验, 断点续传
-python python\download_era5_tmax.py --merge # 生成 data\ERA5\ERA5_tmax_1984_2023_daily.nc
+python python\download_era5_tmax.py          # 1984-2023 按月下载+校验, 断点续传
+python python\download_era5_tmax.py --merge  # 生成 data\ERA5\ERA5_tmax_1984_2023_daily.nc
 ```
+
 - 数据集: CDS `derived-era5-single-levels-daily-statistics`（日最高气温 = hourly mx2t 的逐日最大）
 - 键名注意: 日统计键是 **`daily_statistic`**（不是 `statistic`）; `time_zone=utc+00:00` 对欧洲区域与当地日最大值一致
 - 首次运行前置: `pip install cdsapi`；`~/.cdsapirc` 已配置有效；若数据集页面未接受过 CC-BY 许可，需先在线接受一次
-- 手动网页步骤（备用方案）保留如下
+- 下载脚本空间范围: `AREA = [66, -10, 30, 40]`（欧洲区域，非全球）
 
 **下载地址**: https://cds.climate.copernicus.eu/datasets/derived-era5-single-levels-daily-statistics
 
-**操作步骤（手动备用）**:
-
-1. **打开网页**: https://cds.climate.copernicus.eu/datasets/era5-daily-single-levels
-2. **登录**（使用 Copernicus 账号，与 E-OBS 相同）
-3. **点击 "Download data"**
-4. **选择变量**（需下载 3 次，每次选一个变量）:
-
-   **第一次 - 日最高气温 (tmax)**:
-   - Variable: `Maximum temperature at 2 metres since previous post-processing`
-   - Time range: `1984-01-01` 至 `2023-12-31`
-   - Spatial coverage: North=66, West=-10, South=30, East=40
-   - Format: NetCDF
-
-   **第二次 - 露点温度 (d2m)**:
-   - Variable: `2 metre dewpoint temperature`
-   - 其他同上
-
-   **第三次 - 地表气压 (sp)**:
-   - Variable: `Surface pressure`
-   - 其他同上
-
-5. **提交下载**（每次单独提交）
-6. **重命名文件**:
-   - `ERA5_daily_tmax_1984_2023.nc` → `ERA5_tmax_1984_2023_daily.nc`
-   - `ERA5_daily_d2m_1984_2023.nc` → `ERA5_d2m_1984_2023_daily.nc`
-   - `ERA5_daily_sp_1984_2023.nc` → `ERA5_sp_1984_2023_daily.nc`
-7. **保存到**: `E:\2607compound\data\ERA5\`
-
-**预期文件大小**: 每个 ~8 GB，共 ~24 GB
-
 **注意事项**:
-- 下载可能需要几小时到几天
-- ~~旧 hourly API 片段已删除~~：`reanalysis-era5-single-levels` 是 **hourly** 数据集（24 时次×40 年体积过大且语义错误）。日值请用 `derived-era5-single-levels-daily-statistics`，已封装进 `python/download_era5_tmax.py`
+- ~~旧 hourly API 片段已删除~~：`reanalysis-era5-single-levels` 是 **hourly** 数据集（24 时次 × 40 年体积过大且语义错误）。日值请用 `derived-era5-single-levels-daily-statistics`
+- d2m 和 sp 是全球数据但分辨率不一致（d2m 0.25° / sp 1.0°）。**已立项下载 0.25° sp 欧洲框（数据集 3b+），届时以 0.25° 为准，1.0° 件仅作全球备查**
 
 ---
 
 ## 数据集 4：OAFlux（WHOI）
 
-**用途**: 海洋蒸发趋势
+**用途**: 海洋蒸发趋势（Phase 5）
 
-**当前状态（2025-09-22）**: 未下载；下载脚本已就绪。
+**状态**: ⬜ 未下载；下载脚本已就绪
 
 **自动化（推荐）**:
 ```powershell
 python python\download_oaflux_evap.py            # 1991-2020, 自动镜像降级+强校验+合并
 python python\download_oaflux_evap.py --probe    # 只探测各镜像可用性
 ```
+
 - **官方主源**: `ftp://ftp.whoi.edu/pub/science/oaflux/data_v3`（WHOI 官网 data-access 页列出）
 - **官方镜像**: WHOI HTTP（ftp1.whoi.edu）、NOAA PSL THREDDS、APDRC、UCAR RDA ds260.1
-- 免账号; 脚本按官方镜像优先级自动探测 evap 月值文件, 逐文件内容校验后合并为
-  `data/OAFlux/OAFlux_evap_1991_2020_monthly.nc`
+- **免账号**; 脚本按官方镜像优先级自动探测 evap 月值文件, 逐文件内容校验后合并
+- 输出: `data/OAFlux/OAFlux_evap_1991_2020_monthly.nc`
 - 注意（2025-09-22 实测）: WHOI FTP 端口本网络不通、PSL THREDDS 维护中、APDRC 502, 均为临时状况; 换网络/稍后重试即可
-- 下方 UCAR climatedataguide 页面只是**介绍页**（非直接下载入口），手动下载请走 WHOI 官网
+- UCAR climatedataguide 页面只是**介绍页**（非直接下载入口），手动下载请走 WHOI 官网
 
 **下载地址**: https://oaflux.whoi.edu/data-access/
 
-**操作步骤（手动备用）**:
-
-1. **打开网页**: https://climatedataguide.ucar.edu/climate-data/oaflux-objectively-analyzed-air-sea-fluxes-global-oceans
-2. **滚动到 "Data Access" 部分**（页面下方）
-3. **点击下载链接**: 找到 **"OAFlux monthly evaporation (1958–present)"**
-4. **注册账号**: 需要注册 UCAR 账号（免费）
-5. **选择时间范围**: 1991-01 至 2020-12
-6. **下载文件**
-7. **保存到**: `E:\2607compound\data\OAFlux\OAFlux_evap_1991_2020_monthly.nc`
-
-**预期文件大小**: ~100 MB
-
-**注意事项**:
-- 如果下载的是多个文件（如每年一个），需合并为一个文件
-- 合并命令:
-  ```python
-  import xarray as xr
-  ds = xr.open_mfdataset('OAFlux/*.nc', combine='by_coords')
-  ds.to_netcdf('OAFlux/OAFlux_evap_1991_2020_monthly.nc')
-  ```
+**数据集信息**:
+- 变量: `evap`（月度蒸发）
+- 分辨率: 1° 月度
+- 预计大小: ~100 MB
 
 ---
 
 ## 数据集 5：CESM1-LE（NCAR GDEX / AWS）
 
-**用途**: 归因分析（ALL 强迫 + XGHG 反事实；论文口径 ALL-but-GHG）
+**用途**: Phase 6 归因分析（ALL 强迫 + XGHG 反事实；论文口径 ALL-but-GHG）
 
-**当前状态（2025-09-22）**: 已下 ~126 GB（成员 001-003 相关 + 部分），断点续传续补。
+**⚠️ 重要命名修正**: 本项目的"FixGHG"实为 CESM1-LE 的 **XGHG** 单强迫实验（`b.e11.B20TRLENS_RCP85.f09_g16.xghg`），不是早期文档写的 `B20TRC5CNBDRD.FixGHG`。
+
+**当前状态**: 已下 raw 109.3 GB + proc 14.0 GB（成员 001–003 部分文件），断点续传续补。
+
+**实际数据组织**:
+
+```
+data/CESM1-LE/
+├── raw/                          # 全时段全球原始文件（仅 P0 已下部分）
+│   ├── b.e11.B20TRC5CNBDRD.f09_g16.001.pop.h.nday1.SST.18500102-20051231.nc
+│   ├── b.e11.B20TRC5CNBDRD.f09_g16.002.pop.h.nday1.SST.19200102-20051231.nc
+│   ├── b.e11.B20TRC5CNBDRD.f09_g16.003.pop.h.nday1.SST.19200102-20051231.nc
+│   ├── b.e11.BRCP85C5CNBDRD.f09_g16.001.pop.h.nday1.SST.20060102-20801231.nc
+│   ├── b.e11.BRCP85C5CNBDRD.f09_g16.002.pop.h.nday1.SST.20060102-20801231.nc
+│   ├── b.e11.BRCP85C5CNBDRD.f09_g16.003.pop.h.nday1.SST.20060102-20801231.nc
+│   ├── b.e11.B20TRLENS_RCP85.f09_g16.xghg.001.cam.h1.TREFHT.19200101-20051231.nc
+│   ├── b.e11.B20TRLENS_RCP85.f09_g16.xghg.001.cam.h1.TREFHT.20060101-20801231.nc
+│   ├── b.e11.B20TRLENS_RCP85.f09_g16.xghg.001.pop.h.nday1.SST.19200102-20051231.nc
+│   ├── ... (共 18 文件, 109.3 GB)
+│   └── ...
+└── proc/                         # 裁剪到 2000-2021 欧洲框后的文件
+    ├── b.e11.B20TRC5CNBDRD.f09_g16.001.pop.h.nday1.SST.18500102-20051231_2000-2021.nc
+    ├── b.e11.B20TRLENS_RCP85.f09_g16.xghg.001.cam.h1.TREFHT.19200101-20051231_2000-2021.nc
+    ├── TREFHT_all_001_2000-2021_europe.nc
+    ├── ... (共 21 文件, 14.0 GB)
+    └── ...
+```
+
+**config.py 关键路径与参数**:
+```python
+CESM_DIR = os.path.join(DATA_DIR, "CESM1-LE")
+CESM_RAW_DIR = os.path.join(CESM_DIR, "raw")    # RDA 下载的全时段原始文件
+CESM_PROC_DIR = os.path.join(CESM_DIR, "proc")  # 裁剪到分析时段后的文件
+CESM_PERIOD = ("2000-01-01", "2021-12-31")      # 论文 L522: 2000-2021
+CESM_P0_MEMBERS = 3
+CESM_EUROPE_LAT = (28.0, 74.0)
+CESM_EUROPE_LON = (-17.0, 47.0)
+```
+
+**实验与变量**:
+
+| 实验 | 模式 | 变量 | 段名 | 说明 |
+|------|------|------|------|------|
+| ALL（大气） | CAM5 | TREFHT | `B20TRC5CNBDRD` (1920–2005) + `BRCP85C5CNBDRD` (2006–2080) | 2m 气温，日值 |
+| ALL（海洋） | POP | SST | `B20TRC5CNBDRD` + `BRCP85C5CNBDRD` | 海表温度，nday1 |
+| XGHG（大气） | CAM5 | TREFHT | `B20TRLENS_RCP85.f09_g16.xghg` | 反事实（温室气体固定） |
+| XGHG（海洋） | POP | SST | `B20TRLENS_RCP85.f09_g16.xghg` | 反事实 |
+
+**⚠️ 时间范围说明**:
+- 文件命名中的实际时段与文档早期描述不同：
+  - 成员 001 的历史段从 **1850** 起（`18500101-20051231`）
+  - 成员 002–020 的历史段从 **1920** 起（`19200101-20051231`）
+  - RCP85 延伸段到 **2080**（`20060101-20801231`）
+  - 分析实际只取 **2000–2021**（`config.py: CESM_PERIOD`）
 
 **自动化（推荐，已实爬验证源可用）**:
 ```powershell
@@ -233,167 +311,73 @@ run_p0_download.bat
 python python\download_cesm1le.py aws --members 20    # ALL 日值 TREFHT 走 AWS zarr
 python python\download_cesm1le.py gdex --members 20   # SST + XGHG 走 NCAR GDEX
 ```
+
 - 精确文件清单（实爬生成）: `results/tables/cesm1le_download_manifest.csv`
 - 走系统代理实测 2.24 MB/s（直连 <0.1）; 工具已自动接入
 - 数据选型依据（为何不用 CMIP6）见 `results/复现报告.md` §11
 
 **下载地址**: https://gdex.ucar.edu/datasets/d651027/ （GDEX d651027, 匿名可用）· AWS 镜像 `s3://ncar-cesm-lens`（仅 ALL 日值 TREFHT）
 
-**操作步骤（手动备用）**:
-
-1. **打开网页**: https://www.earthsystemgrid.org/dataset/
-2. **注册账号**: 需要免费注册 ESG 账号
-3. **搜索数据集**: 在搜索框输入 **"CESM1 large ensemble"**
-4. **选择数据集**: `CESM1-CAM5 Large Ensemble`
-5. **选择变量**:
-   - `TREFHT` (2米气温，陆地)
-   - `TEMP` (海表温度，海洋，取 0m 层)
-   - 注意：每个变量需要单独下载
-6. **选择实验**:
-   - **ALL 强迫**: 实验名 `b.e11.B20TRC5CNBDRD`，选择 20 个成员 (001–020)
-   - **FixGHG**: 实验名 `b.e11.B20TRC5CNBDRD.FixGHG`，选择 20 个成员 (001–020)
-7. **选择时间范围**: 1850-01-01 至 2023-12-31
-8. **选择格式**: NetCDF
-9. **提交下载**
-
-**目录结构要求**:
-```
-E:\2607compound\data\CESM1-LE\
-├── ALL\
-│   ├── b.e11.B20TRC5CNBDRD.001.cam.h1.TREFHT.185001-202312.nc
-│   ├── b.e11.B20TRC5CNBDRD.002.cam.h1.TREFHT.185001-202312.nc
-│   └── ... (共 20 个成员，每个约 5-10 GB)
-└── FixGHG\
-    ├── b.e11.B20TRC5CNBDRD.FixGHG.001.cam.h1.TREFHT.185001-202312.nc
-    └── ... (共 20 个成员)
-```
-
-**预期文件大小**: 每个成员 ~5-10 GB，40 个成员共 **~200-400 GB**
-
 **注意事项**:
-- **数据量巨大**，下载需数天到数周
-- **存储要求**: 确保 `D:\` 盘有 ≥ 500 GB 空闲空间
-- 建议先下载 1-2 个成员测试流程，确认无误再批量下载
-- 可使用 Globus 或 wget 脚本批量下载（ESG 提供）
+- 自动化脚本默认走 proc 流程（服务端切片 2000-2021 + 欧洲裁剪），产出 proc/ 子集而非全量原始文件
+- 全量 20 成员 proc 子集约 100 GB（基于 P0 成员 001–003 的 14 GB 外推）
+- 如需全量原始文件（raw），每成员约 40 GB，20 成员约 800 GB（不推荐，除非有特殊需求）
+- 存储在 E: 盘（E:\2607compound\data\CESM1-LE\）
 
 ---
 
-## 快速验证脚本
-
-下载完成后，运行以下脚本检查所有数据是否就位：
-
-```python
-# verify_data.py
-import os
-
-BASE_DIR = r"E:\2607compound"
-
-required = {
-    "data/OISST/oisst_v2.1_1982_2023.nc": 3e9,
-    "data/E-OBS/EOBS_tg_1984_2023.nc": 2e9,
-    "data/ERA5/ERA5_tmax_1984_2023_daily.nc": 8e9,
-    "data/ERA5/ERA5_d2m_1984_2023_daily.nc": 8e9,
-    "data/ERA5/ERA5_sp_1984_2023_daily.nc": 8e9,
-    "data/OAFlux/OAFlux_evap_1991_2020_monthly.nc": 1e8,
-}
-
-print("Data verification results:")
-print("=" * 60)
-
-all_ok = True
-for rel_path, min_size in required.items():
-    full_path = os.path.join(BASE_DIR, rel_path)
-    if not os.path.exists(full_path):
-        print(f"❌ MISSING: {rel_path}")
-        all_ok = False
-    elif os.path.getsize(full_path) < min_size:
-        actual = os.path.getsize(full_path) / 1e9
-        expected = min_size / 1e9
-        print(f"⚠️  TOO SMALL: {rel_path}")
-        print(f"   Expected: ~{expected:.1f} GB, Got: {actual:.1f} GB")
-        all_ok = False
-    else:
-        actual = os.path.getsize(full_path) / 1e9
-        print(f"✅ OK: {rel_path} ({actual:.1f} GB)")
-
-print("=" * 60)
-
-# 检查 CESM1-LE（仅检查数量，不检查大小）
-cesm_all_dir = os.path.join(BASE_DIR, "data/CESM1-LE/ALL")
-cesm_fixghg_dir = os.path.join(BASE_DIR, "data/CESM1-LE/FixGHG")
-
-if os.path.exists(cesm_all_dir):
-    all_files = [f for f in os.listdir(cesm_all_dir) if f.endswith('.nc')]
-    print(f"CESM1-LE ALL: {len(all_files)}/20 members")
-    if len(all_files) < 20:
-        all_ok = False
-else:
-    print("❌ CESM1-LE ALL directory not found")
-    all_ok = False
-
-if os.path.exists(cesm_fixghg_dir):
-    fixghg_files = [f for f in os.listdir(cesm_fixghg_dir) if f.endswith('.nc')]
-    print(f"CESM1-LE FixGHG: {len(fixghg_files)}/20 members")
-    if len(fixghg_files) < 20:
-        all_ok = False
-else:
-    print("❌ CESM1-LE FixGHG directory not found")
-    all_ok = False
-
-print("=" * 60)
-if all_ok:
-    print("✅ All data ready! You can now run: python python/run_all.py")
-else:
-    print("⚠️  Some data is missing or incomplete. Please check the errors above.")
-```
+## 数据验证
 
 **使用方法**:
-```bash
-cd E:\2607compound
-python verify_data.py
+```powershell
+cd D:\2607compound
+python python\verify_data.py
 ```
+
+**实际验证内容**（`python/verify_data.py`）:
+1. OISST 合并件（检查存在、大小、维度 time×lat×lon）
+2. E-OBS 合并件（检查存在、大小、维度）
+3. SST/T2m 气候态文件
+4. MHW/THW 事件 CSV
+5. 沿海配对 CSV
+6. 复合事件/独立事件 NC 文件
+
+**注意**: 上述脚本检查的是**中间产物**而非原始下载数据的完整性。原始数据完整性由各下载脚本内置校验保障。
 
 ---
 
 ## 下载优先级建议
 
-考虑到数据量和下载时间，建议按以下顺序进行：
+| 优先级 | 数据集 | 状态 | 剩余工作 |
+|--------|--------|------|----------|
+| **P0** | OISST | ✅ 完成 | — |
+| **P0** | E-OBS | ✅ 完成 | — |
+| **P0** | ERA5 d2m + sp | ✅ 完成 | — |
+| **P1** | ERA5 tmax | ⬜ 待下载 | 运行 `python\download_era5_tmax.py` |
+| **P1** | OAFlux | ⬜ 待下载 | 运行 `python\download_oaflux_evap.py` |
+| **P1** | ERA5 sp 0.25°（欧洲框） | ⬜ 待下载 | 新增任务：修正论文分辨率偏差（数据集 3b+） |
+| **P2** | CESM1-LE 全量 | 🔶 P0 已就位 | `run_p0_download.bat` 验证通过后跑全量 20 成员 |
 
-| 优先级 | 数据集 | 大小 | 用途 |
-|--------|--------|------|------|
-| **P0** | OISST | 3 GB | MHW 检测（观测部分必需） |
-| **P0** | E-OBS | 2 GB | THW 检测（观测部分必需） |
-| **P1** | ERA5 (3个文件) | 24 GB | WBT 计算 |
-| **P1** | OAFlux | 100 MB | 蒸发趋势 |
-| **P2** | CESM1-LE ALL | ~200 GB | 归因分析（最耗时，可最后下载） |
-| **P2** | CESM1-LE FixGHG | ~200 GB | 归因分析 |
-
-**建议**: 先下载 P0 和 P1 数据，验证观测分析流程（图 1-2, 5-6）跑通后，再下载 CESM1-LE 做归因分析。
+**建议**: 先补齐 P1 数据（tmax + OAFlux），跑通 Phase 5（湿热应力）观测流程，再下载 CESM1-LE 全量做归因分析。
 
 ---
 
 ## 存储空间规划
 
-```
-E:\2607compound\
-├── data/                    # 原始数据（~430 GB）
-│   ├── OISST/               # 3 GB
-│   ├── E-OBS/               # 2 GB
-│   ├── ERA5/                # 24 GB
-│   ├── OAFlux/              # 0.1 GB
-│   └── CESM1-LE/            # ~400 GB
-│       ├── ALL/             # ~200 GB
-│       └── FixGHG/          # ~200 GB
-│
-├── results/                 # 中间结果（~10-50 GB）
-│   ├── intermediate/        # 可随时删除重算
-│   ├── figures/             # ~1 GB
-│   └── tables/              # 可忽略
-│
-└── 总需求: ~500 GB
-```
+数据实际存放在 **E:\2607compound\data\**（通过 `D:\2607compound\data` NTFS Junction 访问）。
 
-**建议**: 确保 `D:\` 盘有至少 **600 GB** 空闲空间，以应对中间产物和临时文件。
+```
+E:\2607compound\data\              ← 数据盘
+├── OISST/                         # 24 GB (全球 23.1 + 欧洲 1.1)
+├── E-OBS/                         # 1 GB
+├── ERA5/                          # 47 GB (d2m 40.6 + sp 4.1 + tmax ~2)
+├── OAFlux/                        # 0.1 GB
+└── CESM1-LE/                      # 已有 132 GB (raw 117 + proc 15)
+                                   # 全量 20 成员 proc 约 +100 GB
+
+总计（全量完成后）: ~310 GB
+建议 E:\ 盘预留: 400 GB
+```
 
 ---
 
@@ -401,10 +385,10 @@ E:\2607compound\
 
 | 数据集 | 下载方式 | 预计时间 | 注意事项 |
 |--------|----------|----------|----------|
-| OISST | HTTP/FTP | 10-30 分钟 | 稳定，直接下载 |
-| E-OBS | 网页提交 + 邮件通知 | 几小时到1天 | 需注册 |
-| ERA5 | CDS API（推荐） | 几小时 | 稳定，可后台运行 |
-| OAFlux | HTTP | 几分钟 | 稳定 |
-| CESM1-LE | Globus/HTTP | 数天到数周 | 数据量大，建议用 Globus |
+| OISST | HTTP (NCEI) | — | ✅ 已完成 |
+| E-OBS | CDS 网页/API | — | ✅ 已完成 |
+| ERA5 tmax | CDS API | 数小时 | 可后台运行, 断点续传 |
+| OAFlux | HTTP/FTP (WHOI) | 几分钟 | 多镜像自动降级 |
+| CESM1-LE | AWS zarr / GDEX THREDDS | 数天 | 走系统代理 2.24 MB/s |
 
-**推荐**: 使用 **CDS API** 下载 ERA5，**Globus** 下载 CESM1-LE，速度更快且稳定。
+**推荐**: 使用 **CDS API** 下载 ERA5 tmax，**AWS zarr** 下载 CESM1-LE ALL TREFHT，**GDEX THREDDS** 下载 SST + XGHG。

@@ -86,7 +86,7 @@ def verify_all():
     )
     all_ok &= check_nc_file(
         EOBS_MERGED_FILE, "E-OBS merged",
-        expected_dims={'time': 14245, 'lat': 201, 'lon': 464}
+        expected_dims={'time': 14975, 'lat': 201, 'lon': 464}   # 1983-01-01 – 2023-12-31
     )
 
     print("\n[2] Climatology files:")

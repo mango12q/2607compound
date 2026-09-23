@@ -6,6 +6,10 @@ results/intermediate/
 results/tables/
 logs/
 
+# 论文/补充材料 PDF 的纯文本提取（版权内容，与 results/tables/paper_fulltext.txt 同类）
+results/paper_text.txt
+results/paper_supp_text.txt
+
 # Python 缓存
 __pycache__/
 *.pyc
