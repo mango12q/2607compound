@@ -19,7 +19,11 @@
      R 输出点集必须是 1,434 个配对海洋点的子集。
   5. 写 mhw_events_R_global.csv（列结构不变，仅 idx 换成全球索引）。
 
-用法: python globalize_mhw_idx.py
+用法:
+    python globalize_mhw_idx.py                          # 用 config 默认路径
+    python globalize_mhw_idx.py <src_csv> <dst_csv>      # 显式指定（供 run_all.py 调用）
+
+路径来源：默认全部取自 python/config.py（2026-09-23 去除硬编码盘符）。
 """
 import os
 import sys
@@ -29,12 +33,20 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-INTER = r"D:\2607compound\results\intermediate"
-SRC_CSV = os.path.join(INTER, "mhw_events_R.csv")          # R 原始输出（局部索引）
-DST_CSV = os.path.join(INTER, "mhw_events_R_global.csv")   # 换算后（全球索引）
-CLIP = r"E:\2607compound\data\OISST\oisst_v2.1_eur_1983_2023.nc"
-GLOB = r"E:\2607compound\data\OISST\oisst_v2.1_1982_2023.nc"
-PAIRS = os.path.join(INTER, "coastal_pairs.csv")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python"))
+from config import (  # noqa: E402
+    OISST_MERGED_FILE, COASTAL_PAIRS_CSV, INTERMEDIATE_DIR,
+)
+
+# 裁剪件：配置里没有独立常量，按约定名推导；不存在时回退到全球件
+_CLIP_CANDIDATE = os.path.join(os.path.dirname(OISST_MERGED_FILE),
+                               "oisst_v2.1_eur_1983_2023.nc")
+
+SRC_CSV = os.path.join(INTERMEDIATE_DIR, "mhw_events_R.csv")          # R 原始输出（局部索引）
+DST_CSV = os.path.join(INTERMEDIATE_DIR, "mhw_events_R_global.csv")   # 换算后（全球索引）
+CLIP = _CLIP_CANDIDATE
+GLOB = OISST_MERGED_FILE
+PAIRS = COASTAL_PAIRS_CSV
 TOL = 1e-6
 
 
@@ -42,13 +54,15 @@ def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
-def main():
-    for p in (SRC_CSV, CLIP, GLOB, PAIRS):
+def main(src_csv=None, dst_csv=None):
+    src_csv = src_csv or SRC_CSV
+    dst_csv = dst_csv or DST_CSV
+    for p in (src_csv, CLIP, GLOB, PAIRS):
         if not os.path.exists(p):
             raise FileNotFoundError(p)
 
-    df = pd.read_csv(SRC_CSV)
-    log(f"loaded {SRC_CSV}: {len(df):,} events")
+    df = pd.read_csv(src_csv)
+    log(f"loaded {src_csv}: {len(df):,} events")
     if len(df) == 0:
         raise SystemExit("empty event table — nothing to globalize")
 
@@ -114,13 +128,14 @@ def main():
                     for a, b in zip(df.lat_idx, df.lon_idx)]
     g["lon_idx"] = [key2g[(int(a), int(b))][1]
                     for a, b in zip(df.lat_idx, df.lon_idx)]
-    g.to_csv(DST_CSV, index=False)
-    log(f"wrote {DST_CSV}: {len(g):,} events, "
+    g.to_csv(dst_csv, index=False)
+    log(f"wrote {dst_csv}: {len(g):,} events, "
         f"{g.groupby(['lat_idx', 'lon_idx']).ngroups:,} points")
     glob.close()
     clip.close()
     log("DONE — PASS")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main(*(sys.argv[1:3] if len(sys.argv) > 1 else (None, None))))

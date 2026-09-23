@@ -197,18 +197,25 @@ config 中 `CI_ALPHA=(0.05,0.95)` 与 `GEV_CI=(0.025,0.975)` 并存，勿混用�
 function fig3_attribution(thresholds, FAR_mean, FAR_ci, PR_mean, PR_ci)
 % fig3_attribution — 图 3: FAR/PR 归因曲线
 %
-% 布局:
-%   a: FAR - European Coastlines（含 5-95% CI 填充）
-%   b: PR - European Coastlines（含 5-95% CI 填充）
+% 布局 (2x2):
+%   a: FAR - European coastlines      (y 线性 0-1)
+%   b: PR  - European Coastlines      (y **对数** 1e0-1e3)
 %   c: FAR - Mediterranean & Black Sea（标注 2003/2022/2023 观测事件）
-%   d: PR - Mediterranean & Black Sea
+%   d: PR  - Mediterranean & Black Sea（y **对数**；含年份标注）
+%
+% 轴标签（按论文原图）:
+%   x: "Thresholds (Compound heatwave days)"   0-100
+%   y: "Fraction of Attributable Risk (FAR)" / "Probability Ratio (PR)"
 %
 % Output: results/figures/fig3.pdf
 %
 % 实现要求:
-% - fill() 绘制置信区间带，FaceAlpha=0.3
-% - 标注观测事件垂直线（2003: 红色, 2022: 绿色, 2023: 黑色）
+% - fill()/fill_between 绘制置信区间带，alpha=0.3；图例两项：FAR/PR 与 Uncertainty
+% - **PR 面板必须用对数 y 轴**（论文原图 1e0-1e3；PR 在高阈值发散到 1e3 以上）
+% - 仅 c/d 面板加三条观测阈值垂直线（2003 红=62 / 2022 绿=78 / 2023 黑=72），
+%   a/b（欧洲全岸）不加
 % - ylim([0, 1.05]) for FAR plots
+% - PR 在阈值 >85 后发散：需按 §3.9 的除零保护返回 inf，并在图上断开或截断到轴上限
 ```
 
 ### `matlab/fig4_return_period.m`
@@ -217,32 +224,45 @@ function fig3_attribution(thresholds, FAR_mean, FAR_ci, PR_mean, PR_ci)
 function fig4_return_period(return_thresholds, return_period_ALL, return_period_FixGHG)
 % fig4_return_period — 图 4: 重现期对比
 %
-% 布局:
-%   a: 沿海海洋热浪重现期（ALL vs FixGHG）
-%   b: 沿海陆地热浪重现期（ALL vs FixGHG）
-%   c: 复合热浪重现期（ALL vs FixGHG）
+% 布局 (1x3，按论文原图):
+%   a: "Coastal Marine Heatwave Days"
+%   b: "Coastal Terrestrial Heatwave Days"
+%   c: "Coastal Marine-Terrestrial Heatwave Days"
+%
+% 轴（按论文原图，**双对数**）:
+%   x: "Return Period in FixGHG forcing"   5/10/20/50/100   **对数**
+%   y: "Return Period in ALL forcing"      **对数 (1e0-1e2)**
 %
 % Output: results/figures/fig4.pdf
 %
-% 实现要求:
-% - bar() 绘制 ALL，hold on + plot() 绘制 FixGHG 虚线
-% - legend('ALL', 'FixGHG', 'Location', 'northwest')
+% 实现要求（对照 pdf_extract/fig4_p06.png）:
+% - bar() 绘制 ALL 重现期（浅蓝 #A8D5F0 类）
+% - **绿色虚线的语义 = 1:1 参考线**：因 x 轴本身就是 FixGHG 重现期，
+%   画 (x, x) 即"无变化"基准。**不要再画第二条 FixGHG 数据曲线**。
+% - **每根柱必须带：误差棒 + 两个数字标注（CI 上下界）**；论文原图即如此
+% - **panel c 需红色竖线 + "Gap: <值>" 文字**（论文原图为 Gap: 44.8 @50年、92.1 @100年）
+% - 图例：'Return Period in FixGHG'（绿虚线）、'Return Period in ALL'（浅蓝柱）
 ```
 
 ## B.5 阶段 B 的验证标准
 
+> 锚点来自论文正文 **与 `pdf_extract/fig4_p06.png` 原图读出**（读图精度约 ±5%）。
+> 完整对照见 `results/图1图2与论文原图目视比对.md` §四。
+
 | 验证项 | 期望值 | 容差 | 验证方法 |
 |--------|--------|------|----------|
 | FAR 曲线单调性 | 随阈值递增 | - | 目视检查 |
-| PR 曲线单调性 | 随阈值递增 | - | 目视检查 |
-| 图3c FAR 在高阈值饱和于 1.0 | 欧洲全岸 >90 天阈值处 | - | 对比正文 |
+| PR 曲线单调性 | 随阈值递增（对数轴） | - | 目视检查 |
+| 图3a FAR 饱和阈值（欧岸） | 阈值 >90 天处饱和于 1.0 | - | 对比正文 |
+| **图3c FAR @62（2003）** | **0.72** | ±0.03 | 对比 Table 1 / 原图 |
+| **图3c FAR @78（2022）** | **0.95** | ±0.03 | 对比 Table 1 |
+| **图3c FAR @72（2023）** | **0.78** | ±0.03 | 对比 Table 1 |
 | Bootstrap 样本数 | 1000 | - | 检查输出数组维度 |
 | 重现期 ALL < FixGHG（强迫下事件更频繁） | - | - | 物理意义验证 |
-| 图4b 陆地：FixGHG 100 年 → ALL | 3.2 年 [2.8–3.8]（31 倍 [26–36]） | ±20% | 对比正文 |
-| 图4b 陆地：FixGHG 5/10/20/50 年 → ALL | 1.2 / 1.4 / 1.7 / 2.4 年 | ±20% | 对比正文 |
-| 图4c 复合：FixGHG 100 年 → ALL | 8 年 [5–12] | ±25% | 对比正文 |
-| 图4c 复合：重现期最大缩减量 | 达 92 年 | - | 对比正文 |
-| 图4a 海洋：FixGHG 50/100 年 → ALL | 11.5 / 20.7 年 | ±20% | 对比正文 |
+| **图4a 海洋** FixGHG 5/10/20/50/100 年 → ALL | **2.1 / 3.3 / 5.5 / 11.5 / 20.7** 年 | ±20% | 对比原图（正文明示 11.5 与 20.7） |
+| **图4b 陆地** 同上 | **1.2 / 1.3 / 1.6 / 2.1 / 2.8** 年 | ±20% | 对比原图（正文 100 年 = 3.2 [2.8–3.8]） |
+| **图4c 复合** 同上 | **1.6 / 2.0 / 2.6 / 3.5 / 5.0** 年 | ±25% | 对比原图（正文 100 年 = 8 [5–12]） |
+| **图4c Gap 标注** | 50 年 ≈ **44.8**；100 年 ≈ **92.1** | ±20% | 对比原图（正文"up to 92 years"） |
 | **Table 1**（地中海&黑海，5–95% CI） | 2003/62d：FAR 0.72 [0.64–0.80]、PR 4.1 [2.8–7.2]；2022/78d：FAR 0.95 [0.93–1.0]、PR [6–∞)；2023/72d：FAR 0.78 [0.7–0.88]、PR 8 [4–10] | FAR ±0.02 / PR ±20% | 对比 Table 1 |
 
 > ⚠️ **Table 1 产出缺口**：`TECHNICAL_SPEC.md` §2 的目录树里列了 `table1_attribution.py`，
