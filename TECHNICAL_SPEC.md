@@ -548,7 +548,7 @@ def preprocess_all() -> Dict[str, xr.Dataset]:
 > ⚠️ **状态：DEPRECATED（仅单格点核验用）**。论文 Code availability 同时列出
 > `heatwaveR` (v0.4.6, R) 与 `marineHeatWaves` (v0.15.0, Python)；本项目自 2025-09-18 起
 > **海陆检测统一走 R `heatwaveR`**（`python/detect_events.R`），因其语义经源码核验与
-> `marineHeatWaves` 一致（见 `results/THW_R_vs_Python_结论.md`）。
+> `marineHeatWaves` 一致（见 `results/方法与证据.md §4`）。
 > 本节保留原 Python 实现仅作单格点交叉验证与历史对照，**不是正式链路**。
 
 **文件路径**: `python/detect_mhw.py`  
@@ -715,7 +715,7 @@ def mhw_events_to_daily(
 > **⚠️ 已知偏离（必须在复现报告中保留）**：论文使用的是两包**默认**参数，其中
 > `ts2clm(smoothPercentile = TRUE, smoothPercentileWidth = 31)`。本项目为隔离
 > "11 天窗口 vs 单日分位"变量而显式设为 `FALSE`。抽样实验（90 个沿海对，
-> `results/exp_smooth_compare.py`）显示影响 < 5%（地中海 2022 复合天数 16.9→15.8、
+> `（已删；结论见 results/方法与证据.md §4）`）显示影响 < 5%（地中海 2022 复合天数 16.9→15.8、
 > 2023 32.5→32.9），故保留 FALSE。若需严格对齐包默认可开启重跑（陆地约 30 min）。
 > 详见 `results/复现报告.md` D2 / §5.1#4。
 

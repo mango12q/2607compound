@@ -338,7 +338,7 @@ def _run_events(x, time=None, min_dur=5, max_gap=2):
       4) 最终事件 = 置 True 后的极大连续段。
     等价性校验：450 例（150 条随机 0/1 序列 × 3 组参数）与真实 heatwaveR
     `detect_event` **0 例不一致**；另有 6 个手工边界用例逐一相符。
-    详见 results/phase6审计报告.md 与 results/phase6_audit_lead_check7.py。
+    详见 results/phase6审计报告.md 与 results/tools/phase6审计复算/phase6_audit_lead_check7.py。
     """
     x = np.asarray(x).astype(np.int8)
     n = x.size
@@ -971,7 +971,7 @@ def cmd_attrib(args):
     """★ 决策 2C/3A/5A：阈值扫描 + 三聚合口径 + 两种 bootstrap。
 
     与旧实现（只报单点阈值 + 丢弃 inf 的 CI）的区别见
-    results/phase6审计报告.md §4 与 results/phase6审计_修复前后对比.md。
+    results/phase6审计报告.md §4 与 results/Phase6审计报告.md §2。
     """
     import matplotlib
     matplotlib.use("Agg")

@@ -83,7 +83,7 @@ def load_cesm1le_dir(forcing: str) -> xr.Dataset:
    缓存名带成员名单指纹 `thresh_{sst,t2m}_xghg_v3_w11_loo_<members>.npz`）。
    3 成员实测：LOO 使 XGHG 复合暴露 +4.2%/+11.0%/+29.1%，阈值 |Δ| 均 0.07–0.12 °C（SST）/0.24 °C（T2m）。
    **注意**：3 成员下 LOO 后池只剩 2 个，成员数噪声会高估影响；20 成员时（19 vs 20）小得多。
-   详见 `results/phase6审计_基准期.md`。
+   详见 `results/Phase6审计报告.md §5`。
 2. 三项口径（leave-one-out / in-sample / ALL 自身）的 PR-FAR 曲线需同图对比并写入复现报告。
 3. 本节口径与理由必须同步进 `results/复现报告.md` 的偏差清单。
 
@@ -252,7 +252,7 @@ function fig4_return_period(return_thresholds, return_period_ALL, return_period_
 ## B.5 阶段 B 的验证标准
 
 > 锚点来自论文正文 **与 `pdf_extract/fig4_p06.png` 原图读出**（读图精度约 ±5%）。
-> 完整对照见 `results/图1图2与论文原图目视比对.md` §四。
+> 完整对照见 `results/方法与证据.md §1` §四。
 
 | 验证项 | 期望值 | 容差 | 验证方法 |
 |--------|--------|------|----------|

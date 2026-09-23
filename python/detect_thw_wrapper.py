@@ -8,7 +8,7 @@ R 侧 detector = heatwaveR::ts2clm + detect_event（Hobday et al. 2016）：
   * 参考期: 1983-2012
 
 与 python/detect_thw.py（纯 Python 手写）的**已知差异**（详见
-results/THW_R_vs_Python_结论.md）：
+results/方法与证据.md §4）：
   1) 阈值：Python 用逐 dayofyear 单日分位数，无滑动窗口
   2) 最小持续时间口径：Python 用"事件跨度(含间隙) >= 5"，
      heatwaveR 用"超标日游程(不含间隙) >= 5"

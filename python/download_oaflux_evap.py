@@ -1,4 +1,14 @@
 # -*- coding: utf-8 -*-
+# ══════════════════════════════════════════════════════════════════════════
+#  快速开始（Phase 5 输入：OAFlux 月度蒸发，图5b 海洋蒸发趋势）
+#    python python\download_oaflux_evap.py --probe   # 只探测各镜像可用性（不下载）
+#    python python\download_oaflux_evap.py           # 下载 1991-2020（逐镜像自动降级）
+#    python python\download_oaflux_evap.py --merge   # 仅合并 raw/ 里已下好的文件
+#  一键入口: run_phase5_downloads.bat
+#  要点：WHOI FTP/HTTP + NOAA PSL + APDRC 四镜像按优先级自动探测；每个年文件都做
+#        内容强校验（变量名含 evap / 全球 1° 网格 / 12 个月步齐全），不合格即弃用。
+#  依赖：xarray / netcdf4。无需账号。
+# ══════════════════════════════════════════════════════════════════════════
 """
 download_oaflux_evap.py — OAFlux 月度蒸发 (evap) 下载工具 (Phase 5: 海洋蒸发趋势, 图5)
 

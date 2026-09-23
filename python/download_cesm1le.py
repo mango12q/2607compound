@@ -1,4 +1,15 @@
 # -*- coding: utf-8 -*-
+# ══════════════════════════════════════════════════════════════════════════
+#  快速开始（Phase 6 CESM1-LE 归因数据）
+#    python python\download_cesm1le.py probe                 # 先探测可用通道（不下载）
+#    python python\download_cesm1le.py aws   --members 20    # ALL 日值 TREFHT（AWS 匿名 zarr）
+#    python python\download_cesm1le.py gdex  --members 20    # SST + XGHG（NCAR GDEX）
+#    python python\download_cesm1le.py download --manifest ...# 兜底：按 URL 清单整文件下载
+#  一键入口: run_p0_download.bat（3 成员）/ run_phase6_download.bat（20 成员，~750 GB，4-5 天）
+#  要点：断点续传；自动走系统代理（直连 <0.1 MB/s，走代理 ~2.2 MB/s）；
+#        OPeNDAP 只适合小切片，大文件走 fileServer 整文件 + trim。
+#  依赖：xarray / netCDF4 / s3fs（可选）。无需账号。
+# ══════════════════════════════════════════════════════════════════════════
 """
 download_cesm1le.py — Phase 6 (CESM1-LE 归因) 数据下载工具
 

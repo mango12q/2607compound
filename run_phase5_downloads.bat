@@ -1,3 +1,15 @@
+﻿REM ===========================================================================
+REM  Phase 5（湿热应力，图5-6）输入数据一键下载
+REM
+REM  用法：双击本文件，或在 cmd 里执行  run_phase5_downloads.bat
+REM  内容（依次跑三个下载脚本，可中断后续传）：
+REM     1) ERA5 日最高气温 tmax  0.25° 欧洲框   python\download_era5_tmax.py
+REM     2) ERA5 地表气压 sp      0.25° 欧洲框   python\download_era5_sp025.py
+REM     3) OAFlux 月度蒸发       1°   全球      python\download_oaflux_evap.py
+REM  前置：CDS 账号，凭据在 %USERPROFILE%\.cdsapirc（ERA5 两项需要；OAFlux 不需要）
+REM  预估：几小时（取决于网络；断点续传，可重复运行）
+REM  想看"要下多少"而不下载：分别跑各脚本的 --dry-run / --probe
+REM ===========================================================================
 @echo off
 chcp 65001 >nul
 title Phase 5 downloads - ERA5 tmax / ERA5 sp 0.25 / OAFlux

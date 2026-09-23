@@ -184,7 +184,7 @@ def build_coastal_buffer_mask(
 | 严格地中海（不含黑海）lat 30–46 / lon 5–30 | 2118 | 1184（55.9%） |
 | 含西班牙东岸 lat 30–46 / lon −6–36 | 4313 | 1777（41.2%） |
 
-缓冲内最大距海距离 99.7 km（< 100 ✓）。复算脚本：`results/check_buffer_regions.py`。
+缓冲内最大距海距离 99.7 km（< 100 ✓）。复算脚本：`results/tools/图1jl口径诊断/check_buffer_regions.py`。
 
 > ⚠️ **区域口径待确认**：论文 Fig.6 只写 "Mediterranean coast"（不含黑海），
 > 但论文 Fig.1j caption 又把黑海并入"地中海区域"。本项目 fig1j/k/l 统一用
@@ -246,7 +246,7 @@ def calc_wbt_sh_stats(WBT, SH, compound_daily, buffer_mask, years) -> Dict:
    | 复合年 | 2003, 2022, 2023 | 论文明确 |
 
    三种取法都要跑并报告；预期结论稳健（图6a 是"2023 ≈ 40 天 vs 非复合年 < 5 天"）。
-   详见 `results/S1读取与图6年份判据.md` §二；复算脚本 `results/s1_quantify.py`。
+   详见 `results/方法与证据.md §3` §二；复算脚本 `results/tools/S1读取/s1_quantify.py`。
 
 2. **区域口径** —— 见步骤 8 的待确认项（是否含黑海 / 是否纳入西班牙地中海东岸）。
 3. **WBT 近似式** —— 见 `TECHNICAL_SPEC.md` §3.8（Stull vs 牛顿迭代），需锚点验证后定稿。

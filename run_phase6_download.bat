@@ -1,3 +1,17 @@
+﻿REM ===========================================================================
+REM  Phase 6（CESM1-LE GHG 归因，图3-4）全量 20 成员下载
+REM
+REM  用法：双击本文件，或在 cmd 里执行  run_phase6_download.bat
+REM  内容：ALL + XGHG 各 20 成员的日值 TREFHT 与 SST，2000-2021
+REM  预估：~750 GB / 4-5 天（断点续传，可反复中断重跑）
+REM  只想先跑 3 个成员验证管线：用 run_p0_download.bat
+REM  下载完成后依次执行（口径已定，见 results/复现报告.md §5 D7）：
+REM     python python\phase6_cesm.py pairs
+REM     python python\phase6_cesm.py prepare  --members 20
+REM     python python\phase6_cesm.py detect   --members 20 --baseline xghg --loo --tag _v4
+REM     python python\phase6_cesm.py compound --members 20 --tag _v4 --compound-def envelope
+REM     python python\phase6_cesm.py attrib   --members 20 --tag _v4 --compound-def envelope
+REM ===========================================================================
 @echo off
 chcp 65001 >nul
 title Phase 6 download - CESM1-LE full 20 members (ALL + XGHG)

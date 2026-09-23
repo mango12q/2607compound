@@ -1,3 +1,10 @@
+﻿REM ===========================================================================
+REM  Phase 6 冒烟测试用：只下 CESM1-LE 前 3 个成员（ALL + XGHG）
+REM
+REM  用法：双击本文件，或在 cmd 里执行  run_p0_download.bat
+REM  用途：管线联调；跑通后再用 run_phase6_download.bat 下全量 20 成员
+REM  预估：~100-120 GB / 13-15 小时（断点续传）
+REM ===========================================================================
 @echo off
 chcp 65001 >nul
 title CESM1-LE P0 download (3 members)

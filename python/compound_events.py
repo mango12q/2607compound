@@ -10,7 +10,7 @@ compound_events.py — 复合事件识别（逐日共超标定义, 2025-09-18 �
     依据: 论文 Methods L477 "Compound ... defined as periods during which both T2m
     and SST **simultaneously exceed** their respective thresholds in adjacent
     coastal grid cells"（逐日共超标）；L520 的 "fully encompasses" 与之冲突。
-    实证检验（results/diagnose_compound_definition.py, R 严格检测 + 共超标）:
+    实证检验（results/tools/图1jl口径诊断/diagnose_compound_definition.py, R 严格检测 + 共超标）:
       - fig1m 共现概率 p50=0.59 / max=0.88  vs 论文 "地中海 0.6-0.8, 西地中海>0.8" ✓
       - fig2c CHR 2023 = 3.44               vs 论文 "2023 峰值 3.5"              ✓
       containment 定义两处均对不上（0.34 / 3.96），故采用共超标定义。
@@ -20,7 +20,7 @@ compound_events.py — 复合事件识别（逐日共超标定义, 2025-09-18 �
 
   检测端保持不变: R heatwaveR 严格口径（先连续超标游程>=5 天再桥接 <=2 天间隙，
   与 heatwaveR / marineHeatWaves 两包的默认语义一致，见
-  results/exp_smooth_compare.py 与 marineHeatWaves 源码核验）。
+  （已删；结论见 results/方法与证据.md §4） 与 marineHeatWaves 源码核验）。
 """
 import os
 import numpy as np

@@ -1,4 +1,35 @@
-# Phase 6 归因管线正确性审计报告（任务 D）
+# Phase 6 归因管线审计报告（合并件）
+
+> 本文件由 6 份分报告合并而成（2026-09-23）。**合并前各文件仍在 git 历史中可查。**
+> 合并来历：`phase6审计报告.md`（汇总）+ `phase6审计_网格与配对.md`（D-1）+
+> `phase6审计_检测语义.md`（D-2）+ `phase6审计_基准期.md`（D-3）+
+> `phase6审计_复合与统计.md`（D-4）+ `phase6审计_修复前后对比.md`（修复验证）。
+>
+> **审计对象**：`python/phase6_cesm.py`（CESM1-LE GHG 归因管线，论文图 3/图 4）
+> **方式**：Lead + 3 名独立审计员四路并行；全部结论回到代码、真实数据与本机
+> heatwaveR 0.5.5 实测，不采信任何文档自述。
+> **范围**：不下载、不跑全量（仅用已有 3 成员 P0 数据）。
+
+## 目录
+
+| 章 | 内容 | 原文件 |
+|---|---|---|
+| §1 | 汇总：分级问题清单 + 逐维度结论 + 文档 vs 代码对照 + 确定性分级 | `phase6审计报告.md` |
+| §2 | 修复项 F1–F9 的前后对比与验证证据 | `phase6审计_修复前后对比.md` |
+| §3 | 分报告 D-1：网格与配对 | `phase6审计_网格与配对.md` |
+| §4 | 分报告 D-2：检测语义（vs heatwaveR） | `phase6审计_检测语义.md` |
+| §5 | 分报告 D-3：阈值基准期 | `phase6审计_基准期.md` |
+| §6 | 分报告 D-4：复合与统计 | `phase6审计_复合与统计.md` |
+
+**可复算脚本**：`results/tools/phase6审计/`（4 份分报告脚本）、
+`results/tools/phase6审计复算/`（Lead 12 份独立复算 + `phase6_selftest.py`）。
+
+---
+
+
+## 1. 汇总
+
+> *来源存档：`phase6审计报告.md`（原文未改动，仅并入本文件）*
 
 **审计对象**：`python/phase6_cesm.py`（CESM1-LE GHG 归因管线，论文图 3/图 4 的科学主张）
 **审计日期**：2026-09-23
@@ -178,3 +209,1804 @@ P0-1 ~ P0-5、P1-1 ~ P1-5、P2-1 ~ P2-7；以及 §0「已确认无误」全部�
 ## 5. 本轮修复的前后对比与验证
 
 见 `results/phase6审计_修复前后对比.md`。
+
+
+## 2. 修复前后对比与验证证据
+
+> *来源存档：`phase6审计_修复前后对比.md`（原文未改动，仅并入本文件）*
+
+> 配套：`results/phase6审计报告.md`（问题清单）、四份分报告（`phase6审计_网格与配对.md` /
+> `_检测语义.md` / `_基准期.md` / `_复合与统计.md`）。
+> 原则：**先报告后改**；改动必须给出前后对比与可复算证据；**不覆盖**旧 P0 产物。
+
+---
+
+## 0. 改了什么
+
+全部改动集中在 `python/phase6_cesm.py`（唯一被修改的代码文件）。
+
+| 编号 | 修复 | 对照的审计结论 |
+|---|---|---|
+| F1 | `_run_events` 由「先桥接后过滤」改为**逐行复刻 `heatwaveR::proto_event`** | D-2 E3（P0） |
+| F2 | `_pooled_threshold_t2m` 的 axis 崩溃 → 改为**逐点独立**求分位 | D-2 E1 / D-1 S-1 / D-3 C4（P0） |
+| F3 | 阈值分位统一为 `ts2clm` 语义：**11 天窗内合并原始样本**再取分位（SST 此前完全无窗，T2m 此前是"分位的再分位"） | D-2 E1-b / E2 |
+| F4 | 阈值缓存文件名带**成员名单 + 版本指纹**，并在读缓存时校验 `n_members` | D-3 C3 |
+| F5 | `--members N` 改为作用于**全量 20 人名单**，越界显式报错 | D-3 C2（P0） |
+| F6 | 新增 `--loo`（leave-one-out），对每个成员剔除自身建阈 | D-3 C1 / `PHASE_B` 步骤 2b |
+| F7 | bootstrap **不再静默丢弃 `inf`**；`0/0 → nan`；用**次序统计量**求经验分位数（避免 inf−inf→nan）；输出 inf 比例与两套 CI | D-4 S10 / S12 |
+| F8 | 日期原点统一 `.normalize()`（消除 ALL 组 MHW 掩码早 1 天） | D-4 S6 / D-2 A1（Lead 确证） |
+| F9 | 阈值窗循环上界由硬编码 365 改为 `cal`（=366 时也填满第 366 行） | D-1 S-2 / D-2 E1-c（Lead 复现：修复前 sst/t2m 第 366 行**全 NaN**，修复后无空 NaN 行） |
+
+**未改（属口径决策，不是代码错误，已在报告中登记待用户拍板）**：归因阈值用 62/78/72 vs 128；
+主口径 `med_mean` vs `med_max`；Phase 6 复合定义（论文模型 Methods `paper_text.txt:546` 用
+"fully encompasses"，代码用 L477 共超标）；doy=366 行；20 成员 bootstrap 分层块。
+
+---
+
+## 1. 核心验证：`proto_event` 等价性（F1）
+
+**方法**：把事件逻辑与阈值计算解耦——自建一个带 `thresh` 列的"气候态"数据框（`temp∈{0,1}`，
+`thresh=0.5`）直接喂 `heatwaveR::detect_event(minDuration, maxGap)`，与 Python 实现比对事件数与
+各事件时长。
+
+```
+# 权威实现
+Rscript -e "cat(deparse(heatwaveR:::proto_event), sep='\n')"
+```
+
+| 实现 | 模糊用例不一致数 | 备注 |
+|---|---|---|
+| 旧 `_run_events`（先桥接后过滤） | **429 / 450**（95.3%） | Lead，150 随机序列 × 3 组参数 |
+| 「先过滤后桥接 + gap ≤ maxGap」近似 | 5 / 450 | 差别在**尾部空档** |
+| **新 `_run_events`（`proto_event` 逐行复刻）** | **0 / 450** | Lead |
+| 新实现（detection-auditor 独立复跑 9 组参数） | **0 / 1350** | 独立互证 |
+
+手工边界用例（R 权威 vs 复刻，全部一致）：
+
+| 序列 | heatwaveR `duration` | 新实现 |
+|---|---|---|
+| 5超 + 2天空档（到序列末） | `[7]` | `[7]` |
+| 2天空档 + 5超（序列首） | `[5]` | `[5]` |
+| 5超 + 1空 + 5超 | `[11]` | `[11]` |
+| 5超+2空+1超+2空+5超 | `[5, 5]` | `[5, 5]` |
+| 3超 + 2空 + 3超 | `[]` | `[]` |
+
+⇒ **头尾不对称**（吸收尾部空档、不吸收首部空档）是 heatwaveR 的真实语义，已实现。
+复算：`python results/phase6_audit_lead_check7.py`、`Rscript results/phase6_audit_lead_check.R`。
+
+---
+
+## 2. 核心验证：T2m 阈值 axis 崩溃（F2/F3）
+
+```
+python -c "import numpy as np; z=np.load(r'results/intermediate/cesm/thresh_t2m_xghg.npz'); t=z['thresh']; print(t.shape, np.nanmax(t,1)-np.nanmin(t,1))"
+```
+
+| 项 | 旧（崩溃） | 新（逐点 11 天窗合并） |
+|---|---|---|
+| `thresh` 行内极差 | **恒为 0**（206 陆点共用一条曲线） | 逐点不同（空间标准差中位 5.92 °C） |
+| 阈值 mean | 21.36 °C | 13.43 °C |
+| 阈值 mean\|Δ\| | — | **8.26 °C**（p90 16.45，max 24.65） |
+| 系统性方向 | 最冷点被抬高 **+18.49 °C**、最暖点被压低 **−2.86 °C** | — |
+| ALL 001 超阈率（南欧 <40N / 北欧 >60N） | 12.8% / **0.0%** | 6.3% / 6.5% |
+
+复算：`python results/phase6_audit_lead_check.py`、`results/phase6_audit_lead_check2.py`。
+
+---
+
+## 3. 端到端前后对比（3 成员 P0，同一套代码、两个 tag）
+
+命令（**新旧产物并存**，旧 `_x` 一个字都没被覆盖）：
+
+```powershell
+# 旧口径（崩溃阈值 + 先桥接后过滤 + MHW 无 11 天窗）
+python python\phase6_cesm.py attrib --members 3 --tag _x
+# 新口径（本轮修复）
+python python\phase6_cesm.py detect   --baseline xghg --members 3 --tag _x2
+python python\phase6_cesm.py compound --members 3 --tag _x2
+python python\phase6_cesm.py attrib   --members 3 --tag _x2
+```
+
+### 3.1 事件数与暴露时间
+
+| 量 | 旧 `_x` | 新 `_x2` | 变化 |
+|---|---|---|---|
+| THW 事件 ALL 001 / 002 / 003 | 6,468 / 6,468* / 6,468* | **18,185 / 20,037 / 18,750** | ~2.9× |
+| THW 事件 XGHG 001 / 002 / 003 | 3,746 / 3,718 / 3,435 | **6,042 / 6,483 / 6,862** | ~1.7× |
+| MHW 事件 ALL 001 | 17,111 | 16,416 | −4% |
+| MHW 事件 XGHG 001 | 6,862 | 5,470 | −20%（11 天窗生效） |
+| 复合暴露 ALL 001 / 002 / 003 | 63,154 / 75,581 / 78,973 | **122,282 / 150,090 / 134,485** | ~1.8× |
+| 复合暴露 XGHG 001 / 002 / 003 | 7,313 / 7,658 / 9,532 | **10,099 / 13,715 / 19,492** | ~1.6× |
+| **THW 的 ALL/XGHG 事件比** | **1.73** | **3.01** | 强迫信号**未被阈值缺陷掩盖** |
+| 22 年总暴露比 ALL/XGHG | 8.88 | 9.39 | +5.7% |
+
+\* 旧 `_x` 各成员事件数不同，此处按 `exposure_members_x.csv` 口径列示；精确值见该 CSV。
+
+### 3.2 归因指标（这是论文最大的科学主张）
+
+| 阈值口径 | 旧 `_x` | 新 `_x2` |
+|---|---|---|
+| **med_mean = 20.7 天**（区域均值，论文口径更像这个） | PR=**∞**、FAR=nan（P_fix=0，**1000/1000 bootstrap 为 inf**） | PR=**52.0**、FAR=**0.981**（P_fix=0.015；344/1000 inf；90% CI 含 inf 时上界 **inf**、仅有限样本 [16.3, 57.0]） |
+| **med_max = 128 天**（格点极值） | PR=**48.0**、FAR=**0.979**、CI [14.7, 53.0]（**372/1000 inf 被静默丢弃**） | PR=**∞**、FAR=nan（P_fix=0，**1000/1000 inf**） |
+
+**结论（必须写进报告与后续规划）**：
+
+1. `复现报告.md` §11.6 的 **`PR=48.0 / FAR=0.98` 是"阈值缺陷 + 格点极值阈值(128 天)"的产物**：
+   修复检测层后，该阈值下反事实世界一次都没达到 128 天 ⇒ **P_fix=0，PR 发散**，该数字**不可再用**。
+2. 修复后**可判读的阈值下移到 ~20 天**：PR≈52、FAR≈0.98 —— 与论文 `FAR=0.95` **仍然同方向同量级**，
+   但**不是同一个量**（阈值口径不同：20.7 天是本复现的区域均值，论文是 62/78/72）。
+3. 旧报告写的 "CI 14.7-53.0" 是 **PR 的 CI 且丢弃了 372/1000 的 inf 重复**；
+   修复后同一处同时给出「保留 inf」与「仅有限样本」两套区间。
+4. ⇒ **P0 的方向性结论（GHG 强迫显著提高复合热浪暴露、FAR 接近 1）在修复后依然成立，且信号更强
+   （THW 的 ALL/XGHG 事件比从 1.73 升到 3.01）；但绝对数字全部作废，20 成员全量必须用修复后的代码跑。**
+
+产物：`results/figures/fig7_p0_validation_x.png`（旧）与 `fig7_p0_validation_x2.png`（新），
+日志 `results/intermediate/audit/lead/fix_v3_{detect,compound,attrib}.log`。
+
+---
+
+## 3.3 F9 验证（doy=366 行）
+
+| | 修复前 | 修复后（F9） |
+|---|---|---|
+| SST 阈值全 NaN 行 | **[366]** | **[]** |
+| T2m 阈值全 NaN 行 | **[366]** | **[]** |
+| 影响 | 闰年 12-31（6 天/序列 × 206 点 = 1,236 点·日/序列）**恒不超阈** | 已填满 |
+
+（口径：proc 文件 calendar 标为 `proleptic_gregorian` 但数据实为 noleap，闰年 12-31 的
+`dayofyear = 366`；heatwaveR `ts2clm` 会为 366 行都算阈值。复算：
+`python -c "import numpy as np; z=np.load('results/intermediate/cesm/thresh_t2m_xghg_v3_w11_loo_001-002-003.npz'); t=z['thresh']; print([i+1 for i in range(366) if np.isnan(t[i]).all()])"`）
+
+`_x3`（含 F9）与 `_x2`（不含）的归因指标**完全相同**（PR=52.0 / FAR=0.981；128 天处 ∞），
+仅 XGHG 002 的复合日 +29 天 —— 证实 F9 只影响那 6 天。
+
+## 4. 回归基线
+
+```
+python python\verify_data.py     # 期望：All data files present and valid.
+```
+
+旧 P0 产物完整性：`results/intermediate/cesm/` 下**既有文件全部保留**
+（`thw_x_*.csv` / `mhw_x_*.csv` / `annual_x_*.csv` / `exposure_members_x.csv` /
+`thresh_*_xghg.npz` mtime 仍为 2026-09-19）；新产物一律用 `_x2` 后缀与
+`*_v3_w11_loo_<members>.npz` 新缓存名。
+
+
+## 3. 分报告 D-1：网格与配对（POP KMT→f09 / 206 对 / 经度坐标 / XGHG 接缝）
+
+> *来源存档：`phase6审计_网格与配对.md`（原文未改动，仅并入本文件）*
+
+- **审计对象**：`python/phase6_cesm.py` 的 `cmd_prepare` / `cmd_pairs` / `_load_sst_points` / `_pooled_threshold_t2m`
+- **复算脚本**：`results/phase6_audit_grid.py`（只读 `data/` 与 `results/intermediate/cesm/`；产物全部写入 `results/intermediate/audit/grid/`）
+- **审计员**：grid-auditor ｜ 结论一律以"实测数字"为准，不采信文档自述
+- **判定口径**：【确认无误】= 实测与代码意图一致；【有问题】= 实测与代码意图/物理事实不符；【未判定】= 证据不足
+
+---
+
+## §0 结论清单
+
+| 编号 | 一句话结论 | 判定 | 严重度 | 关键数字 |
+|---|---|---|---|---|
+| **S-1** | `_pooled_threshold_t2m` 的 11 天窗平滑把 206 个陆点塌缩成**一个全欧统一阈值**，v2 的 `thw_x_*.csv` 空间分布被完全扭曲 | **有问题** | **P0** | 365/366 行空间标准差为 0；塌缩阈值南欧超阈 12.8% / 北欧 0.0%，正确阈值 6.3% / 6.5%；两者 max\|Δ\|=24.29 °C；缓存 0/75396 不一致⇒非过期而是代码真实产物 |
+| **E-1** | MHW 与 THW 的逐日掩码存在**系统性 1 天错位**（POP SST 标签=物理日+1；`_event_daily_mask` 对 12:00 的 t0 向下取整） | **有问题** | **P1** | v1 ALL 16756→18234(+8.8%)、v1 XGHG 15810→17352(+9.8%)、v2 XGHG 7313→7802(+6.7%)；v2 总暴露比 8.885→8.373(−5.8%)；v2 ALL 偶然对齐 Δ=0 |
+| **E-2** | 该错位**不改变**论文 Eq.3 的 PR/FAR 结论 | **确认无误**（限定） | P2 | 原样 PR=48.00 FAR=0.979 CI[14.7,53.0]；修正后**完全相同**（与 `复现报告.md:349` 记录逐位一致） |
+| **B-4** | proc 文件 calendar 标为 `proleptic_gregorian` 但数据实为 noleap（无 2-29），doy 集合含 366；ALL SST 两段之间有 1 个物理日缺口 | **有问题** | **P1** | doy∈1..366；ALL SST 段接缝标签步长=2 天（XGHG=1 天）；POP 标签=物理日+1（raw `time_bound` 实证） |
+| **A-3** | `binary_erosion` 默认 `border_value=0` 产生 78 个阵列边界伪边缘，但**全部被 1.0 单位距离门限淘汰，未产生任何配对** | 有问题（无影响） | P2 | edge 357，边界 edge 84，纯伪边缘 78（21.9%）；206 对中来自伪边缘 **0**；边界配对 6 个，6 个全是真海岸 |
+| **A-2** | 24 个 f09 海格点仅由**欧洲框外** POP 湿点经 `argmin` 夹取到边界列而判为海 | 有问题（低影响） | P2 | 框内湿点 2770 → 通过容差 2986（多 216）；仅靠框外点变海 24 格，24/24 落在 lon=−16.25 边界列 |
+| **A-4** | cos 加权单位 ≈ 112 km，但模型侧 1.0 单位的上限约为观测侧 0.5 单位的 **2.1×** | 确认无误（口径需说明） | P2 | 1 单位 = 112.2 km（中位换算）；206 对大圆距 37.7/81.6/134.1 km；观测侧 0.5 单位 ≈ 55.6 km，实测 max 62.5 km |
+| **A-5** | 模型/观测配对口径差异**只登记在进度报告，未进入权威规范** | 有问题（文档） | P2 | `results/复现报告.md:338,344,347` 有；`TECHNICAL_SPEC.md`、`TECHNICAL_SPEC_PHASE_A.md`、`docs/复现方案.md`、`AGENTS.md` **均无** |
+| **B-1** | CESM 侧经度全程一致；**观测侧 `coastal_pairs.csv` 的 `ocean_lon` 是未换算的 0–360** | 有问题（潜伏） | P2 | POP TLONG 0.0147–359.9960 → −179.9967–179.9992；pairs/mhw 一致(max\|Δ\|=3.6e-15)；观测 pairs 0.125–359.875 vs 观测 mhw −25.125–45.375 |
+| **A-1/A-6** | 配对链路 206 对**可逐行复现**，索引维度对齐正确，块读与逐点读取**数值完全相同** | **确认无误** | — | 206 对逐行一致=True；KMT[pj,pi] 全部 >0；块读 vs isel max\|diff\|=0.0（3 点全时段 + 另抽 21 对） |
+| **B-2** | 源 XGHG `lat` 是**升序**，`.sel` 未发生纬度翻转，数据**无错位** | **确认无误** | — | 源 lat −90→90 升序；4 个探针 max\|merged−手工NN\|=**0.0000 °C**，纬度翻转假设为 36.98–42.07 °C |
+| **B-3** | TREFHT 两段均为 K 且双判据命中、已正确转 °C；SST 为 degC，**无需**换算 | **确认无误** | — | seg1/seg2 units='K' max 319.98/320.18；落盘 XGHG −56.99–45.77 °C；SST 四段 units='degC' −2.88–34.86 |
+| **C-1/C-3** | XGHG 001–003 拼接后 8030 天连续无重复，两段单位/坐标/属性一致，`concat` 无静默错误 | **确认无误** | — | 各段 2190+5840=8030；无重复、严格单调；units/dtype/lat/lon/attrs 全一致 |
+| **C-2** | 接缝 2005-12-31→2006-01-01 **无单位/坐标不连续证据** | **确认无误** | — | T2m XGHG 接缝 2.5539 vs 跨年基准 p50 1.9535（21 个中排 15，67 分位）；SST XGHG 0.0544 vs 冬季 p50 0.0501（95 分位） |
+| **S-2** | `doy=366`（闰年 12-31，共 6 天）在 v2 的 T2m 与 SST 阈值表中均为**全 NaN 行** → 该日恒不超阈 | 有问题 | P2 | 阈值表第 366 行全 NaN；doy=366 在 8030 天中出现 6 次 |
+
+> **与 detection-auditor E1 的对照**：本审计独立复算 `recomputed_thresh_t2m.npz`（`src`=现行源码公式、`fix`=正确逐点公式），得塌缩阈值与正确阈值 **max\|Δ\|=24.29 °C**、正确阈值逐点空间标准差中位 **5.92 °C**。与 E1 报的 mean\|Δ\|=8.26 °C / p90=16.45 °C 同向同量级（本审计给的是极值口径），两路独立复算互证 S-1 成立；E1 报的 v2 THW 事件 3746→11310 也正是该塌缩的量级后果。
+
+---
+
+## §0.5 版本与时效（重要）
+
+**本报告审计的是修订前的版本**：`python/phase6_cesm.py` **714 行**（`cmd_pairs` 在 :148-219、`_load_sst_points` 在 :225-256、`_pooled_threshold_t2m` 在 :298-333、`cmd_compound` 的 `t0` 在 :499、`_annual_per_pair` 的 `t0` 在 :553）。
+
+**该文件已于 2026-09-23 23:26:09 被第三方修改为 862 行**（文件头新增 `# ★ 审计修复 2026-09-23（结果见 results/phase6审计报告.md）★`，列 F1–F5）。本审计在 23:30 后按当前版本逐条复核，结论如下：
+
+| 本报告结论 | 在当前 862 行版本中的状态 | 依据（当前文件行号） |
+|---|---|---|
+| **S-1**（T2m 阈值空间塌缩，P0） | **已修复**。塌缩式 `np.concatenate([single[w-1]...])` 已不存在；新实现 `np.concatenate(pool_rows, axis=0)` 中 `pool_rows` 是 **2 维**数组列表，`nanpercentile(..., axis=0)` 恢复逐点语义 | `:383-384` |
+| **S-2**（doy=366 全 NaN 行） | **已修复**。新增 `cal = 365 if doy_all.max()<=365 and 366 not in doy else 366`，窗口按 366 天日历回绕 | `:377-379` |
+| **E-1 的 12:00 取整分量** | **已修复**。`cmd_compound` 的 `t0` 与事件日期都加了 `.normalize()` | `:611, :619, :679-680` |
+| **E-1 的 POP SST 标签 = 物理日+1 分量** | **未修复**。`_load_sst_points` 与旧版逐字相同（无 −1 天校正、无物理日重标） | `:243-274`（与旧版 :225-256 同） |
+| **A-3**（`border_value=0` 伪边缘） | **未修复**（`binary_erosion(land_mask, structure=s)` 原样；实测本身未产生配对，影响有限） | `:204` |
+| **A-4 口径 / A-5 文档 / B-1 观测侧 lon / B-4 calendar 标注** | **未修复**（`MAX_PAIR_DIST_DEG=1.0` 原样） | `:56`、`:217` |
+
+### ⚠️ 由此产生的一条**新**行动项（比 E-1 本身更紧迫）
+
+`.normalize()` 修复**只去掉了一半误差**，且把 v2 ALL 从"偶然对齐"变成了"确定错位"：
+
+- 现状（当前版本）：`t0` 归零后，`THW` 事件（ALL 侧标签 12:00 / XGHG 侧 00:00）都映射到**正确**的物理日索引；而 `MHW` 事件标签来自 POP SST，**= 物理日 + 1**，故 MHW 掩码统一**晚 1 天**。
+- 后果：**四种组合（v1/v2 × ALL/XGHG）现在全部是 +1 天错位**；修复前 v2 ALL 因"12:00 取整"与"SST 标签 +1"两处误差相消而**恰好对齐**（本报告 E-1 实测 Δ=0）。
+- 量级（本报告 E 节同法实测）：v2 ALL `t0归零` 使 compound 63154→62191（**−1.5%**）、75581→74707（−1.2%）、78973→78045（−1.2%）。
+- **建议的最小修复**：在 `_load_sst_points` 返回前把 `time` 整体回退 1 天（`time = time - pd.Timedelta(days=1)`），或在 `cmd_compound` 中对 MHW 侧掩码使用 `shift=-1`。修复后应重跑 `detect --baseline xghg` 与 `compound --tag _x`，并按缓存指纹（`THRESH_VERSION`）确认阈值缓存同步失效。
+
+---
+
+## §1 配对链路（A1–A6）
+
+### A1 复算 `cmd_pairs` 全链路计数 —— 【确认无误】
+
+复算方式：
+
+```
+python results/phase6_audit_grid.py --only A1        # 逐行复刻 phase6_cesm.py:148-219
+```
+
+关键输出行：
+
+```
+[A1] POP 全球湿格点 (KMT>0): 86212
+[A1] 映射容差窗口: 0.75*dlat=0.706806°, 0.75*dlon=0.937500°  (dlat=0.942408, dlon=1.250000)
+[A1] 落在容差窗内的 POP 湿点: 2986  → 命中的 f09 格 (去重): 1231
+[A1] f09 欧洲框 (49, 51): 海格点=1231, 陆格点=1268, 合计=2499
+[A1] 陆地边缘格点 (binary_erosion 默认 border_value=0): 357
+[A1] 最终配对数: 206 / 357 (上限 1.0°)
+[A1] CSV 实测: 行数=206 (文件 206 行数据)
+[A1] 唯一陆点=206, 唯一海点=191
+[A1] 重复海点: 被 >1 个陆点共享的海点数=15, 多占的对数=15 (最多共享 2 个陆点)
+[A1] dist_deg min/median/max = 0.281729 / 0.729999 / 0.999267
+[A1] 与已落盘 coastal_pairs_cesm.csv 逐行一致: True
+[A1] R 域文件 domains_land_cesm.csv: 206 点
+```
+
+- **206 对确认成立**，且与落盘 CSV 逐行一致（我独立重跑全链路后比对 `(land_lat_idx, land_lon_idx, ocean_lat_idx, ocean_lon_idx)` 四列）。
+- f09 裁剪网格实测格距 **dlat=0.9424°**（=180/191，不是 0.9°）× **dlon=1.2500°**（=360/288）。代码注释 `phase6_cesm.py:30,56` 说"f09/gx1v6 都是 ~1° 网格"——纬度侧偏小 6%，经度侧偏大 25%。
+- 真海岸点 **279** 个（见 A3 的 `border_value=1` 复算），实际配上 **206** 个 ⇒ **73 个真海岸陆点在 1.0 单位内找不到海点而被丢弃（占 26.2%）**。`dist_deg` 最大值 0.9993 紧贴上限 1.0，说明该上限是**紧约束**而非宽松门限。
+
+### A2 映射容差与重复覆盖 —— 【有问题，低影响】
+
+```
+[A2] 每个 f09 海格被覆盖的 POP 湿点数: max=7, 中位=2, 只被 1 个覆盖的格数=173
+[A2] 容差半宽 lat=0.7068° lon=0.9375°; 相邻格中心距 lat=0.9424° lon=1.2500°
+     → 窗口重叠倍数 lat=1.50x lon=1.50x (>1 即重叠, argmin 取最近者)
+[A2] 全球 POP 湿点 86212, 落在欧洲框内 2770, 通过 0.75 容差 2986 → 框内但被容差淘汰 -216
+[A2] 只用框内 POP 点重算掩码: 海格点 1207 (vs 全量 1231); 仅靠框外点变成海的格数 = 24
+[A2]   其中落在阵列边界行/列的 = 24/24; 经纬度样例 = [(39.11,-16.25),(40.052,-16.25),(40.995,-16.25),...]
+[A2] POP(gx1v6) 欧洲框内湿点 2770 个; 最近邻间距 (cos 加权单位) p10/p50/p90 = 0.249/0.417/0.506 ≈ 46 km (中位)
+```
+
+- 容差半宽 0.75×格距对**两侧相邻格都成立**（重叠 1.5×），但代码用 `argmin`（`phase6_cesm.py:174-175`）只取最近格 ⇒ **一个 POP 湿点只标记 1 个 f09 格，无重复标记问题**。
+- 反向：一个 f09 海格最多被 7 个 POP 湿点覆盖（中位 2），这本身无害（只是"该格是海"的证据更多）。
+- 实测 POP(gx1v6) 欧洲框内有效分辨率：**最近邻间距中位 0.417 单位 ≈ 46 km**（p10/p90 = 0.249/0.506）⇒ 容差半宽 0.7068° 明显大于 POP 格距，所以"一个 f09 格被多个 POP 点覆盖"是必然结果（最多 7 个），符合预期。
+- **发现**：`argmin` 对框外点做**边界夹取**（clamp），使 216 个框外湿点被算进容差、并让 24 个 f09 格（全部在 lon=−16.25 边界列，39–44°N，即大西洋侧）被判为海。物理上确为海洋，故无实际错误，但掩码确实受框外点影响。
+- 海陆掩码**完全来自 POP `KMT`，未与 CAM landmask 交叉核对**（代码无此步骤）。若 CAM 与 POP 海陆不一致（近岸常见），会被整格判错——本审计只能指出该风险，**未判定**其实际误差量级。
+
+### A3 阵列边界伪边缘 —— 【有问题，但未产生配对】
+
+```
+[A3] 阵列边界格点总数 196 (第0行/末行/第0列/末列)
+[A3] 边界上的陆格点 84 —— 这些在 border_value=0 下必然被判为 edge
+[A3] edge 总数 357; 其中落在阵列边界 84
+[A3] 用 border_value=1 重算 edge 总数 279 (差值 = 纯伪边缘 78)
+[A3] 206 对中, 来自「纯边界伪边缘」的配对: 0
+[A3] 206 对中, 位于阵列边界上的配对: 6
+[A3] 边界 edge 点中获得配对的: 6
+[A3] 边界 edge 点中真海岸 (border_value=1 也算 edge): 6
+```
+
+- **数量与占比**：纯伪边缘 **78 个 / 357 个 edge = 21.9%**；边界陆格点共 84 个（另 6 个是真海岸）。
+- **是否产生配对**：**否**。78 个伪边缘点的最近 POP 湿点距离均 > 1.0 单位，被 `phase6_cesm.py:199` 淘汰。清单见 `results/intermediate/audit/grid/A3_border_edge_points.csv`（含 `got_pair` 列）。
+- 6 个位于阵列边界且获得配对的点，全部是 `border_value=1` 下也算 edge 的**真海岸**（样例：`(i=0, j=5, lat=28.7435, lon=−10.0)`）。
+- 结论：`border_value=0` 是**真实的代码缺陷**，但本例中距离门限恰好兜住了它。属于健壮性问题：若将来放宽 `MAX_PAIR_DIST_DEG` 或更换域，会立即产生内陆伪配对。
+
+### A4 KDTree cos 加权的物理含义 —— 【确认无误，口径需说明】
+
+```
+[A4] cos 加权空间定义: d = sqrt(dlat^2 + (dlon*cos(lat))^2)  [近似平面]
+[A4] 206 对的 dist_deg min/med/max = 0.2817/0.7300/0.9993
+[A4] 同 206 对真实大圆距离 gc_km min/med/max = 37.7/81.6/134.1 km
+[A4] 换算系数 gc_km/dist_deg: min=79.71, med=112.21, max=152.38 km/单位
+[A4] 1.0 单位 ≈ 112.2 km (≈ 1° 纬度 = 111.2 km)
+[A4] 45N: 1 单位经度 = 78.72 km, 1 单位纬度 = 111.13 km, cos 加权把 1° 经度压缩为 0.7071 单位
+[A4] 注: 建树用 cos(ocean_lat), 查询用 cos(land_lat), 两侧 cos 不同 → 最大失配 0.01414
+[A4][观测侧对照] 2039 对, dist_deg med=0.1973, gc_km med=21.9, max=62.5, 换算 111.2 km/单位
+```
+
+- **45°N 处 1.0 单位**：纬度方向 = 111.13 km（=1°）；经度方向 = 78.72 km（=1°经度×cos45）。即该度量把"1 单位"归一为**约 1° 大圆角距 ≈ 112 km**，这正是 cos 加权的设计意图。
+- `A4_pairs_with_gc.csv`：大圆距离 **max=134.1 km、median=81.6 km**。max/median 的换算系数 152.4/112.2 说明该平面近似在高纬与大连通差时**失真最大 36%**（建树与查询用不同 cos 是原因之一），但不足以改变配对结果。
+- **口径结论**：`MAX_PAIR_DIST_DEG=1.0` 的物理含义 ≈ **112 km 允许分离**（观测侧 `MAX_GRID_DIST_DEG=0.5` ≈ **55.6 km**，实测观测侧 max 仅 62.5 km）。⇒ **模型侧配对的实际距离上限约为观测侧的 2.1 倍**，两套网格的"沿海配对"严格程度不可直接互译。
+
+### A5 口径差异的文档登记情况 —— 【有问题（文档）】
+
+复算方式：`python results/phase6_audit_grid.py --only A5`（全工作区 `*.py` / `*.md` 正则扫描，命中 39 行 .md + 101 行代码 → `A5_doc_scan.txt`）
+
+**登记了模型侧口径的文档**：
+
+| 文件:行 | 内容要点 |
+|---|---|
+| `results/复现报告.md:338` | "pairs（POP KMT 湿点映射 f09 → 陆缘 357 → KDTree 配对 206 对，上限 1.0°）" |
+| `results/复现报告.md:344` | "观测 0.25°×1434 对 vs 模型 1°×206 对，…在两套网格上不可直接互译" |
+| `results/复现报告.md:347` | 同上，列为"20 成员前必须决策"的缺口 #2 |
+
+**未登记模型侧口径、只有观测侧数字的文档**：
+
+| 文件:行 | 只有观测侧 |
+|---|---|
+| `AGENTS.md:81` | `MAX_GRID_DIST_DEG = 0.5°`，2039 对 / 1434 唯一海点 |
+| `TECHNICAL_SPEC.md:214,787,790` | `MAX_GRID_DIST_DEG = 0.5`、2039 对 / 1434 海点 |
+| `TECHNICAL_SPEC_PHASE_A.md:17,18,150,151,295` | 0.5° 上限、2039 对 / 1434 海点 |
+| `docs/复现方案.md:155` | `MAX_GRID_DIST_DEG=0.5`，沿海对 1434 个 |
+
+**结论**：模型侧 206 对 / 1.0° 只在 `results/复现报告.md` 出现（3 处，且其中 2 处是"已知缺口"列表而非规范定义）；**四份权威/约束文档（AGENTS.md、TECHNICAL_SPEC.md、TECHNICAL_SPEC_PHASE_A.md、docs/复现方案.md）完全没有登记**。差异本身被承认过，但**没有升格为规范条目**，Phase 6 全量/写作阶段极易被当成同一口径引用。建议：在 `config.py` 旁增加 `CESM_MAX_PAIR_DIST_DEG` 并写入 `TECHNICAL_SPEC.md` §3.5 的偏差表。
+
+### A6 `_load_sst_points` 块读校验 —— 【确认无误】
+
+```
+[A6] SST dims = ('time','nlat','nlon'), KMT dims = ('nlat','nlon') (nlat=384, nlon=320, time=2191)
+[A6] 206 对配对点 KMT[pj, pi]: min=3.0, max=50.0, <=0 的点数=0
+[A6] 块读 v[:, 277:366, :] = (2191, 89, 320) (249.6 MB) 耗时 3.1 s
+[A6] rows=block[:, pj-j0, :] shape=(2191, 206, 320); take_along_axis(..., pi) → got shape=(2191, 206)
+[A6] pair#0 (nlat=277, nlon=26): 标量 isel 耗时 3.1 s; 全时段 max|块读-isel| = 0.000e+00 一致
+[A6] pair#100 (nlat=320, nlon=35): 全时段 max|块读-isel| = 0.000e+00 一致
+[A6] pair#205 (nlat=353, nlon=79): 全时段 max|块读-isel| = 0.000e+00 一致
+[A6] 另抽 21 对做全时段交叉: max|diff|=0.000e+00, 不一致对数=0
+```
+
+- `pj = ocean_lat_idx` **是** KMT/SST 的 nlat（第 1 维）索引，`pi = ocean_lon_idx` **是** nlon（第 2 维）索引 —— 与 `SST(time,nlat,nlon)` 完全对齐。决定性证据：206 个配对点的 `KMT[pj,pi]` **全部 > 0**（min=3, max=50）；若维度颠倒会大面积 ≤0 并把整列置 NaN。
+- 3 个抽样点（pair#0/#100/#205）**全时段 2191 天逐值比对，max|块读−isel| = 0.000e+00**；另抽 21 对同样 0.000e+00。
+- 副产品性能数据：`v[:, j0:j1, :]` 一次大读 249.6 MB / 3.1 s，每个成员每段一次，可接受。
+- ⚠️ 审计过程中发现（**非被审计代码的问题**）：在本机对 1 GB 级 POP 文件使用 xarray 的**矢量 isel**（`isel(nlat=DataArray(pj), nlon=DataArray(pi))`）会退化为全量读，>300 s 未完成。被审计代码 `_load_sst_points` 用的是 netCDF4 块读，未踩此坑；但 `_pooled_threshold_t2m` / `_detect_thw_member_ext` / `_obs_annual_threshold` 用的是矢量 isel（对象是 80 MB 小文件，实测可用）。
+
+---
+
+## §2 经度与坐标（B1–B4）
+
+### B1 经度 0–360 vs ±180 —— 【CESM 侧确认无误；观测侧有问题（潜伏）】
+
+```
+[B1] POP TLONG 原始范围: 0.0147 .. 359.9960 (>180 的点数=64492/122880)
+[B1] np.where(tlon>180, tlon-360, tlon) 之后: -179.9967 .. 179.9992
+[B1] 欧洲框 lon 范围: -16.2500 .. 46.2500
+[B1] 结论: 转换后仍有 >180 的点 0 个
+[B1] coastal_pairs_cesm.csv  ocean_lon = -17.8450..47.2025 (已 -180..180)
+[B1] coastal_pairs_cesm.csv  land_lon  = -16.2500..46.2500
+[B1][观测侧] coastal_pairs.csv ocean_lon = 0.1250..359.8750  ← **0..360 未换算**
+[B1][观测侧] land_lon = -24.8750..44.8750
+[B1] mhw_ALL_001.csv: lon -17.8450..47.2025 (n=10069)    ← 12 个 mhw_*.csv 全部同一范围
+[B1] mhw_ALL_001.csv 的 (lat_idx,lon_idx) 集合 ⊆ pairs 海点集合: True (191/191)
+[B1] mhw lon 与 pairs ocean_lon 一致: True (max|diff|=3.553e-15)
+[B1][观测侧] mhw_events_R_global.csv lon 范围 -25.1250..45.3750
+```
+
+- **POP TLONG 原始 0.0147–359.9960**（64492/122880 个点 >180），换算后 **−179.9967–179.9992**，欧洲框内无残留 >180 的点。
+- **配对表与 mhw_*.csv 的 lon 符号一致**：12 个 `mhw_*.csv`（v1+v2，6 成员组）lon 全部为 −17.8450..47.2025，与 `coastal_pairs_cesm.csv` 的 `ocean_lon` 逐点一致（max|diff|=3.6e-15）。阈值（`_pooled_threshold_sst`）与检测（`_detect_mhw_member`）都只用**列索引**取值，与 pairs 同源 ⇒ **CESM 侧配对/阈值/检测三处经度口径全程一致（无遗漏换算）**。
+- **发现（观测侧）**：`python/coastal_mask.py:77` 算了 `ocean_lons_unified`（−180..180）**但 :124 写入 CSV 的却是原始 `ocean_lon[oj]`（0..360）**。于是观测侧出现**两张 lon 约定不同的表**：`coastal_pairs.csv`（0–360，land_lon 却是 −180..180）vs `mhw_events_R_global.csv`（−180..180）。已 grep 全 `python/*.py`：当前**没有任何消费者用 `pairs.ocean_lon` 做数值运算**（`compound_events._pair_maps` 只用整型索引），故**暂无实际影响**；但 `land_lon − ocean_lon` 一算就会差 360°，属高危潜伏陷阱。
+
+### B2 坐标对齐（纬度翻转） —— 【确认无误：无翻转，数据未错位】
+
+> **明确回答：源 XGHG `lat` 是升序；`.sel` 之后**没有**发生纬度翻转；陆地/海洋数据**没有**错位。**
+
+```
+[B2] 参考(已裁剪 AWS 成品) lat 28.7435→73.9791, 升序=True
+[B2] 源 XGHG seg1(1920-2005): lat -90.0000→90.0000 升序=True; lon 0.0000→358.7500 (0-360 约定=True)
+[B2] 源 XGHG seg2(2006-2080): lat -90.0000→90.0000 升序=True; lon 0.0000→358.7500 (0-360 约定=True)
+[B2] .sel 之后 lat 序列 = 28.7435→73.9791, 升序=True
+[B2] .sel 返回的 lat 是否 == ref_lat 顺序: True
+[B2] 落盘 XGHG_001_T2m.nc: lat 28.7435→73.9791 (== ref: True), lon == ref: True
+[B2] 探针 2001-07-15 (merged t=560, 源日期 2001-07-15): max|merged-手工NN| = 0.0000 °C  (对照: 纬度翻转假设 40.4327 °C)
+[B2] 探针 2004-01-20 (merged t=1479, 源日期 2004-01-20): max|merged-手工NN| = 0.0000 °C  (对照: 纬度翻转假设 38.2357 °C)
+[B2] 探针 2006-07-15 (merged t=2385, 源日期 2006-07-15): max|merged-手工NN| = 0.0000 °C  (对照: 纬度翻转假设 42.0674 °C)
+[B2] 探针 2020-08-10 (merged t=7521, 源日期 2020-08-10): max|merged-手工NN| = 0.0000 °C  (对照: 纬度翻转假设 36.9847 °C)
+```
+
+- 代码风险点（`phase6_cesm.py:125-127`）确实存在：`da.sel(...)` 后紧跟 `assign_coords(lat=ref_lat.values)`，**若源 lat 为降序且 `.sel` 保留源序，标签会被整体翻转**。
+- **实测排除了该风险**：源 f09 全球网格 lat 从 −90 到 +90 **升序**（`b.e11.B20TRLENS_RCP85...TREFHT...nc`），`.sel` 返回的 lat 序列已升序且与 `ref_lat` 完全相等。
+- **独立探针**（绕过 xarray，手工做经度换算 + 最近邻索引）4 个日期（跨两段：2001/2004/2006/2020，各自源文件不同）**max|merged−手工NN| = 0.0000 °C**；作为对照，假设纬度翻转则差 **36.98–42.07 °C**。⇒ 对齐正确，**结论为"否（未翻转）"**。
+- 详见 `results/intermediate/audit/grid/B2_alignment_probe.csv`（含 `verdict` 列）。
+
+### B3 K→°C 换算与 SST 单位 —— 【确认无误】
+
+```
+[B3] XGHG TREFHT seg1: units='K', min=174.960, max=319.979, dtype=float32
+[B3] XGHG TREFHT seg2: units='K', min=160.371, max=320.184, dtype=float32
+[B3] ALL TREFHT(AWS 成品): units='K', min=226.050, max=321.108, dtype=float32
+[B3] 落盘 ALL_001_T2m.nc:  units='degC', min=-47.100, max=47.958
+[B3] 落盘 XGHG_001_T2m.nc: units='degC', min=-56.988, max=45.766
+[B3]   XGHG_001_T2m.nc 年 2005: 均值=8.694 °C (若漏减 273.15 应 ≈ 281.8)   [2006: 8.819, 2020: 9.282]
+[B3]   ALL_001_T2m.nc  年 2005: 均值=10.470 °C (若漏减 273.15 应 ≈ 283.6)  [2006: 10.083, 2020: 11.414]
+[B3] ALL SST seg1: units='degC', min=-2.479, max=33.794   [XGHG seg1: -2.558..33.444]
+[B3] ALL SST seg2: units='degC', min=-2.496, max=34.862   [XGHG seg2: -2.880..33.659]
+[B3] 代码佐证: '_load_sst_points' 内出现 '273.15' 的次数 = 0
+```
+
+- **TREFHT 两段（1920-2005 / 2006-2080）units 均为 `'K'`**，量级 160–320；判据 `units.startswith("K") or float(da.max())>150` 的**两个条件都命中**，两段都被正确减 273.15（落盘 `degC`，两段年份均值 8.7–11.4 °C，量级正确）。
+- **SST units 均为 `'degC'`**，范围 −2.88–34.86 ⇒ **不需要换算**，`_load_sst_points` 无 273.15 是**正确**的（代码中 `273.15` 出现 0 次）。
+- 小提示（非缺陷）：`startswith('K')` 对 `'kelvin'`（小写）不命中，届时仅靠 `>150` 兜底；本数据双命中，无风险。
+
+### B4 时间解码 / 日历 / doy 边界 —— 【有问题：calendar 标注与数据不符 + ALL SST 有 1 天物理缺口】
+
+```
+[B4] T2m merged XGHG_001: 文件 calendar 属性='proleptic_gregorian', 解码后 dtype=datetime64[ns],
+     n=8030, 2000-01-01~2021-12-31
+[B4]   doy 集合: min=1, max=366, 是否含 366=True, 唯一 doy 数=366
+[B4] SST ALL  seg1: calendar='proleptic_gregorian', n=2191, 2000-01-01~2006-01-01
+[B4] 11 天圆形窗 win=[(d+k-1)%365+1 for k in -5..5]: d=1..365 全范围 越界/重复的 d 个数 = 0
+[B4] 窗口 d=1  -> [361, 362, 363, 364, 365, 1, 2, 3, 4, 5, 6]
+[B4] 窗口 d=365-> [360, 361, 362, 363, 364, 365, 1, 2, 3, 4, 5]
+[B4] ALL  SST 段接缝: seg1 末 2006-01-01 → seg2 首 2006-01-03  步长=2 天 (!! 有缺口)
+[B4] XGHG SST 段接缝: seg1 末 2006-01-01 → seg2 首 2006-01-02  步长=1 天 (连续)
+```
+
+- **calendar 属性 = `proleptic_gregorian`，但 raw 文件的真实 calendar 是 `noleap`**（`raw/...pop.h.nday1.SST...nc`: `{'units':'days since 0000-01-01 00:00:00','calendar':'noleap'}`；CAM 侧 `{'units':'days since 1920-01-01','calendar':'noleap'}`）。成因：`download_cesm1le.py:_to_datetimeindex` 用 `CFTimeIndex.to_datetimeindex()` 把 noleap 日期按同名 Y-M-D 映射为 `datetime64`，写盘时丢了日历信息。
+- 实测解码成功（`pd.DatetimeIndex` 无异常，dtype `datetime64[ns]`），序列中 **2-29 标签数 = 0**（noleap 正确），跨闰年处出现 6 处 +2 天步进。
+- **`doy` 集合实测 min=1 / max=366（含 366）**：因为 2000/2004/…/2020 的 **12-31 在标准日历下 doy=366**。这一点与 "noleap ⇒ doy 只到 365" 的直觉相反，**必须按 366 行表处理**。
+- **窗口公式不越界**：`(d+k-1)%365+1` 在 d=1..365 全域得到 1..365、无重复（d=1→[361..365,1..6]；d=365→[360..365,1..5]）✓。`thresh` 366 行，`doy-1 ∈ 0..365` 恒在范围内 ✓。⚠️ 但 **doy=366 会取到第 366 行**——见 S-2。
+- **POP 标签 = 物理日 + 1（实证）**：raw B20TR POP `time_bound[0]=[675251.0417, 675252.0]`、首条 stamp 675252 = 1850-01-03，文件名却是 `...SST.18500102-20051231...`；末条 stamp 732190 = 2006-01-01，`time_bound=[732189,732190]`，文件名末尾 20051231 —— 两条元数据独立互证"记录标签 = 其日均区间的**结束**时刻 = 物理日 + 1"。对照 CAM TREFHT 的 `date` 变量（首条 19200101，`time_bnds=[t,t+1]`）⇒ **T2m 标签 = 物理日，SST 标签 = 物理日 + 1**。
+- **ALL SST 段接缝存在 1 个物理日缺口**：B20TR 段（物理到 2005-12-31）+ RCP85 段（文件名起点 20060102 ⇒ 物理从 2006-01-02 起）⇒ **物理 2006-01-01 缺失**；因标签 +1，表现为标签从 `2006-01-01` 直跳 `2006-01-03`。XGHG 侧 RCP85 SST 文件名起点是 20060101 ⇒ **无缺口**。⇒ 该项在 ALL/XGHG 之间**不对称**（P1）。`_load_sst_points` 只做 `pd.DatetimeIndex` 拼接、不检查连续性，故该缺口会被静默桥接（`_run_events` 按行号相邻判断连续）。
+
+---
+
+## §3 XGHG 拼接与接缝（C1–C3）
+
+### C1 段文件 / 时间范围 / 天数 / 连续性 —— 【确认无误】
+
+```
+[C1] XGHG 001: 2 段
+[C1]   b.e11.B20TRLENS_RCP85.f09_g16.xghg.001.cam.h1.TREFHT.19200101-20051231_2000-2021.nc  n=2190  2000-01-01~2005-12-31
+[C1]   b.e11.B20TRLENS_RCP85.f09_g16.xghg.001.cam.h1.TREFHT.20060101-20801231_2000-2021.nc  n=5840  2006-01-01~2021-12-31
+[C1] 落盘 XGHG_001_T2m.nc: n=8030 2000-01-01~2021-12-31, 重复=False, 严格单调=True, 步长集合=[1,2]
+[C1] XGHG 001: 2 天步进 6 处 ['2000-02-28→2000-03-01','2004-02-28→2004-03-01','2008-02-28→2008-03-01',
+                            '2012-02-28→2012-03-01','2016-02-28→2016-03-01','2020-02-28→2020-03-01']; 序列中 2-29 标签数=0
+[C1] XGHG 001: 缺口判定 —— 以 noleap(365天) 计 2000-01-01..2021-12-31 = 8030 天, 实测 8030 天 → 无缺口
+```
+
+- 成员 **001 / 002 / 003 完全同构**：各 2 段，**2190 天（2000-01-01~2005-12-31）+ 5840 天（2006-01-01~2021-12-31）= 8030 天**，= 22 年 × 365 天（noleap）。
+- 落盘文件 **无重复、严格单调**；步长集合 {1,2} 中的 6 处 2 天步进**全部**是闰年 2-28→3-1（noleap 缺 2-29），属正确行为；**2-29 标签数 = 0**。
+- ⇒ **2000-01-01..2021-12-31 连续 8030 天，无重复无缺口** ✓
+
+### C2 接缝跳跃检验 —— 【确认无误：无不连续证据】
+
+```
+[C2] T2m XGHG(两段拼接,2005-12-31|2006-01-01 为文件接缝)
+[C2]   |ΔT2m| 全域均值: 接缝=2.5539 °C; 全体 8029 个日间跳变 p50=1.2756 p95=2.4523 p99=3.0712 °C
+[C2]   跨年(12-31→01-01)跳变 21 个: p50=1.9535, 接缝在其中排名 15/21 (分位 67%)
+[C2]   同季节基准更公平: 接缝 2.5539 vs 其它跨年跳变 median 1.9535 → 无明显不连续
+[C2] T2m ALL(单段,无文件接缝→仅作参照): 接缝=2.0303 °C; 跨年 21 个 p50=1.6867 (76 分位)
+[C2] SST XGHG 接缝 |ΔSST| 全网格均值 = 0.0544 °C (seg1 末条标签 2006-01-01 → seg2 首条标签 2006-01-02)
+[C2]   随机 120 个日间跳变: p50=0.0442 p95=0.0529 p99=0.0566 → 接缝分位 96.7%
+[C2]   同季节(12/1月) 60 个跳变: p50=0.0501, p95=0.0544 → 接缝分位 95.0% (偏高但在分布内)
+[C2] SST ALL 接缝 |ΔSST| 全网格均值 = 0.0523 °C (seg1 末条标签 2006-01-01 → seg2 首条标签 2006-01-03)
+[C2]   同季节(12/1月) 60 个跳变: p50=0.0524, p95=0.0583 → 接缝分位 48.3% (无明显不连续)
+```
+
+- **T2m XGHG**：接缝跳变 2.5539 °C，看似在全体分布的 96 分位，但用**同季节基准**（其它 20 个 12-31→01-01 跳变，中位 1.9535）衡量只排 15/21（67 分位）⇒ **正常冬季日间变率，无接缝不连续**。
+- **T2m ALL**：`find_t2m_segments("ALL", m)` 只返回 1 个文件（AWS 产品整段），**不存在文件接缝**；其 2.0303 °C 仅作跨年参照。
+- **SST XGHG**：0.0544 °C，在冬季分布 95 分位（偏高但未越界）；**SST ALL**：0.0523 °C 恰在冬季中位（48 分位）。⇒ 无单位/坐标跳变证据（若一段 K 一段 degC，|Δ| 会是 ~273）。
+- ⚠️ 归因提示：ALL SST 的接缝实际跨 **2 个物理日**（含 B4 的 1 天缺口），并非严格 1 天，故其 |Δ| 不可与 XGHG 直接等量比较。
+
+### C3 `xr.concat` 静默风险 —— 【确认无误（健壮性缺口 P2）】
+
+```
+[C3] XGHG TREFHT: units A='K' B='K' → 一致;  dtype A=float32 B=float32; shape A=(2190,192,288) B=(5840,192,288)
+[C3]   lat 升序 A=True B=True; A==B: True
+[C3]   lon A 0.0000..358.7500 B 0.0000..358.7500; A==B: True
+[C3]   attrs 仅 A 有=[], 仅 B 有=[]; attrs 同名但取值不同: []
+[C3] XGHG SST: units A='degC' B='degC'; TLAT/TLONG A==B: True; KMT: A==B: True, 非零格点数=86212
+[C3] ALL  SST: units A='degC' B='degC'; TLAT/TLONG A==B: True; KMT: A==B: True
+```
+
+- **实测无静默错误**：TREFHT 两段 `units/dtype/lat/lon/attrs` 完全一致（同名属性无冲突）；SST 两段 `units/TLAT/TLONG/KMT` 完全一致。故 `xr.concat(dim="time")`（`phase6_cesm.py:135`）不会因单位或坐标不一致而拼错。
+- **但代码无任何断言**：`xr.concat` 默认 `join='outer'`，且不校验 units/shape；`cmd_prepare` 的 `assert` 只查时间重复（`phase6_cesm.py:137`）。若未来某段单位变为 `K` 或 lat 变序，会**静默**产出错误文件。属健壮性缺口（P2），建议加 `units` 与 `np.allclose(lat, ref_lat)` 断言。
+
+---
+
+## §4 复算命令
+
+```bat
+:: 全量（约 8 分钟，产物写入 results/intermediate/audit/grid/）
+python results\phase6_audit_grid.py                 > results\intermediate\audit\grid\log_full.txt 2>&1
+
+:: 分段
+python results\phase6_audit_grid.py --only A1,A2,A3,A4    :: 配对链路计数/容差/边界伪边缘/cos 加权
+python results\phase6_audit_grid.py --only A5,A6          :: 文档口径登记 / 块读校验
+python results\phase6_audit_grid.py --only B1,B2,B3,B4    :: 经度 / 坐标对齐 / K→°C / 时间解码
+python results\phase6_audit_grid.py --only C1,C2,C3       :: 拼接 / 接缝 / concat 风险
+python results\phase6_audit_grid.py --only E,E2           :: 标签对齐 + PR/FAR 敏感度（副产物）
+python results\phase6_audit_grid.py --only S              :: T2m 阈值空间塌缩（P0，副产物）
+python results\phase6_audit_grid.py --list                :: 列出全部段号
+```
+
+**产物清单**（`results/intermediate/audit/grid/`）：
+
+| 文件 | 内容 |
+|---|---|
+| `audit_grid_summary.json` | 全部关键数字的结构化汇总 |
+| `A3_border_edge_points.csv` | 84 个边界 edge 点的经纬度 + `got_pair` 标记 |
+| `A4_pairs_with_gc.csv` | 206 对 + 大圆距离 `gc_km` + 换算系数 |
+| `A5_doc_scan.txt` | 全工作区口径关键词命中（.md 39 行 / 代码 101 行） |
+| `B2_alignment_probe.csv` | 4 个纬度翻转探针 + `verdict` |
+| `S_exceedance_by_point.csv` | 206 陆点逐点超阈率（塌缩阈值 vs 正确阈值） |
+| `recomputed_thresh_t2m.npz` | 独立复算的 T2m 阈值：`src`（现行源码公式）/ `fix`（正确逐点公式） |
+| `log_full.txt` 及分段日志 | 原始输出。**分段日志（log_A / log_A56 / log_A6B1 / log_B234 / log_C13 / log_C2 / log_C2E / log_E2 / log_S / log_A2S）是本报告各节数字的直接出处**；`log_full.txt` 为一次性全量 roll-up（等价复现，耗时约 8 分钟） |
+
+---
+
+## §5 审计边界与未判定项
+
+1. **A2 未判定**：海陆掩码完全来自 POP `KMT`，未与 CAM landmask 交叉核对。近岸 CAM/POP 海陆不一致的实际误差量级**未判定**（需 CAM landmask 对照实验）。
+2. **A3 未判定**：`border_value=0` 的伪边缘本次恰好被 1.0 单位门限兜住；若放宽门限或扩大域，伪配对数量**未判定**。
+3. **E 段的"正确对齐"以 POP 标签=物理日+1 为前提**，该前提由 raw 文件 `time_bound` + 文件名两条独立元数据互证；若上游 GDEX/裁剪流程对该约定另有处理，结论需相应修正。
+4. 本审计**未修改** `python/` 下任何文件、`results/intermediate/cesm/` 下任何既有文件；S-1/E-1 触及检测与复合口径，可能与 detection/compound 审计员结论重叠，以交叉印证为准。
+
+
+## 4. 分报告 D-2：检测语义（模型侧 vs R heatwaveR 0.5.5）
+
+> *来源存档：`phase6审计_检测语义.md`（原文未改动，仅并入本文件）*
+
+**审计对象**：`python/phase6_cesm.py` 的 `_run_events`(L259-271)、`_detect_mhw_member`(L336-378)、
+`_detect_thw_member`(L381-403)、`_detect_thw_member_ext`(L406-444)、`_pooled_threshold_sst`(L274-295)、
+`_pooled_threshold_t2m`(L298-333)
+**对照物**：`python/detect_events.R`（观测侧正式链路；heatwaveR **0.5.5**，R 4.6.1）
+**审计原则**：不采信任何文档自述（含 `results/复现报告.md` D1/D2、`config.py` 注释、
+`results/detect_event_source.txt`、`results/ts2clm_source.txt`）。全部结论 = 本机 heatwaveR 真实函数体 + 判别性实验实测数字。
+**复算入口**：
+```
+Rscript results/phase6_audit_detect.R  <in> <out> {all|fuzz|force}
+python  results/phase6_audit_detect.py [--skip-r] [--only export,fuzz,r,e1,e2,e3,e4,e4c,e5,a1]
+```
+**产物目录**：`results/intermediate/audit/detect/`（`audit_summary.json` 为机器可读汇总）
+
+---
+
+## 0. 结论速览
+
+| 编号 | 结论 | 判定 | 严重度 | 影响量级（实测） |
+|---|---|---|---|---|
+| **E1** | `_pooled_threshold_t2m` 的 `np.nanpercentile(..., axis=0)` 对 **1-D** `stacked` 求值 → **标量**，广播成 366×206 的**全域同一曲线** | **有问题** | **P0** | 阈值 mean\|Δ\| **8.26 °C**（p90 16.45，max 24.65）；v2 THW 事件被**低估到 1/3–1/4**（XGHG 001：3746 → 11310，0.33×） |
+| E1-b | 即使只修 `axis`，仍是"**逐日分位的再分位**"，与 heatwaveR"窗内合并原始样本"不同 | **有问题** | 中 | 阈值 mean\|Δ\| 0.531 °C（p90 0.977，max 5.71） |
+| E1-c | 两个池化缓存都**缺 doy=366 行**（全 NaN），闰年 12-31 共 6 天×206 点被永久屏蔽 | **有问题** | 中 | **1236 点·日/序列** 不可能超标 |
+| **E2** | 模型侧 MHW（v1 自身气候态 / v2 池化）**只用单日 doy 分位，缺 11 天窗**；观测侧 MHW 走 R `detect_events.R`（`windowHalfWidth=5`）→ **海陆口径不一致** | **有问题** | **高** | v1 MHW 超标日 **1.49×（ALL）/1.53×（XGHG）**；单日分位有 **3/22 = 13.6%** 的系统性超标率（vs 11 天窗 ~10%）；传导到**复合日数 +27%（ALL）/ +31%（XGHG）** |
+| E2-b | `smoothPercentile=FALSE` 下 11 天窗**仍然生效**（源码证据） | 确认无误（指 R 侧） | — | 见 §2.1 |
+| E2-c | 观测侧 MHW 确实来自 R 11 天窗链路 | 确认无误 | — | `config.MHW_EVENTS_CSV` = `mhw_events_R_global.csv`（152490 事件） |
+| **E3** | `_run_events` 是"**先桥接后过滤**"，heatwaveR `proto_event` 是"**先过滤后桥接**" | **有问题** | **P0** | 1350 条模糊用例中 **78–143/150 不等价**；真实 CESM 上**事件数放大 2.0–2.1×** |
+| E3-b | heatwaveR 的空档桥接**头尾不对称**：吸收尾部空档（≤maxGap），**不吸收**头部空档 | 确认无误（指 R 侧） | 中 | 独立复核 Lead 结论；`proto_event` 逐行复刻 **0/1350 不一致** |
+| E3-c | 项目文档（D1 / `compound_events.py` L21）对 heatwaveR 的描述**是对的**，错的是代码 | 确认无误 | — | — |
+| E3-d | 观测侧 Python `detect_mhw._EventTracker` 与 `_run_events` **同语义**（同为先桥接后过滤） | 确认无误 | 低（当前未使用） | 21/21 用例一致 |
+| E4 | 严格大于 / 时长含空档 / 跨年不切分 / NA 处理 | **确认无误** | — | 见 §5 |
+| E4-b | 阈值 NaN 时 Python 视为"非超标"，R 会产生 NA 判据（本数据未触发） | 未判定（不影响本数据） | 低 | 实测阈值 NaN 占比：缓存 0.273%（doy 366 行），R 产物 0% |
+| E5 | `min_valid=730` 在 Python 路径缺失 | **确认无误（无影响）** | 无 | 模型域 206 点有效日 ≥8029 > 730，`<730` 点数 **0** |
+| **A1** | `ALL_00x_T2m.nc` 时间轴在 **12:00**（XGHG 在 00:00）→ `_event_daily_mask` 的 `(date − t0).days` 让 ALL 成员三张 00:00 事件表（mhw / mhw_x / thw）掩码整体偏早 **1 天**，而 `thw_x_ALL_*.csv` 带 12:00 故不偏移 → v2 陆海掩码错位 1 天 | **有问题（附加）** | 中 | v2 ALL 复合日 **+1.52%**（63154 vs 62191） |
+| **A2** | `ALL_00x` 的 SST 两段拼接后**缺 2006-01-02**（8029 天 vs T2m 8030 天） | **有问题（附加）** | 低 | 1 天/序列；跨该日的游程被当作相邻 |
+
+> 影响面界定：**观测侧结论不受影响**。`config.MHW_EVENTS_CSV`/`THW_EVENTS_CSV` 均由 R `detect_events.R`（heatwaveR）产出。
+> 受影响的只有 **Phase 6 模型侧**：v2 的 THW（Python `_detect_thw_member_ext`）与 MHW（Python `_detect_mhw_member(thresh_ext=...)`），
+> 以及 v1 的 MHW（Python 自身气候态）。v1 的 THW 走 R，不受影响。
+
+---
+
+## 1. E1 ★ `_pooled_threshold_t2m` 的 axis 崩溃
+
+### 1.1 实测：缓存文件本身
+
+复算方式：`python -c` 读 `results/intermediate/cesm/thresh_*_xghg.npz`，逐行算 `ptp`（NaN-aware）。
+
+| 变量 | shape | 文件字节 | 全 NaN 行 | 有数据行 | **行内 max−min 最大值** | 所有有限行是否行内全等 |
+|---|---|---|---|---|---|---|
+| **t2m** | (366, 206) | **2547** | [365] | 365 | **0.000000 °C** | **True** |
+| sst | (366, 206) | 298590 | [365] | 365 | 22.822289 °C | False |
+
+**t2m 的 365 个有效行，每一行在 206 个陆点上取值完全相同**（行内极差恒为 0）。
+即：**v2（XGHG 基准）的 THW 检测对全部 206 个陆点使用了同一条"欧洲全域阈值曲线"**。
+SST 侧没有这个问题（行内极差 22.8 °C），文件大小差 **117×**（2547 B vs 298590 B）。
+
+### 1.2 机制确认（可复算）
+
+`results/phase6_audit_detect.py::e1` 按被审计代码原样复算：
+
+```python
+single[d-1] = np.nanpercentile(rows, 90, axis=0)                 # (206,)
+stacked = np.concatenate([single[w-1] for w in win], axis=0)     # (11*206,) —— 1 维!
+thresh[d-1] = np.nanpercentile(stacked, 90, axis=0)              # ← 标量
+```
+
+`np.concatenate` 把 11 个 `(206,)` 拼成 **1 维 `(2266,)`**，`np.nanpercentile(..., axis=0)` 于是返回**标量**，
+再广播填入 `thresh[d-1]` 的 206 列 → 行内全等。
+
+- **复算 vs 磁盘缓存：最大差 = 0.000e+00**（逐位一致）。
+- 把 `concatenate` 换成 `np.stack(..., axis=0)` 并保留 `axis=0`（只修 axis）后：**行内极差最大回升到 30.737 °C**，证明崩溃点确在此处。
+
+### 1.3 量化一：阈值差（75190 = 365 doy × 206 点的点·日）
+
+| 情形 | mean\|Δ\| | 有符号均值 | p50 | p90 | p99 | max | >1 °C 占比 | >2 °C 占比 |
+|---|---|---|---|---|---|---|---|---|
+| **broken（缓存，全域同一曲线） vs 正确池化 11 天窗** | **8.264** | **+7.931** | 7.786 | **16.453** | 20.477 | **24.652** | **91.2%** | **84.0%** |
+| 仅修 axis（逐日分位再分位） vs 正确池化 11 天窗 | 0.531 | +0.531 | 0.445 | 0.977 | 1.830 | 5.710 | 9.4% | 0.7% |
+| 单日分位（pandas doy） vs 正确池化 11 天窗 | 0.377 | −0.125 | 0.285 | 0.808 | 1.660 | 4.033 | 5.5% | 0.5% |
+| 单日分位（heatwaveR doy） vs 正确池化 11 天窗 | 0.367 | −0.122 | 0.275 | 0.787 | 1.662 | 4.783 | 5.2% | 0.5% |
+
+- 有符号均值 **+7.93 °C**：崩溃阈值被**系统性抬高约 8 °C**（89.4% 的点·日偏暖），
+  于是 v2 的 THW 被系统性**漏检**。这与"缓存行 = 逐日空间 90 分位（暖尾）的再分位"一致。
+- 阈值均值（365×206 平均）：
+  **broken 21.357 °C** ｜ 仅修 axis 13.957 °C ｜ 单日分位(pandas doy) 13.301 °C ｜ **正确池化 11 天窗 13.426 °C**。
+- 逐点平均偏差（broken − correct）：**最暖处被抬高 +18.49 °C**（点 p195，地中海/北非侧），
+  **最冷处被压低 −2.87 °C**（点 p14）；其余点绝大多数被抬高。
+  → 崩溃版不是"整体平移"，而是**把空间差异抹平成暖尾常数**，因此对冷点杀伤最大。
+- **"只修 axis"仍有 0.531 °C 的系统偏差**：`_pooled_threshold_t2m` 的注释写"11 天窗圆周平滑
+  (heatwaveR windowHalfWidth=5 语义: 窗内样本合并求分位)"，但**若只修 axis，用的是"11 个逐日分位的分位"**，
+  与 heatwaveR 的"窗内合并**原始样本**再取分位"（见 §2.1 源码）**不是**同一件事。
+
+### 1.4 量化二：检测影响（成员 001，逐点跑被审计的 `_run_events`）
+
+| exp | 阈值 | 事件数 | 超标日 | mean 时长 |
+|---|---|---|---|---|
+| ALL 001 | broken（实际 v2） | **6468** | **92910** | 12.24 |
+| ALL 001 | 仅修 axis | 21320 | 261186 | 8.83 |
+| ALL 001 | 正确池化 11 天窗 | **28466** | **340750** | 9.54 |
+| XGHG 001 | broken（实际 v2） | **3746** | **50482** | 10.17 |
+| XGHG 001 | 仅修 axis | 6897 | 109037 | 7.40 |
+| XGHG 001 | 正确池化 11 天窗 | **11310** | **156869** | 7.77 |
+
+- **倍数**：ALL 001 事件 **0.23×**、超标日 **0.27×**；XGHG 001 事件 **0.33×**、超标日 **0.32×**。
+- **复算忠实度自检**：用 broken 阈值复算得到 ALL 001 = **6468** 事件、XGHG 001 = **3746** 事件，
+  与磁盘产物 `thw_x_ALL_001.csv`（6468 行）、`thw_x_XGHG_001.csv`（3746 行）**完全一致** →
+  证明本审计的重算忠实于被审计代码，上表其余行可信。
+
+### 1.5 正确参考实现的校验（关键：不是"我说了算"）
+
+本审计用 Python 忠实复刻 heatwaveR `clim_spread`+`clim_calc`（含 `make_whole_fast` 的 doy 规则、
+Feb-29 槽用 `round(mean(doy59,doy61),2)` 填充、366 天圆形 11 天窗、`type=7` 分位），
+并用本机 R `ts2clm(windowHalfWidth=5L, smoothPercentile=FALSE)` 在**同一条序列**上校验：
+
+| 序列 | 比较点数 | **max\|Δ\|** | mean\|Δ\| | 精确时间戳匹配率 |
+|---|---|---|---|---|
+| XGHG_001 T2m | 8030 × 206 | **9.96e-05 °C** | 3.21e-05 °C | 1.000 |
+| ALL_001 T2m | 8030 × 206 | 9.01e-03 °C | 3.23e-05 °C | **0.000** |
+
+残差 ~1e-4 °C 来自 R 的 `roundClm=4` 舍入 → **参考实现与 heatwaveR 等价**。
+（`ALL_001` 的"精确时间戳匹配率 = 0.000"是 A1 那条发现的一个旁证：该文件时间轴在 **12:00**。）
+
+### 1.6 补充：doy=366 整行缺失
+
+`_pooled_threshold_t2m` / `_pooled_threshold_sst` 都只循环 `np.arange(1, 366)`（doy 1..365），
+故两缓存的 **index 365（doy 366）全为 NaN**。CESM 数据经 `pd.DatetimeIndex.dayofyear` 后
+**doy=366 出现在 6 个闰年的 12-31**（2000/2004/2008/2012/2016/2020）。
+
+- `thr_t = thresh[doy-1]` → 这 6 天阈值为 NaN → `arr > NaN` 恒为 False →
+  **6 天 × 206 点 = 1236 点·日/序列**永远不可能被判为超标（v2 THW 与 v2 MHW 都中招）。
+- v1 MHW 用 `for d in np.unique(doy)`，含 doy=366，**无此缺口**（这也说明该缺口是 v2 池化函数专有）。
+
+---
+
+## 2. E2 模型侧 MHW 阈值缺 11 天窗
+
+### 2.1 源码证据：`smoothPercentile=FALSE` 下 11 天窗**仍然生效**
+
+证据文件：`results/intermediate/audit/detect/heatwaveR_source_evidence.txt`
+（由 `Rscript -e 'print(heatwaveR::ts2clm)'` 等从**本机安装包**
+`C:/Program Files/R/R-4.6.1/library/heatwaveR` 现场提取；行号为 deparse 后函数体内行号）
+
+`ts2clm`（证据 1）：
+```r
+73|     ts_wide <- clim_spread(ts_whole, clim_start, clim_end, windowHalfWidth)
+76|         ts_mat <- clim_calc(ts_wide, windowHalfWidth, pctile)
+80|         ts_mat <- clim_calc_cpp(ts_wide, windowHalfWidth, pctile)
+83|     if (smoothPercentile) {
+84|         ts_clim <- smooth_percentile(ts_mat, smoothPercentileWidth, ...
+88|         ts_clim <- data.table::data.table(ts_mat)
+```
+→ `clim_spread`/`clim_calc` **无条件**执行；`smoothPercentile` 只控制是否**再做 31 天滚动均值**平滑。
+**`smoothPercentile=FALSE` 只是不做平滑，11 天窗合并照样发生。**
+
+`clim_calc`（证据 2）：
+```r
+ 6|     for (i in (windowHalfWidth + 1):((nrow(data) - windowHalfWidth))) {
+ 9|         thresh[i] <- stats::quantile(c(t(data[(i - (windowHalfWidth)):(i +
+10|             windowHalfWidth), seq_len(ncol(data))])), probs = pctile/100,
+```
+→ 明确是"**窗内合并原始样本后取分位**"（`type = 7`，`na.rm = TRUE`）。
+
+`clim_spread`（另存 `heatwaveR_clim_spread_dump.txt`）确认：`begin_pad <- tail(ts_spread, windowHalfWidth)`、
+`end_pad <- head(ts_spread, windowHalfWidth)` → **366 天圆形环绕**；非闰年 `doy>59` 者 +1，
+Feb-29 空槽用 `round(mean(相邻两行),2)` 填充。
+
+### 2.2 (c) 观测侧 MHW 走的就是 11 天窗链路
+
+- `config.MHW_EVENTS_CSV = results/intermediate/mhw_events_R_global.csv`（存在，**152490 事件**）。
+- `python/run_all.py` L176-177：`detect_with_R("ocean", OISST_CLIP, "sst", …/mhw_events_R.csv, DOMAINS_CSV)`
+  → `globalize_mhw_idx` → `MHW_EVENTS_CSV`；
+  `detect_with_R` 传 `ts2clm(pctile=90, windowHalfWidth=5L, smoothPercentile=FALSE)` + `detect_event(5,2)`。
+- 结论：**观测侧 MHW = 11 天窗；模型侧 v1/v2 MHW = 单日分位 → 口径不一致**（这是 v1/v2 都存在的缺陷）。
+
+### 2.3 (a) 真实数据量化：单日分位 vs 11 天窗
+
+**(i) R `ts2clm` 官方口径**（24 个抽样配对点，2000-2021，全时段）：
+
+| 变量 | mean\|Δ\| | 有符号均值 | p90 | p99 | max |
+|---|---|---|---|---|---|
+| **SST ALL_001（24 点）** | **0.116 °C** | +0.099 | 0.260 | 0.503 | 0.839 |
+| T2m ALL_001（24 点） | 0.675 °C | +0.318 | 1.495 | 3.097 | 6.374 |
+
+SST 的季节梯度弱 → 阈值差只有 **~0.12 °C**；T2m 的季节梯度强 → **~0.68 °C**。
+**但阈值差小 ≠ 影响小**——见下面的超标率机制。
+
+**(ii) 全 206 点、池化 XGHG 口径**（Python 参考实现，已按 §1.5 校验）：
+
+| 情形 | mean\|Δ\| | 有符号均值 | p90 | max |
+|---|---|---|---|---|
+| v2 实际（单日 pandas doy，66 样本/doy） vs 正确池化 11 天窗 | 0.0816 | −0.0619 | 0.185 | 0.707 |
+| 单日（heatwaveR doy） vs 正确池化 11 天窗 | 0.0775 | −0.0657 | 0.169 | 0.850 |
+| v2 实际 vs 单日（heatwaveR doy）—— 纯 doy 映射差 | 0.0496 | +0.0038 | 0.116 | 0.512 |
+
+**(iii) 机制：小样本 `type=7` 分位造成系统性超标率**
+
+单成员单日分位每组只有 **22** 个样本（22 年）。`type=7` 分位在 n=22、p=0.9 时
+`h = (n−1)p + 1 = 19.9`，即 Q 严格落在第 19、20 大值之间 → **必然有 3/22 = 13.64% 的值超过 Q**。
+实测 R 官方 24 点单日口径超标率 = 17807/(8029×24) = **9.24%…13.57%**（SST ALL_001 单日= **13.57%**，
+11 天窗 = **9.24%**）；n=242 时 `h = 217.9` → 25/242 = **10.33%**。
+→ **单日分位不是"更噪声"，而是"更松"**，这是确定的、与数据无关的偏差。
+
+### 2.4 (a) 事件/超标天数影响（成员 001，全 206 点，R 官方阈值口径）
+
+**(i) v1 MHW**（成员自身气候态，`_detect_mhw_member` 默认路径）：
+
+| exp | 阈值口径 | 事件数 | 超标日 | 平均时长 |
+|---|---|---|---|---|
+| ALL 001 | 自身单日分位（**实际 v1**） | **10069** | **225364** | 21.45 |
+| ALL 001 | 自身 11 天窗（正确） | **7380** | **151449** | 19.27 |
+| XGHG 001 | 自身单日分位（**实际 v1**） | **10636** | **225568** | 20.20 |
+| XGHG 001 | 自身 11 天窗（正确） | **7675** | **147711** | 17.95 |
+
+→ 超标日 **1.49×（ALL）/ 1.53×（XGHG）**；事件数 **1.36× / 1.39×**。
+**复算自检**：复算 10069 / 10636 与磁盘产物 `mhw_ALL_001.csv`（10069）、`mhw_XGHG_001.csv`（10636）**完全一致**。
+
+**(ii) v2 MHW**（XGHG 池化阈值，`_detect_mhw_member(thresh_ext=...)`）：
+
+| exp | 阈值口径 | 事件数 | 超标日 |
+|---|---|---|---|
+| XGHG 001 | 池化单日分位（**实际 v2**） | 6862 | 133505 |
+| XGHG 001 | 池化 11 天窗（正确） | 5828 | 110496 |
+| ALL 001 | 池化单日分位（**实际 v2**） | 17111 | 867822 |
+| ALL 001 | 池化 11 天窗（正确） | 16657 | 814110 |
+
+→ XGHG 上超标日 **1.21×**（池化后每组 66 样本，`h = 59.5` → 超标率 7/66 = 10.6% vs 73/726 = 10.1%，偏差已大幅缩小）；
+ALL 上 **1.066×**（ALL 相对 XGHG 基准本来就极暖，超标率 ~50%，边际影响小）。
+**结论：E2 的严重度在 v1 上最高（1.5×），v2 上中等（1.07–1.21×）**，但两者都与观测侧口径不一致。
+
+### 2.5 (c) 传播到**复合暴露**的影响（成员 001，THW 固定为实际产物以隔离 E2）
+
+用修正后的 11 天窗阈值重建 MHW 逐日掩码，按 `cmd_compound` 同一口径重算复合日数：
+
+| exp | 复合日（实际单日分位 MHW） | 复合日（正确 11 天窗 MHW） | 倍数 |
+|---|---|---|---|
+| ALL 001 | **16756** | **13159** | **1.273×** |
+| XGHG 001 | **15810** | **12080** | **1.309×** |
+
+→ 仅 E2（MHW 缺 11 天窗）一项，就使 v1 的复合暴露日数**高估约 27–31%**。
+（此表把 THW 固定为磁盘产物，故是 E2 的**边际**效应；E3 的游程逻辑若同时修正会再改变 THW 侧。）
+
+---
+
+## 3. E3 ★ `_run_events` 的桥接/过滤顺序
+
+### 3.1 源码判决：heatwaveR = **先过滤后桥接**
+
+`detect_event` 调用 `proto_event`（证据 3）：
+```r
+38|     t_series[is.na(ts_y), `:=`(ts_y, ts_seas)]
+39|     t_series[, `:=`(threshCriterion, !is.na(ts_y) & ts_y > ts_thresh)]
+40|     events_clim <- proto_event(t_series, criterion_column = t_series$threshCriterion,
+```
+`heatwaveR:::proto_event`（证据 4，完整函数体见证据文件）：
+```r
+65|     ex1 <- rle(criterion_column)                                   # (a) 原始超标游程
+68|     proto_events <- do.call(rbind, lapply(s1[ex1$values == TRUE], ...))
+70|     duration <- proto_events$index_end - proto_events$index_start + 1
+81|     proto_events <- proto_events[proto_events$duration >= minDuration, ]   # (b) ★先过滤
+83|     durationCriterion <- rep(FALSE, nrow(t_series))
+84|     for (i in seq_len(nrow(proto_events))) { durationCriterion[...] <- TRUE }
+88|     if (joinAcrossGaps) { ... }                                    # (c) 再桥接
+101|         proto_gaps <- proto_gaps[proto_gaps$index_end > proto_events$index_start[1], ]
+104|         if (any(proto_gaps$duration >= 1 & proto_gaps$duration <= maxGap)) {
+109|             for (i in seq_len(nrow(proto_gaps))) { event[...] <- TRUE }
+```
+→ **不足 `minDuration` 的短游程在桥接之前就被丢弃，永远无法被桥接成事件**。
+`_run_events`（L265-271）先 `merged` 桥接原始游程，再 `if b-a+1 >= min_dur` 过滤 → **顺序相反**。
+
+### 3.2 合成判别性用例（21 例；R = 本机 heatwaveR 实测）
+
+| 用例 | `_run_events` | heatwaveR | 判定 |
+|---|---|---|---|
+| 3超+2空+3超 | 1 事件 / 8 天 | **0 事件** | **不等价** |
+| 1超+2空+4超 | 1 / 7 | **0** | **不等价** |
+| 4超+2空+4超 | 1 / 10 | **0** | **不等价** |
+| 2超+2空+5超（首游程不足） | 1 / 9（从第1天） | 1 / 5（从第5天） | **不等价** |
+| 5超+2空+4超 | 1 / 11 | 1 / **5** | **不等价** |
+| 4超+2空+5超 | 1 / 11 | 1 / **5** | **不等价** |
+| 5超+2空+3超+2空+5超 | 1 / 17 | **2 事件** / 5;5 | **不等价** |
+| 5超+2空+2超+2空+5超 | 1 / 16 | **2** / 5;5 | **不等价** |
+| 5超+1空+5超 | 1 / 11 | 1 / 11 | 等价 |
+| 5超+2空+5超 | 1 / 12 | 1 / **12**（时长含空档） | 等价 |
+| 5超+3空+5超 | 2 / 5;5 | 2 / 5;5 | 等价（maxGap 边界） |
+| 5超×3，空档各 2 天（链式） | 1 / 19 | 1 / 19 | 等价 |
+| 6超+2空+6超 | 1 / 14 | 1 / 14 | 等价 |
+| 10 天连续 | 1 / 10 | 1 / 10 | 等价 |
+| 4 天连续（<5） | 0 | 0 | 等价 |
+
+### 3.3 独立复核 Lead 的 ③：空档桥接**头尾不对称**
+
+Lead 指出 `proto_event` 的空档过滤是 `index_end > proto_events$index_start[1]`——
+**尾部空档会被吸收（使末事件延长 ≤maxGap 天），头部空档不会**。我用 6 个专门用例独立验证：
+
+| 用例 | heatwaveR 实测 | `_run_events` | `proto_event` 逐行复刻 |
+|---|---|---|---|
+| TAIL：5 超(20-24)，n=26（尾空档 2 ≤ maxGap） | 1 事件 **20..26，时长 7** | 1 事件 20..24，时长 **5** | 20..26，7 ✓ |
+| TAIL：5 超(25-29)，n=30（尾空档 1） | **25..30，时长 6** | 25..29，时长 **5** | 25..30，6 ✓ |
+| TAIL：5 超(22-26)，n=30（尾空档 4 > maxGap） | 22..26，5 | 22..26，5 | ✓ |
+| HEAD：5 超(3-7)，n=30（头空档 2，**应不吸收**） | 3..7，**5** | 3..7，5 | ✓ |
+| HEAD：5 超(1-5)，n=30（无头空档） | 1..5，5 | 1..5，5 | ✓ |
+| HEAD+TAIL：5 超(3-7)，n=9（头空档 2、尾空档 2） | 3..**9**，**7** | 3..7，**5** | 3..9，7 ✓ |
+
+→ **Lead 的 ③ 成立**：尾部空档被吸收、头部空档不被吸收，两者**不对称**。
+
+### 3.4 模糊测试（1350 例 = 150 条随机 0/1 序列 × 9 组 (min_dur, max_gap)）
+
+用例由 Python 生成（`fuzz_cases.csv`，seed=20260923，n∈[20,60]，p∈[0.15,0.6]）后由 R 读取，
+保证两侧输入逐位一致；阈值与事件逻辑解耦（自建 `seas=0 / thresh=0.5` 气候态）。
+
+| min_dur / max_gap | **A `_run_events`** | **B `proto_event` 逐行复刻** | C 先过滤后桥接（头尾都不吸收） | **D 先过滤后桥接 + 尾吸收（头不吸收）** | E C + 头尾都吸收 |
+|---|---|---|---|---|---|
+| 5 / 2 | **131 / 150** | **0** | 4 | **0** | 2 |
+| 5 / 1 | **104 / 150** | **0** | 1 | **0** | 1 |
+| 5 / 3 | **137 / 150** | **0** | 5 | **0** | 6 |
+| 3 / 2 | **140 / 150** | **0** | 9 | **0** | 12 |
+| 7 / 2 | **115 / 150** | **0** | 1 | **0** | 1 |
+| （其余 4 组） | 78–143 | 0 | 0–12 | 0 | 1–19 |
+
+**结论（三重一致）**：
+1. `_run_events` 与 heatwaveR **不等价**，随机序列上不一致率 **52%–95%**；
+2. `proto_event` 逐行复刻在 **全部 9 组、1350 例中 0 不一致** → 语义已被完整刻画；
+3. **变体 D（先过滤后桥接 + 只吸收尾空档）同样 0 不一致**，而 C（不吸收尾）与 E（头尾都吸收）都有残差
+   → **头尾不对称是 D 与 C 的唯一差别**，独立确认 §3.3。
+
+### 3.5 真实 CESM 数据上的影响（**同一条 R 官方 11 天窗阈值**下，纯游程逻辑差异）
+
+| 序列 | R `detect_event` | Python `_run_events` | 倍数 | 完全相同的事件 | 仅 R | 仅 Python | 超标日 R / Python |
+|---|---|---|---|---|---|---|---|
+| t2m_ALL_001（206 点） | **5609** | **11890** | **2.12×** | 3676（占 R 的 65.5%） | 1933 | 8214 | 166227 / **166227** |
+| t2m_XGHG_001（206 点） | **6062** | **12108** | **2.00×** | 3977（65.6%） | 2085 | 8131 | 166121 / **166121** |
+
+→ 在真实数据上，`_run_events` 把 THW 事件数**放大约 2.0–2.1×**（合并了大量本应被丢弃的短游程）。
+**关键对照**：两条序列的**超标日数 R 与 Python 完全相等**（166227、166121），
+说明差异**纯粹来自游程/桥接逻辑**，与阈值无关（两者用的是同一份 R `ts2clm` 阈值）。
+**旁证**：本审计用 R `ts2clm`+`detect_event` 独立复跑 v1 路径得到
+`t2m_ALL_001 = 5609` / `t2m_XGHG_001 = 6062`，与磁盘产物 `thw_ALL_001.csv`（5611）/`thw_XGHG_001.csv`（6065）
+差 2–3 个事件（**0.04%**，来自 `roundClm=4` 舍入的边界翻转）→ 佐证 R 侧复现忠实。
+
+### 3.6 观测侧 Python 是否同病
+
+`python/detect_mhw.py::_EventTracker`（L43-66）在 `gap_count > max_gap` 时才 `end_idx - start_idx >= min_dur` 判定
+→ **同为先桥接后过滤**。实测：21/21 判别用例下 `_EventTracker` 与 `_run_events` **完全一致**。
+但 `run_all.py` 的观测 MHW 走 R，`detect_mhw.py` 当前**未被观测结果使用**（`detect_events.py` 同理）。
+→ **影响面仅限 Phase 6 模型侧**；观测侧 `mhw_events_R_global.csv` / `thw_events_R.csv` 不受影响。
+
+### 3.7 为什么文档没错
+
+`compound_events.py` L21-22 写"先连续超标游程>=5 天再桥接 <=2 天间隙"——**这是对的**；
+`results/复现报告.md` D1 同理。**错的是 `phase6_cesm.py` 的 `_run_events` 实现**。
+可解释的成因：项目归档的 `results/detect_event_source.txt` **只 dump 了 `detect_event` 的函数体，
+没有 dump `proto_event`**——判决性逻辑在被调用的那个函数里，所以文档作者没能据此发现代码偏差。
+
+---
+
+## 4. E4 游程状态机的其它细节
+
+| 项 | 实测 | heatwaveR 对照 | 判定 |
+|---|---|---|---|
+| 判据为**严格大于** | `temp==thresh`（0.5 vs 0.5）→ **0 事件**；`temp=1.0>0.5` → 1 事件 | 源码 `!is.na(ts_y) & ts_y > ts_thresh`（证据 3 L39） | **确认无误** |
+| 时长 `b-a+1` **含空档** | 5超+2空+5超 → duration **12** | 合成实验 R 实测 **12** | **确认无误** |
+| **跨年/跨段不切分** | 2001-12-28..2002-01-04 连续 8 天 → 1 事件 8 天 | `proto_event` 无年份分组，全程 `rle` | **确认无误** |
+| **NaN 温度** | `x[isnan(vals)]=False` → 事件中间的 NaN 算 1 天空档（10 天连续中 1 天 NaN → 1 事件 10 天） | `t_series[is.na(ts_y), ts_y := ts_seas]` 后用 `!is.na(ts_y) & ts_y > ts_thresh`；因 `seas < thresh` 通常亦为非超标 | **确认无误（本数据 NaN 温度占比 0）** |
+| **阈值 NaN** | Python：`arr > NaN` = False → 当作空档（3 天阈值 NaN 会把 30 天连续超标切成 2 个事件 15+12） | R：`TRUE & NA` → 判据为 NA，`rle` 中 NA 自成一段，`ex1$values == TRUE` 产生 NA 索引（行为未定义/未在本数据触发） | **未判定**（本数据阈值 NaN 仅出现在缓存 doy 366 行，占比 0.273%；R 产物阈值 NaN = 0%） |
+
+阈值 NaN 统计：
+```
+{"t2m_XGHG_001(R产物)": nan_frac 0.0,
+ "cache_t2m": nan_frac 0.002732 (=1/366 行), nan_rows [365],
+ "cache_sst": nan_frac 0.002732,             nan_rows [365]}
+```
+
+---
+
+## 5. E5 v1 / v2「模型侧 vs 观测侧」参数差异表
+
+| 链路 | 检测器 | pctile | 窗口 | smoothPercentile | 气候期 | min_dur | max_gap | min_valid | 游程顺序 |
+|---|---|---|---|---|---|---|---|---|---|
+| **观测-海洋 MHW** | R `detect_events.R`（heatwaveR） | 90 | **11 天窗** | FALSE | 1983-2012 | 5 | 2 | **730** | 先过滤后桥接 |
+| **观测-陆地 THW** | R `detect_events.R` | 90 | **11 天窗** | FALSE | 1983-2012 | 5 | 2 | **730** | 先过滤后桥接 |
+| 模型 v1-海洋 MHW | Python `_detect_mhw_member` | 90 | **单日（无窗）** | n/a | 成员自身 2000-2021 | 5 | 2 | **无** | **先桥接后过滤** |
+| 模型 v1-陆地 THW | R `detect_events.R` | 90 | 11 天窗 | FALSE | 2000-2021 | 5 | 2 | 730 | 先过滤后桥接 |
+| 模型 v2-海洋 MHW | Python `_detect_mhw_member(thresh_ext)` | 90 | **单日（无窗）** | n/a | XGHG 3 成员池化 | 5 | 2 | **无** | **先桥接后过滤** |
+| 模型 v2-陆地 THW | Python `_detect_thw_member_ext` | 90 | **11 天窗（写法有误，见 E1）** | n/a | XGHG 3 成员池化 | 5 | 2 | **无** | **先桥接后过滤** |
+
+**`min_valid=730` 缺失的影响 = 0**：模型域 206 个配对点在 T2m/SST 上的有效日数
+最少 **8029**（ALL 的 SST 因缺 2006-01-02 少 1 天）、其余 **8030**，
+`< 730` 的点数在 **全部 6 条 (exp, member) 序列上均为 0**。故该门槛在模型路径上不会剔除任何点。
+
+`phase6_cesm.py` 头部 docstring 声称"检测参数完全一致: pctile=90, 11 天窗(heatwaveR), min_dur=5, max_gap=2；
+MHW 气候态 = 逐 dayofyear 单日 90 分位（与观测 load_data.calc_climatology 相同）"——
+前半句与事实不符（MHW 无 11 天窗；游程顺序与 heatwaveR 相反），后半句本身也承认了与观测口径不同。
+
+---
+
+## 6. 附加发现（超出 E1–E5，但同属"检测语义/时间轴"，已实测）
+
+### A1 `ALL_00x_T2m.nc` 时间轴在 12:00 → 掩码偏移 1 天
+
+实测：
+```
+ALL : t0 = 2000-01-01 12:00:00    T2m 8030 天;  SST 8029 天（缺 2006-01-02）
+XGHG: t0 = 2000-01-01 00:00:00    T2m 8030 天;  SST 8030 天
+```
+各事件表首行 `event_start` 与 `compound_events._event_daily_mask`（L48-49，`(event_start - t0).days`）
+实际落点相对真实日历索引的偏移：
+
+| exp | `mhw_*.csv` | `mhw_x_*.csv` | `thw_*.csv` | `thw_x_*.csv` |
+|---|---|---|---|---|
+| **ALL** | **−1 天** | **−1 天** | **−1 天** | **0 天** |
+| XGHG | 0 | 0 | 0 | 0 |
+
+（`thw_x_ALL_001.csv` 的 `event_start` 带 `12:00:00`，故 `(date−t0).days` 恰为整数、不偏移；
+其余三张表的日期都在 00:00。）
+
+**对复合日数的实测影响**（复刻 `cmd_compound` 口径，把 `t0` 换成 `t0.normalize()` 即"对齐"）：
+
+| exp | 变体 | compound_days（实际） | compound_days（对齐） | 偏差 |
+|---|---|---|---|---|
+| ALL | v1 | 16756 | 16755 | −0.006% |
+| **ALL** | **v2** | **63154** | **62191** | **+1.52%（多算 963 个复合点·日）** |
+| XGHG | v1 | 15810 | 15810 | 0 |
+| XGHG | v2 | 7313 | 7313 | 0 |
+
+→ v1 下 THW 与 MHW 掩码**同向偏移**，几乎抵消；**v2 下 THW(x) 不偏移而 MHW(x) 偏移 → 陆海掩码错位 1 天**，
+使 ALL 成员的 v2 复合日被高估约 **1.5%**。
+（旁证：`ALL_001_T2m.nc` 的时间轴在 12:00 时，`DatetimeIndex.get_indexer` 对 00:00 的日期串
+**匹配率 = 0.000**，必须归一化才能对齐——同一根因。）
+
+### A2 `ALL_00x` 的 SST 拼接后缺 2006-01-02
+
+`_load_sst_points` 把两段 POP 文件顺序 concat，第一段末 = 2006-01-01、第二段首 = 2006-01-03
+→ **ALL 成员 SST 序列缺 2006-01-02**（8029 天，T2m 为 8030 天）。
+后果：`_run_events` 把 2006-01-01 与 2006-01-03 当相邻日，跨该日的游程/duration 会偏差 1 天；
+且 SST 轴与 T2m 轴在 2006-01-02 之后整体错位 1 个索引（对按索引对齐的下游有影响）。
+量级：1 天 / 8030 天（0.012%），影响面为跨该日的个别事件。该条与 Lead 已确认的事实一致。
+
+---
+
+## 7. 与 Lead 独立实现的交叉核对
+
+| 项 | Lead 独立测得 | 本审计测得 | 一致性 |
+|---|---|---|---|
+| t2m 缓存行内极差 = 0 | 是（全 366 行） | 是（365 个有效行，max ptp = 0.000） | ✅ 一致 |
+| 复算 == 磁盘 npz | 逐位一致 | max diff = 0.000e+00 | ✅ 一致 |
+| broken vs 正确 阈值差 mean | +7.93 | **+7.931** | ✅ 一致 |
+| 正确阈值 mean | 13.43 °C | 13.426 °C | ✅ 一致 |
+| broken 阈值 mean | 21.36 °C | 21.357 °C | ✅ 一致 |
+| 逐点偏差极值 | 最冷点被抬高 +18.49、最暖点被压低 −2.86 | 某点被抬高 **+18.491**（p195）、某点被压低 **−2.873**（p14） | ✅ 量级一致（符号约定不同） |
+| "只修 axis"仍有偏差 | mean +0.53、p95 +1.16 | mean **+0.531**、p90 0.977 | ✅ 一致 |
+| ALL 001 THW 事件 崩溃 → 修正 | 6468 → 28552 | **6468 → 28466** | ⚠️ 崩溃值一致；修正值差 0.3%（参考实现细节不同） |
+| ALL 001 超阈天数 崩溃 → 修正 | 79140 → 272469 | **92910 → 340750** | ⚠️ 绝对数差 17–25%（"超阈天数"定义/阈值实现细节不同）；**倍数 3.4× vs 3.67×，结论一致** |
+| `proto_event` ③ 尾部空档被吸收 | 有 | **独立复核成立**（§3.3，heatwaveR 实测 duration 7 / 6） | ✅ 一致 |
+| `_run_events` 与 heatwaveR 不等价 | 429/450 (95.3%) | **131/150 (87.3%)** @(5,2)；9 组 52–95% | ✅ 一致 |
+| `proto_event` 逐行复刻 | 0/450 | **0/1350** | ✅ 一致 |
+| 简单"先过滤后桥接" | 5/450 | C 变体 0–12/150（残差即尾空档） | ✅ 一致 |
+| v2 ALL 复合日受影响 | — | **+1.52%**（本审计新增量化） | — |
+| "POP SST 标签滞后 1 天" | 已否证 | 本审计**未涉及**该命题（A1 说的是 CAM T2m 的 12:00 时间轴与掩码索引，两者不同） | 采纳 Lead 结论，不写入 |
+
+---
+
+## 8. 修复建议（按优先级）
+
+1. **P0 · E1**：`_pooled_threshold_t2m` 改为
+   `stacked = np.concatenate([rows_of_doy[w] for w in win], axis=0)` —— 即**在窗内直接合并原始样本矩阵**
+   （每行是 `(n_samples, nland)`），再 `np.nanpercentile(..., 90, axis=0)`；
+   循环范围改为 `np.arange(1, 367)`，并把 doy 映射换成 heatwaveR 的 366 天规格化
+   （非闰年 `doy>59 → +1`，Feb-29 槽用 `round(mean(相邻两日),2)` 填充）。
+2. **P0 · E3**：`_run_events` 改为"先过滤后桥接"，并按 heatwaveR 的**头尾不对称**规则
+   （只吸收尾部空档）。最稳妥的做法是**直接复用 R 链路**（`detect_events.R` 可传入外置阈值），
+   或按 `proto_event` 逐行改写并用本审计的 1350 例模糊用例做回归。
+3. **高 · E2**：模型侧 MHW 必须补 11 天窗（与 `detect_events.R` 对齐）；否则模型/观测 MHW 口径不可比。
+4. **中 · A1/A2**：统一时间轴（把 ALL 的 T2m 归一到 00:00），并对 SST 段拼接做**日期重索引**
+   （`reindex` 到完整日序列，缺日显式置 NaN），避免索引错位。
+5. **低 · E4/E5**：`min_valid` 无影响可不补；但应在 Python 路径显式处理阈值 NaN 行（doy 366）。
+
+## 9. 未判定 / 局限
+
+- **阈值 NaN 下 heatwaveR 的行为**（`rle` 遇 NA 判据）：本数据未触发，未做隔离实验，判定为"未判定"。
+- **`_pooled_threshold_*` 的设计本身**（用 XGHG 3 成员池化 + 应用到 ALL 成员）属归因方法学口径问题，
+  不在 D-2 检测语义范围内，本报告不评价其对错。
+- **A1/A2 的下游影响**只在复合日数上做了量化（A2）；对图 7 暴露时间与 FAR 的传播未展开（属其他任务）。
+- `ALL_001` 的参考实现校验 max\|Δ\| 为 9.01e-03 °C（vs XGHG 的 9.96e-05），
+  因 ALL 时间轴在 12:00，比较时需按日期归一化；该残差量级仍远小于任何结论所需精度。
+
+---
+
+*审计执行：detection-auditor（task-2）。全部数字可由 `results/phase6_audit_detect.R` + `results/phase6_audit_detect.py` 复算；
+未修改 `python/` 与 `results/intermediate/cesm/` 下任何文件。*
+
+
+## 5. 分报告 D-3：阈值基准期（in-sample / LOO / 缓存指纹 / 成员截断）
+
+> *来源存档：`phase6审计_基准期.md`（原文未改动，仅并入本文件）*
+
+> **审计对象**：`python/phase6_cesm.py` 的 `_pooled_threshold_sst`（L274-295）、`_pooled_threshold_t2m`（L298-333）、
+> `cmd_detect --baseline xghg`（L447-477），以及 v2 产物 `results/intermediate/cesm/thresh_{sst,t2m}_xghg.npz`、
+> `mhw_x_*`/`thw_x_*`/`annual_x_*`/`exposure_members_x.csv`。
+> **权威口径**：`TECHNICAL_SPEC_PHASE_B.md` 步骤 2b（L60-86，用户已拍板：XGHG 集合合并反事实基准 + **leave-one-out**）；
+> `results/复现报告.md` §5.1 第 8 行（L121）、§11.6 v2 修订（L349）。
+> **审计日期**：2026-09-23　|　**审计员**：baseline-stats-auditor　|　**数据**：CESM1-LE P0 成员 001-003（全量 20 成员未下载，未跑）
+> **复算脚本**：`results/phase6_audit_baseline.py`（分阶段：g1 / g2 / g3 / trend / chain / sweep）
+> **产物目录**：`results/intermediate/audit/baseline/`（**未改动** `results/intermediate/cesm/` 下任何文件；已核对 mtime 仍为 2026-09-19）
+
+> **命名说明**：本文用 **XGHX** 指代反事实组（ALL-but-GHG / FixGHG 世界），数据与文件名中的实验名是 **XGHG**（如 `XGHG_001_T2m.nc`、`mhw_x_XGHG_001.csv`）——两者指同一实验；写代码/路径时必须用 XGHG。
+
+---
+
+## 0. 结论速览
+
+| 编号 | 结论 | 判定 | 严重度 |
+|---|---|---|---|
+| **C1** | 代码**完全不支持** leave-one-out：`phase6_cesm.py` 全文 0 处 `exclude_member`/`loo` | **有问题** | 高（阻塞全量口径） |
+| **C2** | `--members 20` 在 `CESM_P0_MEMBERS=3` 下**只会跑 3 个成员**，且**静默**（`MEMBERS_P0[:20]` 只有 3 个元素） | **有问题** | **P0（全量跑前必改）** |
+| **C3** | `thresh_*.npz` 缓存**无任何成员数/名单指纹**，实测传入 `members=['999']` 仍原样返回缓存（SST 3 ms / T2m 1 ms，无提示） | **有问题** | **P0（全量跑前必改）** |
+| **C4** | `_pooled_threshold_t2m` 存在**轴崩溃**（L329 `concatenate(...,axis=0)` 把 11 个 `(206,)` 拼成 1-D，分位数退化为标量）：**206 个陆点共用一条阈值曲线**，磁盘 npz 2547 B、行内极差恒 0 | **有问题（独立确认）** | **P0** |
+| **C5** | in-sample 的**方向**与文档一致（抬高 PR）；但 3 成员下其**幅度被池成员数噪声主导**：固定池大小=2 时剔除自身使 XGHX 平均暴露 +10%~+27%（逐成员 −24%~+9.4%），而池 3→2 本身在 ALL 侧（始终 out-of-sample）只动 −0.3%（年均 med_max 口径） | **有问题（幅度待 20 成员复核）** | 中 |
+| **C6** | 现状 v2「PR=48.0 / FAR=0.98 / CI 14.7-53.0」**只能在 T2m 轴崩溃版**下复现；修轴后阈值 128 天处 `P_fix=0` → PR 发散（∞） | **有问题（数字不可用）** | 高 |
+| **C7** | `thresh_sst_xghg.npz` 的 SST 阈值**空间结构正常**（行内极差中位 20.6 °C），SST 路径**无轴崩溃** | **确认无误** | — |
+| **C8** | 论文正文**确实未明示模型侧基准期**（全文只有 L490/L497 一处阈值定义，指 1983-2012）；但 L544-545「同一套检测方法一致地用于观测与模式」+ L627 模式覆盖 1920-2100 ⇒ **1983-2012 模式基准期在技术上可行**，本项目的 XGHG 同时段池是**一种自洽但需声明的偏离** | **未判定（原文不足以唯一确定）** | 中 |
+| **C9** | noleap 日历的 doy 用**公历** `dayofyear`：1836/8030 天（闰年 3 月 1 日之后）与年内序号错位 1 天。池与检测用同一映射 ⇒ 无系统性失配；阈值 |Δ| 均 0.021(SST)/0.114(T2m) °C，超标日变化 ≤0.43% | **确认无误（影响可忽略，但建议显式化）** | 低 |
+| **C10** | 池样本数：SST 与 T2m **一致**（各 24090 行 = 3 成员 × 8030 天）；366 个 doy 全有样本，但 doy=60 只有 48 个样本、doy=366 只有 18 个（闰年错位所致） | **确认无误（有轻微不均衡）** | 低 |
+| **C11** | ~~POP SST 时间标签比 CAM TREFHT 晚 1 天~~ → **已否证**（见 §5.1）：CAM 自带 `date` 变量 = `time_bnds` 右端、POP `time` = `time_bound` 右端，两套都是「区间右端标记」⇒ 同一标签 = 同一 24 小时，**不存在 1 天相对滞后**。但仍存在一条**独立**问题：`_event_daily_mask` 用 `floor((事件时刻 − t0)/1天)` 取索引，ALL 组 T2m（AWS 成品）时刻 12:00、POP SST 00:00 ⇒ ALL 组 MHW 掩码比 THW 掩码早 1 天，XGHG 组（两者都 00:00）无此位移 ⇒ **组间不一致**（ALL 复合日 −1.3% / XGHG +6.1% 的敏感性） | **有问题（组间不一致）** | 中 |
+
+**一句话**：阈值本身有两处独立问题——**T2m 阈值空间上完全错**（轴崩溃，P0）、**SST/T2m 阈值对 XGHG 成员是 in-sample**（口径问题，代码不支持 LOO）；
+两者都不是"小偏差"：前者（轴崩溃）使 XGHX 组的 THW 事件数 −46%、复合暴露 −48%（ALL 侧 −59%）；
+后者（in-sample）在 3 成员下有 +4%~+29% 的暴露差异，但被池大小噪声污染，**20 成员时必须用 LOO 才能把口径钉死**。
+
+---
+
+## 1. 审计方法与可复算性
+
+**原则**：不采信文档自述，一切回到代码与真实数据；每个数字都能用 `results/phase6_audit_baseline.py` 重跑得到。
+
+**关键做法（保证"同一套代码逻辑"）**：
+1. 直接 `import phase6_cesm`，**调用原函数**做静态/缓存实验（`_pooled_threshold_sst`、`_pooled_threshold_t2m`）。
+2. 阈值构造、MHW/THW 检测、复合段识别、逐年聚合在审计脚本里**逐行复刻**原文逻辑（含 `P6._run_events` 与
+   `compound_events.identify_compound_events` 原函数），但输出一律写 audit 目录。
+3. **先证明复刻是忠实的**（下表），再做反事实场景对比。
+
+| 校验项 | 结果 | 复算方式 |
+|---|---|---|
+| SST 阈值复算 = 磁盘 `thresh_sst_xghg.npz` | **逐位一致** | `python results/phase6_audit_baseline.py g2` |
+| T2m(buggy) 阈值复算 = 磁盘 `thresh_t2m_xghg.npz` | **逐位一致** | 同上（⇒ 根因定位完整，没有第二处差异） |
+| `mhw_x_*`/`thw_x_*` 事件表复刻 = 既有 12 个 CSV | **12/12 逐行一致**（event_start/lat_idx/duration 全同） | `... chain`（[校验] 行） |
+| `exposure_members_x.csv` 6 行 | **逐格一致**（含 `thw_pair_days`） | 同上 |
+| 事件数比 THW 1.88 / MHW 2.05（复现报告 §11.6） | **1.881 / 2.048** | 同上 |
+| 22 年总暴露均值比 8.88（复现报告 §11.6） | **8.885**（ALL 72569.3 / XGHG 8167.7） | `exposure_members_x.csv` |
+| PR=48.0 / FAR=0.98 / CI 14.7-53.0（复现报告 §11.6） | **48.000 / 0.9792 / [14.667, 53.0]** | `chain_pr_far.csv`（scenario=in3_bug, col=med_max） |
+| 观测阈值 med_mean(2022)=20.7 / med_max(2022)=128 | **20.721951 / 128.0** | `P6._obs_annual_threshold()` |
+
+> 结论：下文所有"前后对比"都是在**能精确复现既有产物**的同一套代码上做的，差异只来自被审计的口径变量。
+
+**六/七个场景**（`results/intermediate/audit/baseline/chain_members.csv` 的 `scenario` 列）：
+
+| 场景 | SST/T2m 阈值池 | T2m 轴 | 用途 |
+|---|---|---|---|
+| `in3_bug` | XGHG {001,002,003} | 崩溃版 | **现状 v2**（磁盘产物）+ 校验 |
+| `in3_fix` | XGHG {001,002,003} | 逐点修复 | 单独分离"阈值本身错了" |
+| `in2in_a` / `in2in_b` | {m, 另一成员}（仍含自身） | 逐点 | **池大小配对**的 in-sample 对照 |
+| `loo` | XGHG 剔除 m（ALL 侧仍用全 3 池） | 逐点 | **主口径（任务书要求）** |
+| `loo2` | 两组都剔除同号 XGHG 成员 | 逐点 | 池大小配对的 LOO 敏感性 |
+| `own` | XGHG 用成员自身气候态 | 逐点 | v1 参照 |
+| `in3_fix_sstm1` | = `in3_fix`，但 MHW 日期 −1 天 | 逐点 | SST 日历错位的量化（见 §5） |
+
+---
+
+## 2. G1 —— 代码是否支持 leave-one-out
+
+### G1.1 关键词检索：不支持（**C1，高**）
+
+复算：`python results/phase6_audit_baseline.py g1`；在 `python/phase6_cesm.py` 全文（714 行）正则检索
+`exclude_member|leave[-_ ]?one[-_ ]?out|\bloo\b` ⇒ **0 命中**。`python/` 全目录检索同样 0 命中。
+规范要求（`TECHNICAL_SPEC_PHASE_B.md` L81）「阈值构造需支持 `exclude_member` 参数（⬜ 待实现）」——现状**确为未实现**。
+
+### G1.2 谁 in-sample、谁 out-of-sample（精确表述）
+
+现状代码（L452-453）对**两组实验用同一个池**：
+
+```python
+thr_sst, _ = _pooled_threshold_sst(pairs_df, MEMBERS_P0[: args.members])   # 池 = XGHG 成员
+thr_t2m     = _pooled_threshold_t2m(pairs_df, MEMBERS_P0[: args.members])
+for exp in ("ALL", "XGHG"):                    # 两组共用这两个阈值
+    for m in MEMBERS_P0[: args.members]:
+```
+
+| 被检测对象 | 阈值池 | 被检测成员是否在池中 | 判定 |
+|---|---|---|---|
+| ALL 001 / 002 / 003 | XGHG {001,002,003} | **否**（ALL 与 XGHG 是不同模拟） | **out-of-sample** |
+| XGHG 001 / 002 / 003 | XGHG {001,002,003} | **是** | **in-sample** |
+| （`--members 1` 时）XGHG 001 | XGHG {001} | 是，且池 = 自身 | **退化为 v1 自身气候态** |
+
+> 因此：**"反事实基准"对 ALL 组没有 in-sample 问题；in-sample 只污染 XGHX 组**，而 XGHX 组正是 PR 的分母（`P_fix`）。
+> 方向：in-sample 使被检测成员的阈值更贴近自身分布 ⇒ `P_fix` 估计偏高/偏低取决于尾部，实测见 §3.4（净效应是**抬高 PR**）。
+
+### G1.3 缓存无指纹 ⇒ 3 成员阈值会被 20 成员运行静默复用（**C3，P0**）
+
+**代码证据**：L276-279（SST）、L300-303（T2m）只有 `if os.path.exists(cache): return ...`，**不检查成员数、不检查成员名单、不检查文件 mtime**：
+
+```python
+cache = os.path.join(CESM_INT, "thresh_sst_xghg.npz")
+if os.path.exists(cache):
+    z = np.load(cache); return z["thresh"], z["doy_map"]
+```
+
+**实测证据**（`g1`，两条独立实验）：
+
+| 实验 | 结果 |
+|---|---|
+| 磁盘 npz 的键 | SST：`['thresh','doy_map']`；T2m：`['thresh']` —— **没有任何成员元数据** |
+| 把 `_load_sst_points` 替换为"一调用就抛异常"，再调 `_pooled_threshold_sst(PAIRS, ['999'])` | **成功返回**（3 ms，stdout 空）⇒ 根本没重算 |
+| 返回值与磁盘 npz | **逐位一致** ⇒ 就是复用了 3 成员缓存 |
+| 调 `_pooled_threshold_t2m(PAIRS, ['999'])` | **成功返回**（1 ms，stdout 空，**没有 FileNotFoundError**）⇒ 成员名单被完全忽略 |
+
+⇒ 若先跑 `--members 3` 再跑 `--members 20`（或反过来先跑 20 再跑 3），`thresh_*.npz` **既不失效也不告警**。
+**这是 20 成员全量跑之前的 P0 级隐患**（实际后果见 C2：现状连"20 成员"都跑不出来）。
+
+### G1.4 成员选择是"前 N 个"，且 `--members` 实际被硬上限截断（**C2，P0**）
+
+- L60：`MEMBERS_P0 = C.CESM_ALL_MEMBERS[:C.CESM_P0_MEMBERS]`，其中 `CESM_ALL_MEMBERS = ['001'...'020']`（config L119）、`CESM_P0_MEMBERS = 3`（config L131）⇒ `MEMBERS_P0 = ['001','002','003']`。
+- 所有使用处都是 `MEMBERS_P0[: args.members]`（L107/452/453/455/468/491）⇒ **取前 N 个，不是显式名单**。
+- **实测**：`MEMBERS_P0[:20]` 只有 **3** 个元素（`g1` 输出：`MEMBERS_P0[:20] -> 3 个 (001..003)`）。
+  ⇒ `python phase6_cesm.py detect --baseline xghg --members 20` 会**静默地只处理 001-003**，不报错。
+- 20 成员全量是否等于论文的 20+20？**只有同时把 `config.CESM_P0_MEMBERS` 改成 20 才是**：届时 `MEMBERS_P0 = 001..020`，
+  ALL 组 20 个成员 + XGHX 组 20 个成员，每组 22 年 ⇒ 440 模型年/组，与论文 L549-551 一致。
+- 另一处小隐患：`config.CESM_FIXGHG_MEMBERS`（L120）**在全项目中从未被使用**（grep 0 命中），
+  XGHG 组的成员列表实际与 ALL 组共用 `MEMBERS_P0`——命名容易让人误以为两组可以给不同名单。
+
+---
+
+## 3. G2 —— in-sample 偏差量化（并与"阈值本身错了"严格分离）
+
+### 3.0 先分离：`_pooled_threshold_t2m` 的轴崩溃（**C4，P0，独立确认**）
+
+**根因**（L326-330，原文）：
+
+```python
+for d in np.arange(1, 366):
+    win = [(d + k - 1) % 365 + 1 for k in range(-5, 11-5...)]   # 11 天窗
+    stacked = np.concatenate([single[w - 1] for w in win], axis=0)  # 11 个 (206,) -> (2266,) 1-D !
+    thresh[d - 1] = np.nanpercentile(stacked, 90, axis=0)           # 1-D 上的 axis=0 -> 标量
+```
+
+极简复现（`g2` 输出）：11 个 `(206,)` 经 `concatenate(axis=0)` ⇒ `(2266,)`；`np.nanpercentile(..., axis=0)` ⇒ **标量**；
+赋值给 `thresh[d-1]`（长度 206 的行）时被**广播到所有列** ⇒ 每个 doy 只有 1 个值，**206 个陆点共用一条阈值曲线**。
+`_detect_thw_member_ext`（L428）与本函数共用这一数组 ⇒ **v2 的 `thw_x_*` 全部建立在这条错误阈值上**。
+（`_detect_thw_member`（v1，R heatwaveR 自算阈值）**不受影响**；`_pooled_threshold_sst` **不受影响**。）
+
+**实测证据**（`g2`，`results/intermediate/audit/baseline/g2_t2m_axis_and_calendar.json`）：
+
+| 指标 | 值 |
+|---|---|
+| 磁盘 `thresh_t2m_xghg.npz` 每行"跨列极差"的最大值 | **0.0000**（= 行内全等） |
+| 该 npz 唯一值个数 / 文件大小 | **358**（= 366 − 8 个全 NaN 行）/ **2547 B** |
+| SST 同指标（对照） | 行内极差中位 **20.62 °C**、p95 22.51 °C ⇒ SST 阈值空间结构正常 |
+| 逐点修复版的阈值行内极差 | 中位 **23.99 °C**、p95 29.20 °C |
+| **Δ(fixed − buggy)** | 均值 **−7.40 °C**、中位 −7.29 °C、|Δ| 均值 **7.87 °C**、**91.0%** 的 (doy,点) 差 >1 °C |
+| 复算 = 磁盘 | **逐位一致** ⇒ 磁盘产物确实由现码生成，无第二处差异 |
+
+**直观例子**（`results/intermediate/audit/baseline/summarize.py`）：
+
+| doy（公历） | 崩溃版（单值） | 修复版（206 点分布） |
+|---|---|---|
+| 75（3 月中） | 16.43 °C | min −2.26 / 中位 9.10 / max 21.90 °C |
+| 200（7 月中） | 30.55 °C | min 10.92 / 中位 22.39 / max 35.05 °C |
+| 290（10 月中） | 22.32 °C | min 2.99 / 中位 13.50 / max 26.60 °C |
+
+最南（28.7°N）配对点年均阈值：修复版 24.23 °C、崩溃版 21.36 °C；最北（70.2°N）：修复版 5.09 °C、崩溃版 21.36 °C
+—— 崩溃版把 70°N 的阈值抬到 21 °C（该点几乎永不超标），把南欧暖点的阈值压低到 21 °C（大量超标）。
+
+### 3.1 阈值差：in-sample vs LOO（**含池大小的两种对照**）
+
+`results/intermediate/audit/baseline/threshold_deltas.csv`（逐 (doy,点) 全域统计，单位 °C）：
+
+| 成员 | SST：LOO − 3成员(in) 均值 / \|Δ\|均 / \|Δ\|>1°C 占比 | T2m：LOO − 3成员(in,修复) 均值 / \|Δ\|均 / \|Δ\|>1°C 占比 | T2m：自身 − 3成员 均值 / \|Δ\|均 |
+|---|---|---|---|
+| 001 | +0.035 / 0.079 / 0.0% | +0.052 / **0.245** / 1.6% | +0.030 / 0.439 |
+| 002 | −0.000 / 0.070 / 0.0% | +0.038 / **0.243** / 1.6% | +0.053 / 0.445 |
+| 003 | −0.088 / 0.116 / 0.0% | −0.002 / **0.247** / 1.8% | +0.124 / 0.440 |
+| （对照）T2m 修复 − 崩溃 | — | **−7.400 / 7.869 / 91.0%** | — |
+
+**读法**：
+- **in-sample 剔除对阈值本身的影响是中性的**（均值在 ±0.09 °C 内，无系统方向），但会**改变阈值的抽样噪声**：
+  SST 的 |Δ| 均 ~0.07-0.12 °C，T2m ~0.245 °C（T2m 大 2-3 倍，因为陆地气温方差更大）。
+- **轴崩溃的影响比对 in-sample 大两个数量级**（7.87 °C vs 0.25 °C）。
+- "自身气候态"（v1）与 3 成员池的距离（T2m |Δ| 均 0.44 °C）也只是 in-sample 效应的 ~1.8 倍，
+  说明**在 3 成员下，池成员数带来的噪声与"是否含自身"同等重要**——这正是任务书要求分开讨论的原因。
+
+### 3.2 检测端前后对比（XGHG 成员级；`chain_members.csv`）
+
+| 指标（XGHG 成员 001/002/003） | ① 现状 `in3_bug` | ② 仅修轴 `in3_fix` | ③ LOO `loo` | ②→③ | ①→② |
+|---|---|---|---|---|---|
+| THW 事件数 | 3746 / 3718 / 3435 | 6897 / 7336 / 7894 | 7208 / 7837 / 8711 | **+4.5% / +6.8% / +10.3%** | **+84% / +97% / +130%** |
+| THW 超标日（配对陆点） | 50482 / 51545 / 48560 | 109037 / 112525 / 118590 | 109057 / 113850 / 123907 | +0.0% / +1.2% / +4.5% | +116% / +118% / +144% |
+| MHW 事件数 | 6862 / 7403 / 9888 | 同① | 7045 / 7965 / 11693 | **+2.7% / +7.6% / +18.3%** | 0% |
+| MHW 超标日 | 133505 / 161349 / 231064 | 同① | 134754 / 172309 / 295854 | +0.9% / +6.8% / +28.0% | 0% |
+| **复合暴露日**（配对点数×天） | 7313 / 7658 / 9532 | 14187 / 18363 / 25716 | **14786 / 20387 / 33204** | **+4.2% / +11.0% / +29.1%** | +94% / +140% / +170% |
+| standalone 日 | 30810 / 30739 / 26153 | 36827 / 36053 / 33404 | 39265 / 38580 / 33434 | +6.6% / +7.0% / +0.1% | +20% / +17% / +28% |
+| THW 配对日 | 38123 / 38397 / 35685 | 51014 / 54416 / 59120 | 54051 / 58967 / 66638 | +6.0% / +8.4% / +12.7% | +34% / +42% / +66% |
+| 复合段数 | 928 / 1017 / 1089 | 2451 / 3051 / 4097 | 2492 / 3313 / 5032 | +1.7% / +8.6% / +22.8% | +164% / +200% / +276% |
+
+ALL 侧（阈值池始终是 XGHG 全池 ⇒ 始终 out-of-sample）：
+`in3_bug` 63154/75581/78973 → `in3_fix`（= `loo`）155027/185806/164629，即 **+145% / +146% / +108%**（轴崩溃的影响）。
+
+### 3.3 末端指标：PR / FAR 前后对比（阈值 = 观测 Med 框 2022 同口径值）
+
+`results/intermediate/audit/baseline/chain_pr_far.csv`（`_pr_boot`，1000 次 bootstrap，seed=42，CI=[5,95]）：
+
+| 场景 | **med_mean 口径**（阈值 20.72 天）：P_ALL / P_fix / PR / FAR / CI | **med_max 口径**（阈值 128 天）：P_ALL / P_fix / PR / FAR / CI |
+|---|---|---|
+| ① `in3_bug`（现状 v2） | 0.818 / 0.000 / **∞** / nan / nan（1000/1000 重采样为 inf） | 0.727 / 0.0152 / **48.0** / 0.979 / **[14.7, 53.0]**（372/1000 inf） |
+| ② `in3_fix`（仅修轴） | 0.833 / 0.0152 / **55.0** / 0.982 / [17.3, 59.0]（344 inf） | 0.227 / 0.000 / **∞** / nan / nan（1000 inf） |
+| ③ `loo`（主口径） | 0.833 / 0.0152 / **55.0** / 0.982 / [17.3, 59.0] | 0.227 / 0.000 / **∞** / nan / nan |
+| ③′ `loo2`（池大小配对） | 0.833 / 0.0152 / 55.0 / 0.982 / [17.3, 59.0] | 0.242 / 0.000 / ∞ / nan |
+| ④ `in2in_a` / `in2in_b`（in-sample，池=2） | 0.833 / 0.0303 / **27.5** / 0.964 / [11.4, 58.0]（140 inf） | 0.242 / 0.000 / ∞ / nan |
+| ⑤ `own`（v1 参照） | 0.833 / 0.0303 / 27.5 / 0.964 / [11.4, 58.0] | 0.227 / 0.000 / ∞ / nan |
+| ⑥ `in3_fix_sstm1`（MHW −1 天） | 0.848 / 0.0303 / **28.0** / 0.964 / [11.6, 59.0] | 0.227 / 0.000 / ∞ / nan |
+
+**要点**：
+1. **现状的两个数字都不可用**：med_mean 处 PR=∞（P_fix=0，与 `fig7_p0_validation_x.png` 左上标题 `PR=∞ FAR=nan` 一致，该面板 bootstrap 直方图空白正是 1000 个 inf 被丢弃）；
+   med_max 处 PR=48.0 **只在轴崩溃版下存在**——修轴后 XGHX 的 66 个模型年里 **没有一个** ≥128 天（`P_fix=0`）⇒ PR 发散。
+2. **in-sample 的净效应在这些点上量不出来**：阈值 20.72 天处 `in3_fix` 与 `loo` 的 P_fix 都是 1/66；阈值 128 天处两者都是 0/66。
+   原因不是"in-sample 无影响"，而是**单点阈值 + 3 成员样本太小**（见 3.4 的阈值扫描）。
+3. `in2in_a/b` 与 `own` 在 20.72 天处给出 PR=27.5（P_fix=2/66），即**池越小、越 in-sample，P_fix 越大、PR 越小**；
+   但这些差异都来自尾部 1-2 个模型年的计数（±1/66 = ±1.5%）。
+
+### 3.4 PR 的阈值扫描：把"in-sample 偏差"从"阈值选择"里分离（`pr_threshold_sweep.csv`）
+
+论文 Fig.3c/3d 本身就是阈值曲线，单点阈值不足以下结论。下表为 **med_max 口径**（`999` = P_fix=0，PR 发散）：
+
+| 阈值(天) | ① in3_bug | ④a in2in_a | ④b in2in_b | ③ loo | ② in3_fix | ⑤ own | n_fix/66（loo） |
+|---|---|---|---|---|---|---|---|
+| 20 | 1.61 | 2.06 | 2.28 | **2.28** | 2.28 | 2.28 | 29 |
+| 25 | 1.97 | 3.10 | 3.42 | **2.83** | 3.42 | 3.10 | 23 |
+| 30 | 2.24 | 5.42 | 4.64 | **3.82** | 5.00 | 4.64 | 17 |
+| 40 | 2.78 | 10.17 | 7.63 | **6.89** | 7.75 | 6.89 | 9 |
+| 50 | 4.00 | 20.0 | 20.0 | **11.8** | 19.7 | 11.8 | 5 |
+| 62 | 5.55 | 53.0 | 53.0 | **57.0** | 57.0 | 28.5 | 1 |
+| 78 | 10.17 | 999 | 999 | **999** | 999 | 999 | 0 |
+| 128 | **48.0** | 999 | 999 | **999** | 999 | 999 | 0 |
+
+**三条可判定的结论**：
+- **轴崩溃在整条曲线上压低 PR**：`in3_bug` 在 20-78 天的每一个阈值上都低于所有修复版（如 62 天：5.55 vs 57.0），
+  只在 128 天处因"尾部更肥"而成为唯一有限值。⇒ 现状的"PR=48 与论文同量级"是**阈值 + bug 的巧合**，不是可复现的量级。
+- **in-sample（同池大小）使 PR 偏高**：固定池=2 时，`in2in_a/b` 在 25-50 天处高于 `loo`（如 40 天：10.17/7.63 vs 6.89；
+  50 天：20.0/20.0 vs 11.8），在 62 天处相近（53 vs 57），在 20 天处略低（2.06/2.28 vs 2.28）。
+  ⇒ 方向与规范（L72-73「in-sample 会保守偏高放大 PR」）**一致**，幅度在尾部阈值处可达 **1.5-1.7 倍**，
+  但样本只有 1-5 个模型年在阈值之上，**这个幅度本身不可靠**。
+- **池成员数（3→2）的影响可以单独量**：ALL 侧两组都 out-of-sample，`in3_fix`(3 成员池) vs `loo2`(2 成员池)
+  的年均 med_max 暴露 98.98 → 98.64 天（**−0.3%**），逐成员复合日 −4.3%/−1.4%/+3.7%（均值 −0.7%）。
+  ⇒ **在均值意义上，池 3→2 的影响很小**；XGHX 侧 ②→③ 的 +4%~+29% 主要来自"剔除自身"而非"池变小"。
+  20 成员时 LOO 池 = 19（vs in-sample 20），**池大小的影响会进一步缩小**（19 vs 20 的样本量差异远小于 2 vs 3），
+  因此 3 成员实验**高估**了 LOO 对暴露时间的影响。
+
+### 3.5 小结：两个问题必须分开陈述
+
+| 问题 | 性质 | 量化（3 成员 P0） | 20 成员时的预期 |
+|---|---|---|---|
+| **阈值本身错了**（T2m 轴崩溃，L329） | **实现 bug**，与方法学无关 | 阈值 |Δ| 均 7.87 °C；THW 事件 −46%；复合暴露 −48%（XGHX）/−59%（ALL）；PR 曲线整体被压低 | 修好后消失；**与成员数无关**，必须修 |
+| **in-sample**（池含被检测成员） | **口径问题**（规范要求 LOO） | 阈值 |Δ| 均 0.08(SST)/0.25(T2m) °C，无系统方向；固定池大小时剔除自身使 XGHX 平均暴露 +10%~+27%（逐成员 −24%~+9.4%）、PR 偏高可达 1.5-1.7×（尾部） | 池 19→20 的噪声差异大幅缩小，**in-sample 的方向性偏差会相对更清晰**；需在 20 成员上重做本节 |
+
+> ⚠️ 重要提醒：**不要用本节的 PR 绝对值**（55.0 / ∞ / 28.0）去对论文 Table 1。3 成员 P0 在论文阈值（62/78/72 天）附近的
+> `P_fix` 只有 0~1/66，PR 的方差是发散的；而且观测侧阈值 128 天本身偏离论文的 78 天（见 `复现报告.md` §6 的已知残差）。
+
+---
+
+## 4. G3 —— 基准期本身的合理性
+
+### 4.1 论文原文证据：模型侧基准期**未明示**（`g3`，`results/intermediate/audit/baseline/g3_paper_evidence.json`）
+
+行号 = `results/paper_text.txt` 的 `\n` 行号（与 read 工具一致；注意 `results/tables/paper_fulltext.txt` 是另一套编号，比它少 25 行左右，本项目旧文档多用后者）。
+
+| 行号 | 原文（摘录） | 说明 |
+|---|---|---|
+| **L490 + L497** | "Extreme heat days, over both land (T2m) and ocean (SST), are defined as days when temperature exceeds a seasonally varying threshold, taken as the 90th percentile / of the **1983–2012** climatological distribution." | **全文唯一**一处基准期数字，写在通用 Methods「Defining compound marine–terrestrial heatwaves」节，**未区分观测/模式** |
+| **L544-545** | "The **same** compound heatwave detection approach is applied **consistently to both observational datasets and climate model simulation** to ensure methodological comparability." | 强线索：模式侧应当"同法"，即 1983-2012 |
+| L627 | "The CESM1-LE simulations span the period from **1920 to 2100**" | 说明 1983-2012 在模式里**存在**，技术上可做 |
+| L548-549 | "We focus on the period **2000–2021**, pooling the exposure time ... across 20 ensemble members ... **440 model years** (22 years × 20 members)" | 检测/统计期 = 2000-2021（与本项目 `CESM_PERIOD` 一致） |
+| L621-631（Model data 节） | 只讲 20+20 成员、FixGHG 设计、RCP8.5、日值 SST 可得性 | **通篇没有阈值/基准期/分位数** ⇒ "模型侧未明示"成立 |
+| L588-589 | "The 5–95% confidence intervals were derived from the 0.05 and 0.95 quantiles" | bootstrap CI 口径（task-4 用） |
+
+**判定（C8）**：**"论文未给模型侧基准期"这一判断成立**；但也**不能据此认为论文用了本项目这套同时段 XGHG 池**——
+L544-545 的"同法一致"更像指向 1983-2012。原文信息不足以唯一确定，**必须作为偏离项声明**（`复现报告.md` §5.1 第 8 行已如此登记，本次审计确认该登记准确）。
+
+> 可选的干净解法（本次**未执行**，因涉及重裁 raw 文件）：模式侧同样用 **1983-2012** 建阈值。
+> 数据上可行——`data/CESM1-LE/raw/` 的 XGHG 段覆盖 1920-2005、ALL 段 1850-2005，1983-2012 落在两段拼接处；
+> 现有 `proc/` 文件被裁到 2000-2021，需要重新裁剪（约 12 个文件、数分钟 I/O，不需重新下载）。
+
+### 4.2 同时段池化（2000-2021 XGHG 池）是否合适？
+
+**量化依据**（`results/intermediate/audit/baseline/pool_period_trends.csv`，区域平均的年序列线性趋势）：
+
+| 实验组 | SST 趋势（°C/10a） | T2m 趋势（°C/10a） | 2000-2021 平均 SST / T2m |
+|---|---|---|---|
+| XGHG 001 / 002 / 003 | +0.048 / −0.083 / +0.161 | +0.027 / −0.212 / +0.163 | 12.88 / 12.88 / 13.09 °C |
+| **XGHG 均值** | **+0.042** | **−0.007** | 12.95 °C |
+| ALL 001 / 002 / 003 | +0.403 / +0.561 / +0.285 | +0.445 / +0.616 / +0.310 | 13.86 / 13.99 / 13.92 °C |
+| **ALL 均值** | **+0.416** | **+0.457** | 13.92 °C |
+
+**讨论**：
+- XGHG 世界在 2000-2021 **近似平稳**（SST +0.04 °C/10a ≈ 0，T2m ≈ 0），故"用一条 22 年合并气候态代表该世界"是自洽的；
+  ALL 世界同期 +0.42~+0.46 °C/10a，同期两组平均 SST 已差 **~1.0 °C**——这正是 FixGHG 设计的反事实差异。
+- **同时段**（而非工业化前气候）作为反事实基准，恰好避免了 v1 的构造性抵消（用成员自身 2000-2021 气候态 ⇒ 趋势被自身气候态吸收 ⇒ PR≈1.0）。
+  规范（`TECHNICAL_SPEC_PHASE_B.md` L76-78）也明确保留了这一对照。
+- 代价：ALL 组内部的增暖意味着"单条阈值 + 22 年"会让 ALL 组的超标率随时间上升（归因想要的信号），
+  但也会使阈值带有"期中气候"的模糊性（前 5 年偏松、后 5 年偏紧）。**这不是错误，是需要在方法里写明并做敏感性检验的设定。**
+- 若追求与论文口径对齐，1983-2012 模式基准期会同时解决"同时段"与"同法"两个疑问，建议在 20 成员全量前拍板（见 §6）。
+
+### 4.3 池样本数、doy 覆盖与 noleap 日历
+
+| 检查项 | 结果 | 复算 |
+|---|---|---|
+| SST 池行数 vs T2m 池行数 | **24090 = 24090**（3 成员 × 8030 天）⇒ 两套阈值**池化样本数一致** | `g2` |
+| doy 覆盖 | **366/366 全有样本**；但每 doy 样本数 **18~66** 不等：doy=60 只有 **48**、doy=366 只有 **18**（其余 66） | `g2` |
+| 公历 doy ≠ 年内序号的天数 | **1836 / 8030**（= 6 个闰年 × 306 天，首个不一致日 2000-03-01；公历 doy 上界 366，noleap 上界 365） | `g2` |
+| doy 定义敏感性：把 doy 换成 noleap 一致的 1..365 重建阈值 | SST 阈值 |Δ| 均 **0.021 °C**（p95 0.084）；T2m |Δ| 均 **0.114 °C**（p95 0.387） | `g2` |
+| 同上，对超标日数的影响 | XGHX 001/002/003 SST：**+0.43% / −0.06% / −0.03%**；THW：**+0.13% / +0.04% / +0.07%** | `g2` |
+
+**判定（C9/C10）**：任务书"池与检测用同一日历 ⇒ 不影响"的方向**正确**，但**不是零影响**：
+- noleap 数据被解码成 datetime64 后，`pandas .dayofyear` 按**公历**计数：闰年 3 月 1 日 = 61、非闰年 = 60，12 月 31 日在闰年 = 366。
+  ⇒ 除 doy=60/366 外的每个 doy 箱在闰年与非闰年**混合了两个相邻公历日**（每个箱 73% 来自非闰年、27% 来自闰年），
+  且 doy=60（仅非闰年 3 月 1 日）、doy=366（仅闰年 12 月 31 日）样本数仅为 48 / 18。
+- 因为池与检测**用同一映射**，不存在"阈值—数据"系统性错配；残留效应是**季节循环上的 ~1 天涂抹**，
+  量级 ≤0.43%（超标日）——可接受，但**建议显式换成 noleap 年内序号**（改动 1 行：用 `(日期 − 年内首日).days + 1 − 闰年后补偿`），
+  以避免未来引入 2 月 29 日或换日历时的隐患。
+
+---
+
+## 5. 跨切面发现（供 task-4 / detection-auditor 复核）
+
+### 5.1 ~~POP SST 时间标签晚 1 天~~【已否证】+ 掩码索引的组间不一致（中）
+
+**（1）原结论已否证（lead 2026-09-23 独立复核 + 本审计复算）**
+
+我原先的判据是「POP `time` = `time_bound` 右端，而 CAM `time` = 文件名起始日（视作当日）」，
+据此推断 T2m 与 SST 的标签相差 1 天。**该判据有误**：CAM 文件的边界变量名是 `time_bnds`（不是 `time_bound`），
+我当时的检查只找 `time_bound`，因此漏掉了 CAM 的边界信息。实测（`results/intermediate/audit/stats/verify_c11.py`）：
+
+```
+CAM  ...xghg.001.cam.h1.TREFHT.19200101-20051231.nc
+   time      = [0.0, 1.0, 2.0, ...] days since 1920-01-01, calendar=noleap, n=31390
+   time_bnds = [[0,0], [0,1], [1,2], ...]          ← i=1 的区间右端 = 1.0 天 = 1920-01-02
+   date      = [19200101, 19200102, 19200103, ...] ← 模型自带日历变量 = time_bnds 右端
+POP  ...xghg.001.pop.h.nday1.SST.19200102-20051231.nc
+   time      = 1920-01-03 ...
+   time_bound= [1920-01-02 01:00, 1920-01-03]      ← 右端 = 标签
+```
+
+⇒ **CAM 与 POP 采用同一种约定（记录标签 = 日均区间右端）**，同一标签 = 同一 24 小时区间，
+**T2m 与 SST 之间不存在 1 天相对滞后**。文件名差异只是档案命名口径不同（POP 用区间左端/模式日命名，
+CAM 用标签命名），不能用来推断记录约定。**C11 原判据作废，已从缺陷清单移除。**
+
+**（2）仍然成立的一条独立问题：`_event_daily_mask` 的索引位移在两组之间不一致（中）**
+
+`compound_events._event_daily_mask` 用 `s = (event_start − t0).dt.days`（**绝对时刻做 floor 除法**）取数组索引。
+两组的时刻约定不同：
+
+| 组 | T2m 文件来源 | t0 时刻 | THW 事件时刻 | POP SST 事件时刻 | MHW 掩码相对位移 |
+|---|---|---|---|---|---|
+| XGHG | `cmd_prepare` 写自 raw CAM | 00:00 | 00:00 | 00:00 | 0（无位移） |
+| ALL | AWS 成品（zarr 派生） | **12:00** | 12:00 | 00:00 | **−1 天**（`floor(−0.5) = −1`） |
+
+实测证据（`results/intermediate/audit/stats/i1_event_bounds.csv`，task-4 的 I1 阶段）：
+ALL 的 `mhw_x_ALL_00{1,2,3}.csv` 中分别有 **16 / 5 / 179** 个事件落在索引 −1（`min_s = −1`，被 `max(a,0)` 静默裁剪到 0），
+而 XGHX 组 `min_s ≥ 0`。**同一套管线对两组的处理不一致，至多只有一组能与 THW 正确对齐。**
+
+量化（用既有 v2 事件表重算，见 task-4 报告 §I1b / `results/intermediate/audit/stats/i1b_alignment.csv`）：
+
+| 变体 | ALL 复合日（3 成员合计） | XGHX 复合日 | PR(med_max, 128 天) |
+|---|---|---|---|
+| 现状 | 217708 | 24503 | 48.0 |
+| ALL 组 MHW +1 天 | 214943（**−1.3%**） | 24503 | 47.0 |
+| XGHX 组 MHW −1 天 | 217708 | 26002（**+6.1%**） | 48.0 |
+| 两组都 −1 天 | 220016 | 26002 | 48.0 |
+
+（v1 自身气候态链路对位移更敏感：XGHX MHW−1 使 med_mean 口径 PR 由 **1.0 → 0.5**。）
+
+**判定**：这是**组间一致性缺陷**（不是"标签滞后"）；在 128 天这种深尾阈值上对 PR 影响仅 1-2%，
+但在 20-60 天的可判读阈值区间与 v1 链路上会改变量级。修法：把事件表时刻统一（或 `_event_daily_mask`
+改按**日期**而非绝对时刻取索引），使两组用同一套索引约定。
+
+> 说明：§3.3/§3.4 表中的场景 ⑥ `in3_fix_sstm1`（两组 MHW 统一 −1 天）因此**只是敏感性实验**，
+> 不是"修正"；其 PR 55.0→28.0 的变化说明该维度的敏感性量级，不代表现状存在 1 天滞后缺陷。
+
+### 5.2 ALL 成员 SST 只有 8029 天（标签缺 2006-01-02），XGHG 有 8030 天
+
+| 实验 | SST 拼接段 | 天数 | 说明 |
+|---|---|---|---|
+| XGHG | 19200102-20051231 → 20060101-20801231 | **8030** | 标签 2000-01-01…2021-12-31，与 T2m 轴**逐日相等** |
+| ALL | 18500102-20051231 → 20060102-20801231 | **8029** | 标签段 1 止于 2006-01-01、段 2 起于 2006-01-03 ⇒ **标签缺 2006-01-02**（源自 RCP 段首标签即 2006-01-03）；比 T2m 少 1 天（lead 已独立复算） |
+
+（原始 B20TRC 段与 BRCP85 段在"名义日"上本来就不接续：18500102-20051231 + 20060102-20801231。
+该缺口是**档案分段拼接**造成（B20TRC 止于 2005-12-31、RCP85 起于 2006-01-02），与标签约定无关。）影响：ALL 组 2006 年少 1 天 MHW 输入；
+若将来做"成员配对"（ALL m vs XGHG m）比较，两组时间轴长度不同，**必须先对齐**。
+
+### 5.3 v1/v2 两条链路的污染范围（给 lead 的对照表）
+
+| 产物 | 阈值来源 | 轴崩溃 | in-sample | 缓存复用风险 |
+|---|---|---|---|---|
+| `mhw_*`（v1 自身气候态） | 成员自身 | 不受影响 | 不适用 | 不适用 |
+| `thw_*`（v1，R heatwaveR） | heatwaveR 自算 | 不受影响 | 不适用 | 不适用 |
+| `mhw_x_*`（v2） | `thresh_sst_xghg.npz` | **不受影响**（SST 路径正常） | **受影响（XGHX）** | **受影响** |
+| `thw_x_*`（v2） | `thresh_t2m_xghg.npz` | **受影响（P0）** | **受影响（XGHX）** | **受影响** |
+| `annual_x_*` / `exposure_members_x.csv` | 上面两者 | **受影响** | **受影响** | — |
+
+---
+
+## 6. 建议与修复清单（按优先级）
+
+| # | 动作 | 位置 | 理由 |
+|---|---|---|---|
+| **F1** | 修 L329 轴崩溃：`np.concatenate([...], axis=0)` → `np.concatenate([single[w-1][None, :] for w in win], axis=0)`（或 `np.stack`） | `phase6_cesm.py` `_pooled_threshold_t2m` | P0；影响 THW 事件 −46%、暴露 −48% |
+| **F2** | 缓存指纹：`np.savez(..., members=np.array(members), n_days=...)`，读缓存前比对；不一致就重算（或直接删除缓存并加 `--force-thresh`） | L276-279 / L300-303 | P0；3→20 静默复用 |
+| **F3** | 修 `MEMBERS_P0` 上限：`--members` 应作用于 `C.CESM_ALL_MEMBERS` 本身，或在 `args.members > len(MEMBERS_P0)` 时报错 | L60 / L704 | P0；`--members 20` 现在静默只跑 3 个 |
+| **F4** | 实现 `exclude_member`：池 = `[x for x in MEMBERS if x != m]`（仅对 XGHX 组剔除；ALL 组不受影响） | `_pooled_threshold_*` + L452-453 | 规范 L81 要求；实测 in-sample 方向为抬高 PR |
+| **F5** | 输出改为**阈值扫描**（PR/FAR vs 阈值曲线）而非单点阈值 | `cmd_attrib` | 3 成员在单点阈值上 P_fix∈{0,1}/66，PR 不可读 |
+| **F6** | 拍板模型侧基准期：同时段 XGHX 池（现状，需声明）vs **1983-2012 模式基准期**（与论文 L497/L544 更一致，需重裁 raw） | 规范 + 代码 | C8 未判定项 |
+| **F7** | 统一两条链路的**掩码索引约定**：`_event_daily_mask` 改按日期对齐（或把 AWS T2m 的 12:00 时刻归一到 00:00） | `compound_events._event_daily_mask` | §5.1(2)；ALL 组 MHW 掩码 −1 天、XGHG 无位移 ⇒ 组间不一致 |
+| **F8** | doy 改用 noleap 年内序号（消除闰年 1 天涂抹）；顺带把 `doy=366` 的空缺问题消掉 | `_pooled_threshold_*` / `_detect_*` | §4.3；影响 ≤0.43%，属卫生问题 |
+| **F9** | 报告口径修订：`复现报告.md` §11.6 的 "PR=48.0 / FAR=0.98" 需标注"**T2m 轴崩溃版**、阈值 128 天、3 成员、P_fix=1/66，修轴后发散"，不要作为与论文 FAR=0.95 的对照 | `results/复现报告.md`（非本任务写权限，提请 lead） | C6 |
+
+---
+
+## 7. 局限（本次审计未覆盖 / 不可判定）
+
+1. **只有 3 个成员**（全量 20 成员数据未下载，任务书禁止下载与全量跑）⇒ 所有 PR 绝对值、尾部计数、in-sample 幅度都带 3 成员噪声；
+   20 成员时 LOO 池为 19，本节关于"池大小噪声"的结论需要重做。
+2. **未重裁 raw 建 1983-2012 模式基准期**（§6 F6）——那是口径决策，不是审计动作。
+3. **未改动任何代码**（任务书禁止）；F1-F4 均为"建议补丁"，未实施、未验证。
+4. **观测侧阈值（128 天）本身是已知残差**（论文 Fig.3c 用 78 天，见 `复现报告.md` §6），
+   故 3.3 的 PR 数字受该残差支配，**不能用来说明归因强度**。
+5. 论文 Table 1 的三行（2003=62 天 PR=4 [2.8-7.2]、2023=72 天 FAR=0.78 [0.7-0.88]、2022=78 天 FAR=0.95 [0.93-1.0]）
+   在本节只作参照：我们的区域框/网格（206 对、Med 框 lon≥5）与论文口径不同，直接比数值不可靠。
+
+---
+
+## 附录 A · 产物清单（`results/intermediate/audit/baseline/`）
+
+| 文件 | 内容 |
+|---|---|
+| `g1_cache_and_members.json` | G1：关键词命中、npz 键、缓存复用实测、成员列表 |
+| `g2_t2m_axis_and_calendar.json` | G2：轴崩溃复现、阈值结构、池覆盖、日历敏感性 |
+| `g3_paper_evidence.json` | G3：论文原文摘录（含行号） |
+| `thresh_sst_3mem_repro.npz` / `thresh_t2m_3mem_buggy.npz` / `thresh_t2m_3mem_fixed.npz` | 复算的 3 成员阈值（**新阈值只写这里，未覆盖 `cesm/`**） |
+| `threshold_deltas.csv` | 逐成员阈值差（LOO/自身/池大小/轴崩溃） |
+| `chain_members.csv` | 8 个场景 × 6 个成员的事件数/超标日/暴露时间 |
+| `chain_pr_far.csv` | 各场景 PR/FAR/CI（两个阈值口径） |
+| `annual_all_scenarios.csv` | 各场景逐年 Med 框暴露（PR 扫描输入） |
+| `pr_threshold_sweep.csv` | PR(阈值) 曲线（med_mean / med_max） |
+| `chain_validation.json` | 与既有产物的一致性校验 + 观测阈值 |
+| `pool_period_trends.csv` | 2000-2021 各成员 SST/T2m 趋势 |
+| `mhw_in3_bug_*.csv` / `thw_in3_bug_*.csv` / `mhw_loo_*.csv` / `thw_loo_*.csv` / `compound_*` / `annual_*` | 复刻/新场景的事件与年度表（**均写 audit 目录**） |
+| `sst_*.npz` / `t2m_*.npz`（12 个） | 配对点数据缓存（加速重跑；共 ~80 MB） |
+| `diag_isel.py` / `diag_time_axis.py` / `diag_raw_time.py` / `diag_time_bound.py` / `diag_compound_empty.py` / `time_load.py` / `summarize.py` | 诊断脚本（含 §5 的证据来源） |
+
+## 附录 B · 复算命令
+
+```powershell
+cd D:\2607compound
+python results\phase6_audit_baseline.py g1       # §2 静态证据 + 缓存复用实测
+python results\phase6_audit_baseline.py g2       # §3.0 §4.3 轴崩溃 + 日历
+python results\phase6_audit_baseline.py g3       # §4.1 论文原文
+python results\phase6_audit_baseline.py trend    # §4.2 池时段趋势
+python results\phase6_audit_baseline.py chain    # §3.1-3.3 八个场景（约 135 s，首次含 SST 读取约 3 min）
+python results\phase6_audit_baseline.py sweep    # §3.4 PR 阈值扫描
+python results\intermediate\audit\baseline\summarize.py   # 报告用汇总数字
+```
+
+---
+
+**审计员小结（给 lead 的一句话）**：阈值基准期这条链上有两个**必须分开处理**的问题——
+`_pooled_threshold_t2m` 的轴崩溃让"阈值本身是错的"（206 个陆点一条曲线，P0，必修），
+而 in-sample 是口径问题（代码不支持 LOO，实测抬高 PR，方向与规范一致但 3 成员下幅度不可靠）；
+在二者修好之前，**不要用 v2 的 PR/FAR 数字做任何对论文的定量对照**，20 成员全量前必须先做 F1-F5。
+
+
+## 6. 分报告 D-4：复合与统计（identify_compound_events / 440 模型年 / FAR·PR·bootstrap）
+
+> *来源存档：`phase6审计_复合与统计.md`（原文未改动，仅并入本文件）*
+
+> **审计对象**：`python/phase6_cesm.py` 的 `cmd_compound`（L483-540）、`_annual_per_pair`（L546-569）、
+> `_obs_annual_threshold`（L572-588）、`_pr_boot`（L591-613）、`cmd_attrib`（L616-691）；
+> 对照 `python/compound_events.py`（`identify_compound_events` / `_pair_maps` / `_event_daily_mask`）、
+> `config.py`（`N_BOOTSTRAP=1000` L108、`CI_ALPHA=(0.05,0.95)` L109）与论文 `results/paper_text.txt`。
+> **审计日期**：2026-09-23　|　**审计员**：baseline-stats-auditor　|　**数据**：CESM1-LE P0 成员 001-003（全量 20 成员未跑）
+> **复算脚本**：`results/phase6_audit_stats.py`（阶段 i1 / i1b / i2 / i3 / i4）
+> **产物目录**：`results/intermediate/audit/stats/`；**只读** `python/` 与 `results/intermediate/cesm/`（未做任何写入）
+
+> **命名说明**：本文用 **XGHX** 指代反事实组（ALL-but-GHG / FixGHG 世界），数据与文件名中的实验名是 **XGHG**（如 `XGHG_001_T2m.nc`、`mhw_x_XGHG_001.csv`）——两者指同一实验；写代码/路径时必须用 XGHG。
+
+---
+
+## 0. 结论速览
+
+| 编号 | 结论 | 分类 | 严重度 |
+|---|---|---|---|
+| **S1** | `cmd_compound` 确实 import（L485）并调用（L504）`compound_events.identify_compound_events`（共超标口径）；其输出段天数与 `exposure_members_x.csv` 的 `compound_days` **6/6 成员逐值一致** | 【确认无误】 | — |
+| **S2** | 键空间一致：MHW 事件表 lat/lon_idx ∈ POP 海索引（277-365 / 26-87）= `pairs.ocean_*_idx`；THW ∈ f09 陆索引（⊂ 0-44 / 0-50）= `pairs.land_*_idx`。12 张事件表**无一越界** | 【确认无误】 | — |
+| **S3** | `_pair_maps` 206 个陆键（= 配对数，无键覆盖/丢失）；191 个唯一海键，15 个海点被 2 个陆点共用（多对一，符合论文 L518） | 【确认无误】 | — |
+| **S4** | `_event_daily_mask` 的 `t0/nt` 取自同成员 T2m 文件（= `cmd_compound` 的 time_da）⇒ 对齐口径自洽；但**索引映射本身有两个缺陷**（S5、S6） | 【确认无误】 | — |
+| **S5** | **noleap 日期被按公历做差**：`(event − t0).days` 会把闰年 2/29 计入 ⇒ 索引累积漂移 +6 天（2000-2021 有 6 个闰年）。表现为**右端静默截断**：`max_e` 达 8034/8035 而 `nt−1 = 8029`，每个成员 1-5 个事件被整段丢弃、13-196 个事件被裁尾 | 【有问题】 | 中 |
+| **S6** | **【P1·已确证】ALL 组 MHW 掩码整体早 1 天**：`ALL_{m}_T2m.nc` 时间原点 t0 = 2000-01-01 **12:00**（AWS 成品）、`XGHG_{m}_T2m.nc` t0 = **00:00**（raw CAM 裁剪件）；`_detect_mhw_member` 的事件时刻继承 **SST** 轴（00:00），`_detect_thw_member_ext` 继承 **T2m** 轴（ALL 12:00 / XGHX 00:00）；`cmd_compound` 用 `t0 = t2m.time.values[0]`（ALL 12:00）给两张掩码取索引 ⇒ `floor((D 00:00 − t0 12:00)/1天) = D−1`，ALL 组 THW 索引正确而 **MHW 掩码早 1 天**，XGHX 组两者都正确。量化（显式原点 `(date−2000-01-01).days` 重算）：ALL 001/002/003 复合日 63154→**62191**（−1.52%）/75581→**74707**（−1.16%）/78973→**78045**（−1.18%），等量转入 standalone（+963/+874/+928）；XGHX 三成员**逐位不变**；THW(配对) 日不变 ⇒ 只动陆–海交叉那一层。PR(128 天) 48.0→47.0。**这是代码级一致性缺陷（同码对两组不同时间原点），不是标签语义问题** | 【有问题·已确证】 | **P1** |
+| **S7** | 暴露口径：`_annual_per_pair` 给 4 列，`cmd_attrib` 只用 `med_mean`/`med_max`；**样本 = 成员×年 = 66（20 成员时 440）**，"区域年暴露池化 440 模型年"在**样本构造上满足**；但**论文阈值对应的聚合口径应是区域暴露（med_mean 一类），不是格点极值（med_max）** | 【有问题】 | 中高 |
+| **S8** | 观测阈值 128 天（`med_max` 口径）与论文 Fig.3c 的 62/78/72 **不是同一聚合量**：我们的 2022 各口径为 med_mean 20.7 / p90 43.2 / p95 75.0 / max 128；2003：14.1/40/53/73；2023：37.7/**72.0**/96.6/171 ⇒ 论文值落在 p90~max 之间，**无单一聚合口径可复现**（与 `复现报告.md` §6 的已知残差一致） | 【有问题】 | 高 |
+| **S9** | 公式方向正确：论文 Eq.3 `PR = P_ALL/P_fix`（L566）、Eq.2 `FAR = 1 − P_fix/P_ALL`（L561）；代码 `pr = p_all/p_fix`（L596-600）、`far = 1 − 1/point ≡ 1 − p_fix/p_all`（L612，数值恒等已验证） | 【确认无误】 | — |
+| **S10** | **丢弃 inf 严重压低 CI**：med_max 口径 1000 次里有 **372 次（37.2%）为 inf** 被 `boots[np.isfinite]` 丢弃，剩下的给出 [14.67, 53.0]；二项精确（Clopper-Pearson）区间为 **[8.9, 1050]**，上界差 20 倍。med_mean 口径 **1000/1000 全为 inf** ⇒ CI = nan | 【有问题】 | 高 |
+| **S11** | 独立重采样**符合论文描述**（L585-587 "sampling with replacement from the original data ... for both climates"），但**忽略模型年自相关/成员结构**：成员 block、成员内分层、成员内 5 年移动块三种对照的 CI 略宽（med_max：[19.5,54.0] / [15.6,53.0] / [16.7,54.0] vs 现状 [14.67,53.0]）；3 成员下差异不显著，**20 成员时应改用分层/块 bootstrap** | 【有问题】 | 中 |
+| **S12** | `p_all = 0 且 p_fix = 0` 时 `pr()` 返回 **inf**（只判 `p_fix == 0`）⇒ v1 的 128 天口径（"两组均无样本"）被打印成 **PR=∞ / FAR=nan**，误导为"风险无限"；数学上应为未定义 | 【有问题】 | 中 |
+| **S13** | **CI 标签错误**：`_pr_boot` 的 lo/hi 是 **PR 的 5–95% 分位**（L610 作用于 `boots`=PR 重复），但 `复现报告.md` L40/L349 写成 "FAR = 0.98（bootstrap 90% CI 14.7-53.0）"（FAR∈[0,1]，14.7 不可能是 FAR 的 CI）；`cmd_attrib` **根本不计算 FAR 的 CI** | 【有问题】 | 中（文档） |
+| **S14** | `_pr_boot` docstring（L592）写"返回 (PR, FAR, lo, hi)"，实际 `return point, far, lo, hi, boots`（L613）**返回 5 个** | 【有问题】 | 低 |
+| **S15** | `far = nan` 时 `f"{far:.2f}"` **不抛错**，输出字符串 `'nan'`（最小用例实测）——任务书假设的"会抛错"不成立 | 【确认无误】 | — |
+| **S16** | 点估计 vs bootstrap 中位数：med_max 口径 点估计 PR=48.0 vs 有限重采样中位数 **45.0**（−6%），一致；med_mean 口径两者都退化（∞） | 【确认无误】 | — |
+| **S17** | **P0 数字复算**：22 年总暴露均值比 v2 = **8.885**（报告 8.88）、v1 = **1.002**（报告 1.00）；PR/FAR：v2 med_max = **48.0 / 0.9792 / CI [14.67, 53.0]**（报告 48.0 / 0.98 / 14.7-53.0 ✓）、v2 med_mean = ∞/nan（fig7 标题 ✓）、v1 med_mean = **1.0 / 0.00**（fig7 标题 ✓）、v1 med_max = ∞/nan（fig7 标题 ✓） | 【确认无误】 | — |
+
+**一句话**：复合链路的**接线是对的**（S1-S4、S9、S17 全部复现既有产物），
+但有三个必须分开处理的问题——① 抽样/假设层面：inf 被丢弃使 CI 失去意义（S10）、p=0/0 被当成 ∞（S12）、CI 标签写错（S13）；
+② 口径层面：论文阈值对应的聚合口径是区域暴露而非格点极值（S7/S8）；
+③ 索引层面：noleap→公历漂移导致尾部静默截断（S5）与 ALL/XGHG 组间 1 天不一致（S6）。
+
+---
+
+## 1. I1 复合链路（`identify_compound_events` 复用与参数语义）
+
+### I1.1 复用为真（**S1**，确认无误）
+
+复算：`python results/phase6_audit_stats.py i1` → `i1_structure.json` / `i1_identify_vs_exposure.csv`
+
+- 文件:行证据：`phase6_cesm.py` **L485** `from compound_events import (identify_compound_events, _pair_maps, _event_daily_mask,)`；
+  **L504** `comp = identify_compound_events(mhw, thw, pairs_df, time_da.time)`
+  （注意：传入的是 `time_da.time` 这个**坐标 DataArray**——`identify_compound_events` 内部用 `time.values[0]` 取 t0，
+  传数据本体（温度数组）会取到温度值。这一细节实现正确，见下）。
+- 一致性交叉验证：把既有 v2 事件表喂给 `identify_compound_events`，其输出段的**天数合计**与
+  `exposure_members_x.csv` 的 `compound_days` **6/6 成员相等**（63154/75581/78973/7313/7658/9532），
+  说明 `cmd_compound` 里两套写法（`identify_compound_events` 与紧随其后的掩码求和）口径一致。
+
+### I1.2 键空间一致（**S2**，确认无误）
+
+| 侧 | 取值范围（实测 12 张事件表 + pairs） | 判定 |
+|---|---|---|
+| `pairs.ocean_lat_idx / ocean_lon_idx` | 277-365 / 26-87（POP 网格索引） | — |
+| `mhw_x_{ALL,XGHG}_*.csv` 的 `lat_idx / lon_idx` | 277-365 / 26-87 | ⊂ 海索引 ✓ |
+| `pairs.land_lat_idx / land_lon_idx` | 0-44 / 0-50（f09 大气网格索引） | — |
+| `thw_x_*.csv` 的 `lat_idx / lon_idx` | 0-22 / 5-50（⊂ 陆索引） | ⊂ 陆索引 ✓ |
+
+⇒ `identify_compound_events` 里 `ocean_mask`（键 = MHW 表的 (lat_idx,lon_idx)）与
+`land_pair_dict` 的值（= pairs 的 (ocean_lat_idx,ocean_lon_idx)）**在同一坐标空间**，不存在静默错配。
+
+### I1.3 `_pair_maps` 的多对一（**S3**，确认无误）
+
+206 个陆键 = 206 个配对（陆点唯一，**无键覆盖**）；191 个唯一海键，其中 15 个海点被 2 个陆点共用（最大重数 2）。
+这与论文 L517-518 一致（"Each coastal land grid cell are therefore matched to a single unique ocean grid cell …
+multiple land cells could share the same adjacent ocean cell"）。字典以陆点为键，故多对一不会丢键。
+
+### I1.4 `t0/nt` 与事件日期：**P1 已确证——ALL 组 MHW 掩码早 1 天**（**S6**），另有 noleap 漂移（**S5**）
+
+复算：`i1_event_bounds.csv`（对 18 张事件表逐事件算 `s=(start−t0).days`、`e=(end−t0).days`）
+
+| 组 | 文件样例 | t0 时刻 | 事件时刻 | n | 全在界内 | 左裁 | 右裁 | 整段丢弃 | min_s | max_e |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ALL | `mhw_x_ALL_001.csv` | **12:00** | 00:00 | 17111 | 16921 | **16** | 174 | 0 | **−1** | 8034 |
+| ALL | `thw_x_ALL_001.csv` | 12:00 | 12:00 | 6468 | 6453 | 0 | 14 | 1 | 0 | 8035 |
+| XGHG | `mhw_x_XGHG_001.csv` | 00:00 | 00:00 | 6862 | 6835 | 0 | 25 | 2 | 0 | 8035 |
+| XGHG | `thw_x_XGHG_001.csv` | 00:00 | 00:00 | 3746 | 3745 | 0 | 0 | 1 | 1 | 8035 |
+
+#### （P1【已确证】）ALL 组 MHW 掩码早 1 天：三处 t0 不一致
+
+**机理**（我实测 + lead 独立复现，结论一致）：
+
+1. 时间原点不同：`ALL_{m}_T2m.nc` 的 t0 = **2000-01-01 12:00:00**（来自 AWS 成品
+   `TREFHT_all_{m}_2000-2021_europe.nc`，units `days since 2000-01-01 12:00:00`）；
+   `XGHG_{m}_T2m.nc` 的 t0 = **2000-01-01 00:00:00**（来自 raw CAM 裁剪件）。
+2. 事件表各自继承自己序列的时间轴：`_detect_thw_member_ext` 的事件时刻来自 **T2m** 轴
+   （ALL 为 `D 12:00`，XGHX 为 `D 00:00`）；`_detect_mhw_member` 的事件时刻来自 **SST** 轴（两组都是 `D 00:00`）。
+3. `cmd_compound`（L499）与 `_annual_per_pair`（L553）都用 `t0 = pd.Timestamp(t2m.time.values[0])`
+   ——ALL 组即 **12:00**——给**两张掩码**取索引。于是
+   `floor((event D 00:00 − t0 D0 12:00)/1 天) = (D − D0) − 1`：**ALL 组 MHW 掩码整体早 1 天**，
+   而 THW 掩码（12:00 对 12:00）正确；XGHX 组两者都正确。
+
+**量化**（对既有 v2 事件表改用显式原点 `index = (date − 2000-01-01).days` 重算；与"ALL 组 MHW +1 天"等价）：
+
+| 成员 | compound（现状 → 修正） | 变化 | standalone | THW(配对) |
+|---|---|---|---|---|
+| ALL 001 | 63,154 → **62,191** | **−1.52%**（−963） | 15,976 → 16,939（+963） | 79,130（不变） |
+| ALL 002 | 75,581 → **74,707** | **−1.16%**（−874） | 14,695 → 15,569（+874） | 90,276（不变） |
+| ALL 003 | 78,973 → **78,045** | **−1.18%**（−928） | 12,385 → 13,313（+928） | 91,358（不变） |
+| XGHG 001/002/003 | **逐位不变** | 0 | 不变 | 不变 |
+
+（`compound + standalone = THW(配对)` 恒等保持，说明只是共超标交叉那一层错位；PR(med_max,128 天) 48.0 → **47.0**。）
+
+**含义**：归因的**分子（ALL 组暴露）被系统性低估 1.2-1.5%**，而分母（XGHX 组）不受影响
+⇒ 现状 PR/FAR 是**保守偏低**方向；更严重的是**两组口径不可比**（同一个 `_event_daily_mask` 对两组用了不同原点）。
+**修法**：`cmd_compound` 统一用"该成员 T2m 日期序列的日期部分（00:00）"作 origin，或先对 `event_start/event_end`
+做 `.normalize()`；两类事件表也应在写出前统一时刻约定。
+
+#### （P2）noleap→公历漂移导致尾部静默截断（**S5**）
+
+`nt = 8030`（2000-2021 noleap），但 `max_e` 可达 **8035**：`_event_daily_mask` 用 pandas 的**绝对时刻差**取索引，
+而 noleap 解码成 datetime64 后按**公历**做差（6 个闰年的 2 月 29 日虽无数据却被计入），索引最大漂移 **+6 天**。
+后果：2021-12 下旬的事件被 `min(b, nt−1)` **静默压到最后一天**（右裁 13-196 个/成员），
+完全越界的事件被整段丢弃（1-5 个/成员，约 0.03%）。两组受同样漂移，相对对齐不变，但年末尾段会被压缩/丢失。
+修法同 P1（改用日期/序号索引）。
+
+## 2. I2 暴露时间口径与统计单元
+
+### I2.1 样本 = 66（20 成员时 440）：**结构上满足**，口径需选（**S7**，中高）
+
+- 复算：`i2_unit_and_threshold.json`。`_annual_per_pair` 输出 `year, med_mean, med_max, eur_mean, eur_max`；
+  `cmd_attrib` 只用 `med_mean` 与 `med_max`（L653），样本由 `glob(annual{tag}_{exp}_*.csv)` 拼成
+  **3 成员 × 22 年 = 66**（20 成员时 2×440 中的 440/组）——与论文 L548-551「pooling the exposure time …
+  across 20 ensemble members … 440 model years」的**统计单元一致**（区域→年→池化）。
+- **哪个列对应论文口径？** `med_mean`（Med 框 64 个配对点的**区域平均**年复合天数）。
+  理由：论文 Fig.3c/d 的横轴是"an observed exposure duration of compound events over the Mediterranean & Black Sea"
+  （L235-236），即**区域暴露时间**；`med_max` 是**格点极值**，属另一种量纲。
+- 现状的实际使用是**双口径都算、但结论只引用 med_max**（§11.6 的 PR=48/FAR=0.98），
+  而 med_mean 口径在 3 成员下 `P_fix = 0` ⇒ PR=∞ 不可判读。**这是"口径与样本量两头不讨好"的组合**。
+- 年份归属：`years = time_da.time.dt.year.values` ⇒ **22 个唯一年份 2000-2021**（每年 365 天，noleap）✓。
+
+### I2.2 区域框（确认无误，但需声明密度差）
+
+- `land_lat.between(30,47) & land_lon.between(5,42)`：**CESM 64/206 对 = 31.1%**（唯一海点 61）；
+  观测 `coastal_pairs.csv` 同框 **615/2039 = 30.2%**。
+- 该框即 fig1j 的"地中海 & 黑海"框（config L103）；黑海（lon 28-42, lat 40-47）在内，
+  但 `lon ≥ 5` **排除西班牙地中海东岸/巴利阿里**——与论文 Fig.3c 的"Mediterranean & Black Sea"大体一致，
+  与 Fig.3a/b 的"European coastlines"（全部 206 对）不同（代码注释未明确这一点）。
+- ⚠️ **密度不可比**：观测 615 个 0.25° 点 vs 模型 64 个 1° 点，`med_mean` 的"区域平均"在两套网格上不是同一个统计量
+  （这是 `复现报告.md` §6 记录的口径残差在归因侧的延伸）。
+
+### I2.3 观测阈值：128 天属于**口径错配**（**S8**，高）
+
+复算：`i2_unit_and_threshold.json`；`_obs_annual_threshold()` 实测 `med_mean(2022)=20.721951`、`med_max(2022)=128.0`。
+
+| 年 | 论文 Fig.3c 参考线 | 本复现 med_mean | p90 | p95 | med_max |
+|---|---|---|---|---|---|
+| 2003 | **62**（红） | 14.11 | 40.0 | 53.0 | 73.0 |
+| 2022 | **78**（绿） | 20.72 | 43.2 | 75.0 | 128.0 |
+| 2023 | **72**（黑） | 37.65 | **72.0** | 96.6 | 171.0 |
+
+⇒ 论文的三个参考值落在本复现的 **p90–max 之间**（2023 恰好等于 p90=72，2022 接近 p95=75），
+**没有任何单一聚合口径能同时复现 62/78/72**。因此：
+- 用 `med_max(2022)=128` 当阈值 **不是论文口径**（论文阈值是区域暴露天数；且论文自己的 Supplementary Fig. S1
+  色标上限为 50 天/格点，说明 78 天不可能是单格值——见 `复现报告.md` §6.3）；
+- 128 天又把检验推到**最深的尾部**，在 66 个模型年里 `P_fix = 1/66`，PR 的方差极大（见 §3.2）。
+
+---
+
+## 3. I3 FAR / PR / bootstrap
+
+### 3.1 公式方向（**S9**，确认无误）
+
+论文（`paper_text.txt` 行号）：
+- L559-563：`FAR = 1 − P^days_fixGHG / P^days_ALL`（Eq.2）
+- L565-568：`PR = P^days_ALL / P^days_fixGHG`（Eq.3）
+- L585-589："1000 bootstrapped datasets by sampling with replacement from the original data … for both climates …
+  5–95% confidence intervals were derived from the 0.05 and 0.95 quantiles"
+
+代码：`pr = p_all/p_fix`（L595-600）、`far = 1 − 1/point`（L612）——数值验证 `1−1/PR ≡ 1−p_fix/p_all`（相等，`i3_formulas.json`）✓ 方向正确。
+`CI = (0.05,0.95)`（config L109）⇒ 取 [5,95] 分位 ⇒ **90% CI**，与论文 5–95% 一致 ✓。
+
+### 3.2 inf 的处理：**丢弃 inf 使 CI 失去意义**（**S10**，高）
+
+复算：`i3_bootstrap.csv`（`python results/phase6_audit_stats.py i3`）
+
+| 口径 | 阈值 | P_ALL | P_fix | 点估计 PR | 点估计 FAR | inf 次数/1000 | 丢弃 inf 后 CI | 有限重采样中位数 | Clopper-Pearson PR 区间 |
+|---|---|---|---|---|---|---|---|---|---|
+| med_mean | 20.72 天 | 0.818 | **0/66** | **∞** | nan | **1000（100%）** | nan–nan | — | [16.3, ∞) |
+| med_max | 128 天 | 0.727 | 1/66 | 48.0 | 0.979 | **372（37.2%）** | [14.67, 53.0] | 45.0 | **[8.9, 1050]** |
+
+- 机制：`boots[np.isfinite(boots)]`（L609）直接删掉"反事实世界一次都没发生"的重采样——这正是归因里最强的证据。
+- 后果：med_mean 口径 CI 直接变 nan（`fig7_p0_validation_x.png` 左下面板空白即此）；
+  med_max 口径的上界被压到 53.0，而二项精确区间给出 **1050**（差约 20 倍）。
+- 建议：保留 inf 语义（上界记 ∞），或对 `p_fix` 用 Clopper-Pearson/加性平滑（Agresti-Coull）后再算比值。
+
+### 3.3 bootstrap 结构与自相关（**S11**，中）
+
+现有做法（L604-607）：ALL 与 XGHX **各自独立**按"模型年"有放回重采样（n=66）。
+这与论文 L585-587 的描述一致（对两个气候各自从原始数据重采样），**不是偏离**；
+但"模型年"在同一成员内高度自相关（22 个连续年），i.i.d. 年会低估不确定性。三种对照（同 seed=42，1000 次）：
+
+| 变体 | med_max 口径 CI | med_mean 口径 CI |
+|---|---|---|
+| 现状（i.i.d. 年，两组独立） | [14.67, 53.0] | nan（1000 inf） |
+| 成员 block（3 个成员有放回） | [19.5, 54.0] | nan |
+| 成员内分层（每成员内 22 年各自重采样） | [15.6, 53.0] | nan |
+| 成员内 5 年移动块 | [16.7, 54.0] | nan |
+
+⇒ 3 成员下差异不显著（下界 +1~+5），因为主宰不确定性的仍是"尾部一次都没发生"；
+**但 20 成员时成员内自相关会显现**，届时建议用"成员内分层 + 年块"bootstrap 作为主口径并做对照。
+
+### 3.4 其它实现问题
+
+- **S12（p_all=0 且 p_fix=0 → PR=inf，中）**：`pr()` 只判 `p_fix == 0`（L598-600）。
+  v1 的 128 天口径两组都是 0/66，被打印成 `PR=∞ FAR=nan`（`fig7_p0_validation.png` 右上标题），
+  实际是 **0/0 未定义**，不应表述为"风险无限"。最小用例：`P6._pr_boot(1000, [1,2,3], [1,2,3])` → `PR=inf, FAR=nan`。
+- **S13（CI 标签错误，中／文档）**：`_pr_boot` 的 `lo, hi` 是 **PR** 的 5/95 分位（L610 作用于 PR 重复序列 `boots`）；
+  `cmd_attrib` L660-662 打印 `PR={prs} FAR={far:.2f} (bootstrap CI {lo:.1f}-{hi:.1f})`；
+  `复现报告.md` **L40** 写"PR=48.0、FAR=0.98（90% CI 14.7-53.0）"、**L349** 写"FAR = 0.98（bootstrap 90% CI 14.7-53.0）"——
+  把 PR 的 CI 挂在了 FAR 上（FAR∈[0,1]，14.7 不可能是 FAR 的 CI）。**`cmd_attrib` 从未计算 FAR 的 CI**，这是文档层面的口径错误。
+- **S14（docstring 与返回值不符，低）**：L592 写"返回 (PR, FAR, lo, hi)"，L613 实际 `return point, far, lo, hi, boots`（5 个）。
+- **S15（nan 格式化，确认无误）**：`far = nan` 时 `f"{far:.2f}"` → `'nan'`，**不抛异常**（实测）。
+- **S16（点估计 vs bootstrap 中位数，确认无误）**：med_max 48.0 vs 45.0（−6%）；med_mean 两者均 ∞/nan。
+
+---
+
+## 4. I4 复算 P0 数字（**S17**，与报告/图逐一对齐）
+
+复算：`i4_recompute.csv`、`i4_ratios.json`；数据源为 `results/intermediate/cesm/` 既有产物（只读）。
+
+| 指标 | 报告/图上的值 | 本次独立复算 | 判定 |
+|---|---|---|---|
+| v2 22 年总暴露均值比 | 8.88（`复现报告.md` L349） | **8.885**（ALL 72569.3 / XGHG 8167.7） | ✓ |
+| v1 22 年总暴露均值比 | 1.00（L340：ALL 17795 / XGHG 17761） | **1.002**（17795.3 / 17761.0） | ✓ |
+| v2 `med_max` PR / FAR / CI | 48.0 / 0.98 / 14.7-53.0 | **48.000 / 0.9792 / [14.667, 53.0]**（372/1000 inf） | ✓（CI 属 PR，见 S13） |
+| v2 `med_mean` PR / FAR | fig7 标题 `PR=∞ FAR=nan` | **∞ / nan**（1000/1000 inf） | ✓ |
+| v1 `med_mean` PR / FAR | fig7 标题 `PR=1.0 FAR=0.00` | **1.0 / 0.000**（CI [0.0, 2.0]，344 inf） | ✓ |
+| v1 `med_max` PR / FAR | fig7 标题 `PR=∞ FAR=nan`（报告：两组均无样本） | **∞ / nan**（P_ALL=0、P_fix=0 ⇒ 实为 0/0，见 S12） | ✓（但表述误导） |
+
+**与文字对齐的结论**：`复现报告.md` §11.6（L336-349）的**数字全部可复算**，无编造；
+唯一需要修订的是 ① CI 的归属标签（S13），② 把"PR=48/FAR=0.98"与论文 FAR=0.95 并列对照的写法——
+前者是 128 天阈值（且是 T2m 轴崩溃版的结果，见 task-3 报告 C6），后者是 78 天阈值，**不同阈值不可并列**。
+
+---
+
+## 5. 建议
+
+| # | 动作 | 位置 | 理由 |
+|---|---|---|---|
+| **G1** | bootstrap 保留 inf（上界记 ∞）或对 p_fix 做连续性校正后算比值 | `_pr_boot` | S10；现状上界被压 20 倍 |
+| **G2** | `p_all == 0 and p_fix == 0` 返回 `nan` 而不是 `inf`；打印时区分"未定义"与"发散" | `_pr_boot` L598-600 | S12 |
+| **G3** | 补算 **FAR 的 CI**（对 PR 重复序列做 `1−1/pr` 变换后取分位），并修正报告 L40/L349 的标签 | `cmd_attrib` + `复现报告.md` | S13 |
+| **G4** | 把主口径切到**区域暴露**（`med_mean`，必要时加面积权重），`med_max` 只作敏感性；论文阈值 62/78/72 的对应聚合必须在报告里写明不可复现（§6 已定稿） | `cmd_attrib` | S7/S8 |
+| **G5** | 20 成员时用"成员内分层 + 年块"bootstrap 作主口径并保留 i.i.d. 对照 | `_pr_boot` | S11 |
+| **G6** | `cmd_compound` 统一 origin（T2m 日期部分 00:00）或先 `.normalize()`；`_event_daily_mask` 改用日期/序号索引（不用绝对时刻差） | `phase6_cesm.py` L499/L553 + `compound_events._event_daily_mask` | **P1 已确证**（ALL 组 MHW 早 1 天，−1.2~1.5%）+ S5 漂移 |
+| **G7** | 修正 `_pr_boot` docstring（5 个返回值） | L592 | S14 |
+
+---
+
+## 6. 局限
+
+1. 仅 3 成员 P0（全量未下载，任务书禁止下载/全量跑）⇒ 所有 PR/CI 的尾部计数都受 66 样本限制（`P_fix ∈ {0,1}/66`），
+   本报告不对"归因强度"下任何数值结论。
+2. 未运行 `cmd_compound`/`cmd_attrib` 本体（会写 `results/intermediate/cesm/`），全部以**读取既有产物 + 复刻同一逻辑**的方式复算；
+   复刻的忠实性由 I4 与 S1 的逐值一致保证。
+3. 未评估观测侧 `annual_compound_days.nc` 的生成链路（属 Phase 1-3 范围）；本报告只把它当作给定的阈值来源。
+4. `-1 天/±1 天` 的对齐敏感性是在**既有事件表**上做日期平移，未重跑检测；平移只影响掩码落位，不改变事件本身的判定。
+
+---
+
+## 附录 · 产物与复算命令
+
+```powershell
+cd D:\2607compound
+python results\phase6_audit_stats.py i1    # §1 结构与键空间、t0/nt 越界审计
+python results\phase6_audit_stats.py i1b   # §1.4 掩码位移敏感性（组间不一致）
+python results\phase6_audit_stats.py i2    # §2 口径/区域框/观测阈值
+python results\phase6_audit_stats.py i3    # §3 公式/inf/bootstrap 变体
+python results\phase6_audit_stats.py i4    # §4 复算 P0 数字
+```
+
+| 产物（`results/intermediate/audit/stats/`） | 内容 |
+|---|---|
+| `i1_structure.json` / `i1_event_bounds.csv` / `i1_identify_vs_exposure.csv` | 复用证据、键空间、逐事件越界审计、段天数一致性 |
+| `i1b_alignment.csv` | 掩码 ±1 天位移的复合日/PR 变化 |
+| `i2_unit_and_threshold.json` | 样本量、年份、区域框、观测各聚合口径 |
+| `i3_bootstrap.csv` / `i3_formulas.json` | inf 比例、四种 bootstrap 变体、Clopper-Pearson、公式与 docstring 证据 |
+| `i4_recompute.csv` / `i4_ratios.json` | P0 比值与 PR/FAR 复算 |
+| `verify_c11.py` / `verify_lag.py` / `recon.py` | C11 复核（CAM `date`/`time_bnds`）与侦察脚本 |

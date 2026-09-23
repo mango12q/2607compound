@@ -1,4 +1,14 @@
 # -*- coding: utf-8 -*-
+# ══════════════════════════════════════════════════════════════════════════
+#  快速开始（Phase 5 湿热应力输入：ERA5 日最高气温）
+#    python python\download_era5_tmax.py --dry-run   # 先看要下多少个月（不下载）
+#    python python\download_era5_tmax.py             # 正式下载（逐月，断点续传）
+#    python python\download_era5_tmax.py --merge     # 合并成年文件
+#  一键入口: run_phase5_downloads.bat（= tmax + sp 0.25° + OAFlux）
+#  前置：CDS 账号，凭据放 %USERPROFILE%\.cdsapirc（本机已配）；
+#        首次用需在 CDS 网页接受数据集条款，否则报 403。
+#  依赖：cdsapi / xarray / netCDF4。
+# ══════════════════════════════════════════════════════════════════════════
 """
 download_era5_tmax.py — Phase 5 (湿热应力) 输入数据: ERA5 日最高气温 (tmax)
 

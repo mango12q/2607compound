@@ -71,7 +71,7 @@ HW_MAX_GAP = GAP_TOLERANCE
 HW_WINDOW_HALF_WIDTH = 5      # 11 天滑动窗口（heatwaveR 默认）
 R_WORKERS = 12                # PSOCK worker 数（本机 24 逻辑核）
 
-# ⚠️ 已知方法学差异（交叉验证结论，详见 results/THW_R_vs_Python_结论.md）
+# ⚠️ 已知方法学差异（交叉验证结论，详见 results/方法与证据.md §4）
 # 1) 阈值：Python detect_thw.py 用逐 dayofyear 的**单日**分位数（无窗口）；
 #    heatwaveR 用 11 天滑动窗口分位数。两者在 E-OBS 上仅差 +0.23 °C。
 # 2) 最小持续时间口径（**主因**）：
@@ -98,7 +98,7 @@ SH_THRESHOLD = 19.0
 #     统一使用 lat(30,47) / lon(5,42) 作为"地中海 & 黑海"框。
 #   - 此处沿用同一框，避免在工作区里出现第三套"地中海"定义。
 #   - 若要严格按 Fig.6 字面（仅地中海、不含黑海），把 lat 上限降到 46、
-#     lon 上限降到 30 即可（见 results/规划文件与论文一致性审查_第二轮复核.md）。
+#     lon 上限降到 30 即可（见 results/规划一致性审查.md（第二轮））。
 COASTAL_BUFFER_KM = 100.0
 COASTAL_BUFFER_REGION = {"lon": (5.0, 42.0), "lat": (30.0, 47.0)}   # = fig1j 区域框
 

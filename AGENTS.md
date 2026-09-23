@@ -6,13 +6,13 @@
 
 **当前进度（2026-09-23）**：Phase 1-4（观测链路：检测→配对→复合→图1/图2/S1/S2）完成；图1j-l 已切换为 MHW 包络口径（方案 B），共超标口径备份为 fig1_compound_spatial_exceedance_backup.*；**图1j/l 的绝对量级已定稿为"未复现项"**（定性一致、定量不可复现、原文口径不足以唯一确定——见 `results/复现报告.md` §6，停止口径搜索）；Phase 6 P0（CESM 3 成员管线 + v2 反事实基准）验证通过，全量未跑；Phase 5（湿热应力）与 Phase 7（写作）未开始。详见 `results/复现报告.md`。
 
-**2026-09-23 第四批：Phase 6 归因管线正确性审计 + 修复（任务 D）**：Lead + 3 名独立审计员四路并行，逐项核验 `python/phase6_cesm.py`。**发现 2 个 P0 级检测层错误**——① `_pooled_threshold_t2m` 的 `axis` 崩溃使 206 个陆点共用一条全欧阈值曲线（阈值 mean\|Δ\| 8.26 °C）；② `_run_events` 是「先桥接后过滤」而 heatwaveR `proto_event` 是「先过滤后桥接」（450 例模糊测试 429/450 不一致）；另模型侧 MHW 阈值缺 11 天窗。**3 个 P0 级工程缺陷**：`--members 20` 静默只跑 3 个成员、阈值缓存无成员指纹、不支持 leave-one-out。已修复 8 项（F1–F8）并给出前后对比：THW 的 ALL/XGHG 事件比 1.73→3.01，`PR=48.0/FAR=0.98` **作废**（修复后该阈值下 P_fix=0），可判读阈值（20.7 天）下 PR=52.0/FAR=0.981。**观测链路（Phase 1–4）不受影响**（全部走 R heatwaveR）。详见 `results/phase6审计报告.md` + `results/phase6审计_修复前后对比.md` + 4 份分报告（`results/phase6审计_{网格与配对,检测语义,基准期,复合与统计}.md`）。
+**2026-09-23 第四批：Phase 6 归因管线正确性审计 + 修复（任务 D）**：Lead + 3 名独立审计员四路并行，逐项核验 `python/phase6_cesm.py`。**发现 2 个 P0 级检测层错误**——① `_pooled_threshold_t2m` 的 `axis` 崩溃使 206 个陆点共用一条全欧阈值曲线（阈值 mean\|Δ\| 8.26 °C）；② `_run_events` 是「先桥接后过滤」而 heatwaveR `proto_event` 是「先过滤后桥接」（450 例模糊测试 429/450 不一致）；另模型侧 MHW 阈值缺 11 天窗。**3 个 P0 级工程缺陷**：`--members 20` 静默只跑 3 个成员、阈值缓存无成员指纹、不支持 leave-one-out。已修复 8 项（F1–F8）并给出前后对比：THW 的 ALL/XGHG 事件比 1.73→3.01，`PR=48.0/FAR=0.98` **作废**（修复后该阈值下 P_fix=0），可判读阈值（20.7 天）下 PR=52.0/FAR=0.981。**观测链路（Phase 1–4）不受影响**（全部走 R heatwaveR）。详见 **`results/Phase6审计报告.md`**（6 份分报告已合并为一件：§1 汇总 / §2 修复对比 / §3–§6 四份分报告全文）。
 
-**2026-09-23 第三批：下载脚本就绪 + 图1j/l 定稿**：① Phase 5/6 下载脚本全部编辑就绪并 dry-run 验证（**均未运行**）——新增 `python/download_era5_sp025.py`（0.25° sp 欧洲框，数据集 3b+），给 `download_era5_tmax.py` 补 `--dry-run`，新增两个一键入口 `run_phase5_downloads.bat` / `run_phase6_download.bat`；② 图1j/l 定稿为未复现项（THW 硬约束 23.2/35.1/48.3 天 ⇒ 共超标口径封顶；MHW 包络对区域框高度敏感；8 区域框扫描无一口径满足论文四约束）；③ 修正 `diagnose_subbasin.py` 的归一化（`Σwi·d/n` → `Σwi·d/Σwi`），并据此**撤销**复现报告与修订报告中不可复算的"西地中海弧 76.0/68.5 唯一全面命中"结论。详见 `results/复现报告.md` §6 与 `results/S1读取与图6年份判据.md`。
+**2026-09-23 第三批：下载脚本就绪 + 图1j/l 定稿**：① Phase 5/6 下载脚本全部编辑就绪并 dry-run 验证（**均未运行**）——新增 `python/download_era5_sp025.py`（0.25° sp 欧洲框，数据集 3b+），给 `download_era5_tmax.py` 补 `--dry-run`，新增两个一键入口 `run_phase5_downloads.bat` / `run_phase6_download.bat`；② 图1j/l 定稿为未复现项（THW 硬约束 23.2/35.1/48.3 天 ⇒ 共超标口径封顶；MHW 包络对区域框高度敏感；8 区域框扫描无一口径满足论文四约束）；③ 修正 `diagnose_subbasin.py` 的归一化（`Σwi·d/n` → `Σwi·d/Σwi`），并据此**撤销**复现报告与修订报告中不可复算的"西地中海弧 76.0/68.5 唯一全面命中"结论。详见 `results/复现报告.md` §6 与 `results/方法与证据.md §3`。
 
-**2026-09-23 规划文件一致性审查与修正**：对照论文 Methods/Results 全文审查全部规划文档，6 处实质性不一致已修正——① FAR 公式写反（SPEC §3.9 / PHASE_B，实际代码本正确）；② 归因统计单元改为"区域年暴露时间池化 440 模型年"（论文口径）；③ 新增 GEV 重现期规范（SPEC §3.9b + PHASE_B 步骤5；图4 marine/terrestrial/compound 三类，2.5–97.5% CI 与图3 的 5–95% 区分，config 新增 `GEV_RETURN_PERIODS`/`GEV_CI`）；④ `DATA_REQUIREMENTS` 立项 ERA5 sp 0.25° 欧洲框下载任务（数据集 3b+，现 sp 为 1.0° 偏差）；⑤ PHASE_A 图1 面板年份/区域、PHASE_C 蒸发/SST 验证锚点按论文更正；⑥ `docs/复现方案.md` 全面同步（E-OBS 1983–2023、复合定义方案 B、MHW 工具 R heatwaveR、XGHG=GHG 固定已实证 co2vmr 恒定 303 ppm）。详见 `results/规划文件与论文一致性审查.md`。
+**2026-09-23 规划文件一致性审查与修正**：对照论文 Methods/Results 全文审查全部规划文档，6 处实质性不一致已修正——① FAR 公式写反（SPEC §3.9 / PHASE_B，实际代码本正确）；② 归因统计单元改为"区域年暴露时间池化 440 模型年"（论文口径）；③ 新增 GEV 重现期规范（SPEC §3.9b + PHASE_B 步骤5；图4 marine/terrestrial/compound 三类，2.5–97.5% CI 与图3 的 5–95% 区分，config 新增 `GEV_RETURN_PERIODS`/`GEV_CI`）；④ `DATA_REQUIREMENTS` 立项 ERA5 sp 0.25° 欧洲框下载任务（数据集 3b+，现 sp 为 1.0° 偏差）；⑤ PHASE_A 图1 面板年份/区域、PHASE_C 蒸发/SST 验证锚点按论文更正；⑥ `docs/复现方案.md` 全面同步（E-OBS 1983–2023、复合定义方案 B、MHW 工具 R heatwaveR、XGHG=GHG 固定已实证 co2vmr 恒定 303 ppm）。详见 `results/规划一致性审查.md`（第一轮）。
 
-**2026-09-23 第二轮独立复核**：对第一轮结论做独立重核，发现第一轮有 3 处错误/过度声明（其中「100 km 海岸缓冲已在 config」实为**未实现**）、并遗漏 **5 项与论文实质不符**（陆地检测变量 tg vs tx 未论证、图6c 缺 JJA 季节与 22–28 °C 范围、图6 非复合年选取判据未定义、模型侧检测基准期在规划中缺失、论文 Supplementary Fig. S1 未复现）。随后执行"零风险批次"清理：过期文件名/盘符/CESM 命名、SPEC §5.2–5.4 图1/图2 面板、§3.13 run_all（原误编为 §3.11）、§3.8 WBT 迭代实现、三份 PHASE 文档的 MATLAB 残留、AGENTS.md 检测链路口径统一。**方法学新增项（100 km 缓冲、CESM 基准期、图6c 规格等）待用户拍板后再改。** 详见 `results/规划文件与论文一致性审查_第二轮复核.md`。
+**2026-09-23 第二轮独立复核**：对第一轮结论做独立重核，发现第一轮有 3 处错误/过度声明（其中「100 km 海岸缓冲已在 config」实为**未实现**）、并遗漏 **5 项与论文实质不符**（陆地检测变量 tg vs tx 未论证、图6c 缺 JJA 季节与 22–28 °C 范围、图6 非复合年选取判据未定义、模型侧检测基准期在规划中缺失、论文 Supplementary Fig. S1 未复现）。随后执行"零风险批次"清理：过期文件名/盘符/CESM 命名、SPEC §5.2–5.4 图1/图2 面板、§3.13 run_all（原误编为 §3.11）、§3.8 WBT 迭代实现、三份 PHASE 文档的 MATLAB 残留、AGENTS.md 检测链路口径统一。**方法学新增项（100 km 缓冲、CESM 基准期、图6c 规格等）待用户拍板后再改。** 详见 `results/规划一致性审查.md`（第二轮）。
 
 ## 当前可运行文件
 
@@ -53,14 +53,20 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
 │   ├── OAFlux/          # 空，待下载
 │   └── CESM1-LE/        # raw/ + proc/（当前成员 001–003）
 ├── python/              # 全部处理 + 绘图代码
-├── results/             # intermediate/ + figures/ + tables/ + 报告
-│   ├── 复现报告.md
-│   ├── 规划文件与论文一致性审查.md
-│   └── 规划文件与论文一致性审查_第二轮复核.md
+├── results/             # 产物 + 文档（2026-09-23 整理，见 results/README.md）
+│   ├── 复现报告.md        # ★ 主报告：进度 / 锚点总表 / 决策 D1–D7 / 偏差清单
+│   ├── Phase6审计报告.md  # Phase 6 审计（6 份合并）：§1 汇总 §2 修复对比 §3–§6 分报告
+│   ├── 规划一致性审查.md   # 规划文件 vs 论文两轮审查（合并）
+│   ├── 方法与证据.md      # 目视比对 / E-OBS 核查 / S1 读取 / R-Python 交叉验证 + 2 份历史存档
+│   ├── README.md         # 本目录导航
+│   ├── globalize_mhw_idx.py  # ★ 被 run_all.py 运行时调用，勿移动
+│   ├── build_oisst_clip.py / build_domains.py / run_detection_R.py  # Phase 0/1 入口
+│   ├── phase6_selftest.py    # Phase 6 口径纯合成自检
+│   ├── figures/ tables/ intermediate/ s1/   # 出图 / 快照 / 中间产物 / S1 裁剪
+│   └── tools/            # 诊断与复算脚本，按主题分组（见 tools/README.md）
 ├── docs/                # 主论文/补充材料 PDF、复现方案.md
-├── logs/                # 文档备份
-├── pdf_extract/         # 从 PDF 提取的图片
-└── scripts/             # 工具脚本（如 translate_to_word.py）
+├── pdf_extract/         # 从 PDF 提取的论文原图
+└── scripts/             # 工具脚本（extract_paper_figs.py、translate_to_word.py 等）
 ```
 
 > 注：`matlab/` 目录**不存在**——绘图已全面切换 Python (matplotlib + cartopy)，
@@ -118,9 +124,11 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
   MATLAB 段落均为"已弃用，仅作对照"
 - `DATA_REQUIREMENTS.md` — 数据下载步骤、目录结构、验证脚本、优先级
 - `docs/复现方案.md` — 论文基本信息、阶段规划、注意事项
-- `results/复现报告.md` — 进度、锚点验证总表、方法学决策记录（D1–D6）、偏差清单 §5.1
-- `results/规划文件与论文一致性审查.md` — 第一轮审查（2026-09-23）
-- `results/规划文件与论文一致性审查_第二轮复核.md` — 第二轮独立复核（2026-09-23），
-  含第一轮的错误更正与 5 项方法学问题的处置（**Phase 5/6 开工前必须先读**）
-- `results/S1读取与图6年份判据.md` — 读取论文 Supplementary Fig. S1：图6 非复合年判据（D）
-  + 图1j/l 缺口的量化定位（**读 §五 的定稿结论即可**）
+- `results/README.md` — **results/ 目录导航（先看这个）**
+- `results/复现报告.md` — 进度、锚点验证总表、方法学决策记录 **D1–D7**、偏差清单 §5.1、图1j/l 定稿 §6
+- `results/Phase6审计报告.md` — Phase 6 归因管线审计（含修复前后对比与四份分报告）
+- `results/规划一致性审查.md` — 规划文件 vs 论文两轮审查；**第二轮有对第一轮的 3 处更正**
+  （**Phase 5/6 开工前必须先读**）
+- `results/方法与证据.md` — §1 目视比对 / §2 E-OBS 拼接核查 / §3 S1 读取与图6年份判据 /
+  §4 R-Python 检测交叉验证 / §5–§6 历史存档
+- `results/tools/README.md` — 诊断与复算脚本索引（**哪个结论由哪个脚本算出**）
