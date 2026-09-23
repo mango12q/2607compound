@@ -78,7 +78,12 @@ def load_cesm1le_dir(forcing: str) -> xr.Dataset:
 - 现行 in-sample 版（P0）结果保留，用于说明 leave-one-out 的修正幅度。
 
 **落地要求**：
-1. `python/phase6_cesm.py` 的阈值构造需支持 `exclude_member` 参数（⬜ 待实现）。
+1. `python/phase6_cesm.py` 的阈值构造需支持 `exclude_member` 参数（✅ **2026-09-23 已实现**：
+   CLI = `python python\phase6_cesm.py detect --baseline xghg --loo --members N`；池按成员剔除自身，
+   缓存名带成员名单指纹 `thresh_{sst,t2m}_xghg_v3_w11_loo_<members>.npz`）。
+   3 成员实测：LOO 使 XGHG 复合暴露 +4.2%/+11.0%/+29.1%，阈值 |Δ| 均 0.07–0.12 °C（SST）/0.24 °C（T2m）。
+   **注意**：3 成员下 LOO 后池只剩 2 个，成员数噪声会高估影响；20 成员时（19 vs 20）小得多。
+   详见 `results/phase6审计_基准期.md`。
 2. 三项口径（leave-one-out / in-sample / ALL 自身）的 PR-FAR 曲线需同图对比并写入复现报告。
 3. 本节口径与理由必须同步进 `results/复现报告.md` 的偏差清单。
 

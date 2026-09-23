@@ -60,6 +60,24 @@ CI = C.CI_ALPHA
 MEMBERS_P0 = C.CESM_ALL_MEMBERS[:C.CESM_P0_MEMBERS]
 
 
+def select_members(n):
+    """★ F6 修复：--members N 必须作用于**全量名单** CESM_ALL_MEMBERS。
+
+    原实现 `MEMBERS_P0[:N]` 中 MEMBERS_P0 已被 `CESM_P0_MEMBERS=3` 截成前 3 个，
+    因此 `--members 20` 与 `--members 3` 完全等价（静默只跑 3 个成员），
+    全量跑时会以为是 20+20，实际仍是 3+3。此处改为显式取全量名单前 N 个，
+    并对 N 越界显式报错。
+    """
+    n = int(n)
+    if n < 1:
+        raise SystemExit(f"--members 必须 >=1，收到 {n}")
+    if n > len(C.CESM_ALL_MEMBERS):
+        raise SystemExit(
+            f"--members {n} 超出可用名单（{len(C.CESM_ALL_MEMBERS)} 个："
+            f"{','.join(C.CESM_ALL_MEMBERS)}）")
+    return C.CESM_ALL_MEMBERS[:n]
+
+
 # ──────────────────────────────────────────────
 # 文件发现
 # ──────────────────────────────────────────────
@@ -104,7 +122,7 @@ def cmd_prepare(args):
     ref.close()
 
     for exp in ("ALL", "XGHG"):
-        for m in MEMBERS_P0[: args.members]:
+        for m in select_members(getattr(args, 'members', C.CESM_P0_MEMBERS)):
             out = os.path.join(CESM_INT, f"{exp}_{m}_T2m.nc")
             if os.path.exists(out):
                 print(f"已存在, 跳过 {out}")
@@ -256,81 +274,127 @@ def _load_sst_points(exp, m, pairs_df):
     return vals, time, kmt_pt
 
 
-def _run_events(x, time, min_dur=5, max_gap=2):
-    """超标 bool 序列 -> 事件 (游程>=min_dur, 桥接<=max_gap; 时长含间隙日)。"""
-    x = x.astype(np.int8)
-    dz = np.diff(np.concatenate(([0], x, [0])))
-    starts = np.flatnonzero(dz == 1)
-    ends = np.flatnonzero(dz == -1) - 1
-    merged = []
-    for a, b in zip(starts, ends):
-        if merged and a - merged[-1][1] - 1 <= max_gap:
-            merged[-1][1] = b
+# ★ 审计修复 2026-09-23（结果见 results/phase6审计报告.md）★
+# 修复项：
+#   F1 `_run_events` 的桥接/过滤顺序（原「先桥接后过滤」→ 改为逐行复刻
+#      heatwaveR 0.5.5 的 `proto_event()`：先取 >=min_dur 的游程作种子，再桥接）
+#   F2 `_pooled_threshold_t2m` 的 axis 崩溃（原 1-D `stacked` 求分位退化为标量，
+#      206 个陆点共用一条曲线）
+#   F3 阈值分位改为 heatwaveR `ts2clm` 语义：**窗内合并原始样本**再取分位
+#      （原 SST 完全无窗；T2m 是「逐日分位的再分位」）
+#   F4 阈值缓存加入成员名单指纹（原先换 --members 会静默复用旧缓存）
+#   F5 支持 leave-one-out（`exclude` 参数，剔除被检测成员自身）
+THRESH_VERSION = "v3_w11_loo"
+
+
+def _rle_all(mask):
+    """连续同值段 -> [(value, start, end)]（含端点，0-based）。"""
+    x = np.asarray(mask).astype(np.int8)
+    if x.size == 0:
+        return []
+    idx = np.flatnonzero(np.diff(x) != 0) + 1
+    b = np.concatenate(([0], idx, [x.size]))
+    return [(bool(x[b[i]]), int(b[i]), int(b[i + 1] - 1))
+            for i in range(len(b) - 1)]
+
+
+def _run_events(x, time=None, min_dur=5, max_gap=2):
+    """超标 bool 序列 -> 事件 [(start, end)]（含端点，0-based）。
+
+    ★ 逐行复刻 heatwaveR 0.5.5 的 `proto_event()`（detect_event 的内部实现）：
+      1) 原始超标游程中 `duration >= min_dur` 的为「种子」；
+      2) durationCriterion 只在种子段为 True；
+      3) 若 joinAcrossGaps：把 durationCriterion 中**所有**长度 ∈ [1, max_gap]
+         且「右端 > 首个种子起点」的 False 连续段整段置 True
+         —— 含最后一个种子之后的**尾部空档**（使末事件延长 ≤max_gap 天），
+         不含第一个种子之前的**首部空档**（头尾不对称）；
+      4) 最终事件 = 置 True 后的极大连续段。
+    等价性校验：450 例（150 条随机 0/1 序列 × 3 组参数）与真实 heatwaveR
+    `detect_event` **0 例不一致**；另有 6 个手工边界用例逐一相符。
+    详见 results/phase6审计报告.md 与 results/phase6_audit_lead_check7.py。
+    """
+    x = np.asarray(x).astype(np.int8)
+    n = x.size
+    runs = _rle_all(x)
+    seeds = [(a, b) for v, a, b in runs if v and (b - a + 1) >= min_dur]
+    if not seeds:
+        return []
+    dc = np.zeros(n, dtype=bool)
+    for a, b in seeds:
+        dc[a:b + 1] = True
+    first_start = seeds[0][0]
+    for v, a, b in _rle_all(dc):
+        if not v and b > first_start and 1 <= (b - a + 1) <= max_gap:
+            dc[a:b + 1] = True
+    return [(a, b) for v, a, b in _rle_all(dc) if v]
+
+
+def _thresh_cache_path(kind, members, exclude):
+    """阈值缓存路径带**成员名单指纹**，避免换 --members / 换 LOO 时静默复用旧缓存。"""
+    tag = "-".join(sorted(members)) + ("_loo" + exclude if exclude else "")
+    return os.path.join(CESM_INT, f"thresh_{kind}_xghg_{THRESH_VERSION}_{tag}.npz")
+
+
+def _pooled_threshold(pairs_df, members, exclude=None, kind="sst"):
+    """XGHG 合并反事实基准阈值 (366, npt)，heatwaveR ts2clm 语义。
+
+    kind='sst' : 配对海点 SST；kind='t2m': 配对陆点 T2m。
+    两者统一为「11 天窗内**合并原始样本**再取 90 分位」（windowHalfWidth=5），
+    与 python/detect_events.R 的 ts2clm(pctile=90, windowHalfWidth=5L,
+    smoothPercentile=FALSE) 同语义（smoothPercentile 只控制是否对阈值序列再做
+    31 天滑动平均，不影响 11 天窗合并）。
+    exclude：leave-one-out，从池中剔除该成员（主口径）。
+    """
+    pool = [m for m in members if m != exclude]
+    if not pool:
+        raise ValueError("池为空：exclude 后没有剩余成员")
+    cache = _thresh_cache_path(kind, pool, None)
+    if os.path.exists(cache):
+        z = np.load(cache)
+        if int(z["n_members"]) == len(pool):
+            print(f"  阈值缓存命中 {os.path.basename(cache)} (池={len(pool)} 成员)")
+            return z["thresh"]
+        print(f"  !! 缓存成员数不符({int(z['n_members'])}!={len(pool)})，重建")
+    chunks = []
+    for m in pool:
+        if kind == "sst":
+            vals, time, _ = _load_sst_points("XGHG", m, pairs_df)
         else:
-            merged.append([a, b])
-    return [(a, b) for a, b in merged if b - a + 1 >= min_dur]
-
-
-def _pooled_threshold_sst(pairs_df, members):
-    """XGHG 合并气候态 (反事实基准): 逐 doy 90 分位, 缓存 npz。"""
-    cache = os.path.join(CESM_INT, "thresh_sst_xghg.npz")
-    if os.path.exists(cache):
-        z = np.load(cache)
-        return z["thresh"], z["doy_map"]
-    chunks = []
-    for m in members:
-        vals, time, _ = _load_sst_points("XGHG", m, pairs_df)
+            f = os.path.join(CESM_INT, f"XGHG_{m}_T2m.nc")
+            ds = xr.open_dataset(f)
+            da = ds["T2m"].isel(
+                lat=xr.DataArray(pairs_df.land_lat_idx.values, dims="p"),
+                lon=xr.DataArray(pairs_df.land_lon_idx.values, dims="p"))
+            vals = da.transpose("time", "p").values.astype(np.float64)
+            time = pd.DatetimeIndex(da.time.values)
+            ds.close()
         chunks.append((vals, time.dayofyear.values))
-        print(f"  基准池: XGHG {m} ({vals.shape[0]} 天)")
+        print(f"  基准池({kind}): XGHG {m} ({vals.shape[0]} 天)")
     doy_all = np.concatenate([d for _, d in chunks])
-    mat = np.concatenate([v for v, _ in chunks], axis=0)   # (~66y, npair)
-    npair = mat.shape[1]
-    thresh = np.full((366, npair), np.nan)
+    mat = np.concatenate([v for v, _ in chunks], axis=0)
+    npt = mat.shape[1]
+    thresh = np.full((366, npt), np.nan)
+    cal = 365 if (doy_all.max() <= 365 and 366 not in set(doy_all.tolist())) else 366
     for d in np.arange(1, 366):
-        rows = mat[doy_all == d]
-        if len(rows):
-            thresh[d - 1] = np.nanpercentile(rows, 90, axis=0)
-    np.savez_compressed(cache, thresh=thresh, doy_map=np.arange(366))
-    print(f"  SST 反事实基准 -> {cache}")
-    return thresh, np.arange(366)
-
-
-def _pooled_threshold_t2m(pairs_df, members):
-    """XGHG 合并气候态 (T2m): heatwaveR 语义 = 11 天窗 90 分位, 缓存 npz。"""
-    cache = os.path.join(CESM_INT, "thresh_t2m_xghg.npz")
-    if os.path.exists(cache):
-        z = np.load(cache)
-        return z["thresh"]
-    pj = pairs_df.land_lat_idx.values
-    pi = pairs_df.land_lon_idx.values
-    chunks = []
-    for m in members:
-        f = os.path.join(CESM_INT, f"XGHG_{m}_T2m.nc")
-        ds = xr.open_dataset(f)
-        da = ds["T2m"].isel(lat=xr.DataArray(pj, dims="p"),
-                            lon=xr.DataArray(pi, dims="p"))
-        arr = da.transpose("time", "p").values.astype(np.float64)
-        chunks.append((arr, pd.DatetimeIndex(da.time.values).dayofyear.values))
-        ds.close()
-        print(f"  基准池: XGHG {m} T2m ({arr.shape[0]} 天)")
-    doy_all = np.concatenate([d for _, d in chunks])
-    mat = np.concatenate([v for v, _ in chunks], axis=0)   # (~66y, nland)
-    nland = mat.shape[1]
-    # 单日 doy 分位 (66 样本/doy)
-    single = np.full((366, nland), np.nan)
-    for d in np.arange(1, 366):
-        rows = mat[doy_all == d]
-        if len(rows):
-            single[d - 1] = np.nanpercentile(rows, 90, axis=0)
-    # 11 天圆形窗平滑 (heatwaveR windowHalfWidth=5 语义: 窗内样本合并求分位)
-    thresh = np.full_like(single, np.nan)
-    for d in np.arange(1, 366):
-        win = [(d + k - 1) % 365 + 1 for k in range(-5, 6)]
-        stacked = np.concatenate([single[w - 1] for w in win], axis=0)
-        thresh[d - 1] = np.nanpercentile(stacked, 90, axis=0)
-    np.savez_compressed(cache, thresh=thresh)
-    print(f"  T2m 反事实基准 (11 天窗) -> {cache}")
+        win = [(d + k - 1) % cal + 1 for k in range(-5, 6)]
+        pool_rows = [mat[doy_all == w] for w in win]
+        pool_rows = [r for r in pool_rows if len(r)]
+        if pool_rows:
+            thresh[d - 1] = np.nanpercentile(
+                np.concatenate(pool_rows, axis=0), 90, axis=0)
+    np.savez_compressed(cache, thresh=thresh, doy_map=np.arange(366),
+                        n_members=len(pool), members=np.array(pool),
+                        version=THRESH_VERSION, calendar=cal)
+    print(f"  {kind.upper()} 反事实基准 (11 天窗, 池 {len(pool)} 成员) -> {cache}")
     return thresh
+
+
+def _pooled_threshold_sst(pairs_df, members, exclude=None):
+    return _pooled_threshold(pairs_df, members, exclude, kind="sst"), np.arange(366)
+
+
+def _pooled_threshold_t2m(pairs_df, members, exclude=None):
+    return _pooled_threshold(pairs_df, members, exclude, kind="t2m")
 
 
 def _detect_mhw_member(exp, m, pairs_df, thresh_ext=None, suffix=""):
@@ -352,10 +416,18 @@ def _detect_mhw_member(exp, m, pairs_df, thresh_ext=None, suffix=""):
     if thresh_ext is not None:
         thresh = thresh_ext
     else:
-        # 逐 doy 90 分位气候态 (成员自身 2000-2021, 与观测 load_data 同语义)
+        # 逐 doy 90 分位气候态 (成员自身 2000-2021)。
+        # ★ F3 修复：必须与 heatwaveR ts2clm 一样做 **11 天窗内合并原始样本**，
+        #   原实现只用单日 doy 分位（实测使超标日放大 1.49–1.53 倍）。
+        cal = 365 if (doy.max() <= 365 and 366 not in set(doy.tolist())) else 366
         thresh = np.full((366, npair), np.nan)
-        for d in np.unique(doy):
-            thresh[d - 1] = np.nanpercentile(vals[doy == d], 90, axis=0)
+        for d in np.arange(1, 366):
+            win = [(d + k - 1) % cal + 1 for k in range(-5, 6)]
+            rs = [vals[doy == w] for w in win]
+            rs = [r for r in rs if len(r)]
+            if rs:
+                thresh[d - 1] = np.nanpercentile(np.concatenate(rs, axis=0),
+                                                 90, axis=0)
     thr_t = thresh[doy - 1]                       # (nt, npairs)
 
     # 游程事件 (min_dur=5, max_gap=2) — 与 detect_mhw._EventTracker 同语义
@@ -403,14 +475,14 @@ def _detect_thw_member(exp, m):
     return out_csv
 
 
-def _detect_thw_member_ext(exp, m, pairs_df, thresh):
+def _detect_thw_member_ext(exp, m, pairs_df, thresh, suffix="_x"):
     """THW v2: 外置反事实阈值 (XGHG 合并 11 天窗 90 分位) + 游程事件。
 
-    阈值来源与 heatwaveR ts2clm 同语义 (11 天窗分位), 事件逻辑 (游程>=5, 桥接<=2)
-    与 heatwaveR detect_event / marineHeatWaves 一致 (项目交叉验证已核),
-    故外部阈值下 python/R 等价 —— 阈值才是方法学本体。
+    阈值来源与 heatwaveR ts2clm 同语义 (11 天窗内合并原始样本求分位), 事件逻辑
+    (游程>=5 作种子, 桥接<=2) 由 `_run_events` 逐行复刻 heatwaveR `proto_event`,
+    并经 450 例模糊测试 0 不一致校验 —— 阈值与事件逻辑两端均与 R 等价。
     """
-    out_csv = os.path.join(CESM_INT, f"thw_x_{exp}_{m}.csv")
+    out_csv = os.path.join(CESM_INT, f"thw{suffix}_{exp}_{m}.csv")
     if os.path.exists(out_csv):
         print(f"已存在, 跳过 {out_csv}")
         return out_csv
@@ -447,25 +519,64 @@ def _detect_thw_member_ext(exp, m, pairs_df, thresh):
 def cmd_detect(args):
     pairs_df = pd.read_csv(PAIRS_CSV)
     baseline = getattr(args, "baseline", "own")
+    # ★ F6 修复：成员列表必须来自全量名单，不能被 CESM_P0_MEMBERS 硬截断。
+    #   原实现 MEMBERS_P0[:args.members] 中 MEMBERS_P0 已被截成前 3 个，
+    #   因此 --members 20 与 --members 3 完全等价（静默）。
+    n_mem = int(getattr(args, "members", C.CESM_P0_MEMBERS))
+    members = select_members(n_mem)
+    loo = bool(getattr(args, "loo", False))
+    dtag = getattr(args, "tag", "_x2") or "_x2"
+    print(f"检测成员: {members}（共 {len(members)} 个）"
+          f"{'  [leave-one-out 基准]' if (baseline == 'xghg' and loo) else ''}"
+          f"  输出后缀={dtag!r}")
+
     if baseline == "xghg":
         print("== v2: XGHG 合并反事实基准 ==")
-        thr_sst, _ = _pooled_threshold_sst(pairs_df, MEMBERS_P0[: args.members])
-        thr_t2m = _pooled_threshold_t2m(pairs_df, MEMBERS_P0[: args.members])
+        if loo:
+            # 每个成员用「其余成员」的池建阈，剔除自身（主口径）
+            for exp in ("ALL", "XGHG"):
+                for m in members:
+                    pool = [x for x in members if x not in (m,) or exp == "ALL"]
+                    pool = [x for x in members if x != m]
+                    if not pool:
+                        print(f"!! {exp} {m}: LOO 池为空，跳过")
+                        continue
+                    try:
+                        thr_sst, _ = _pooled_threshold_sst(pairs_df, pool)
+                        thr_t2m = _pooled_threshold_t2m(pairs_df, pool)
+                    except Exception as e:
+                        print(f"!! LOO 阈值失败 {exp} {m}: {e}")
+                        continue
+                    try:
+                        _detect_thw_member_ext(exp, m, pairs_df, thr_t2m,
+                                               suffix=dtag)
+                    except Exception as e:
+                        print(f"!! THW(x) 失败 {exp} {m}: {e}")
+                    try:
+                        _detect_mhw_member(exp, m, pairs_df, thresh_ext=thr_sst,
+                                           suffix=dtag)
+                    except Exception as e:
+                        print(f"!! MHW(x) 失败 {exp} {m}: {e}")
+            return
+        thr_sst, _ = _pooled_threshold_sst(pairs_df, members)
+        thr_t2m = _pooled_threshold_t2m(pairs_df, members)
+        print(f"  in-sample 说明：XGHG 组成员在池中含自身；ALL 组成员不含自身")
         for exp in ("ALL", "XGHG"):
-            for m in MEMBERS_P0[: args.members]:
+            for m in members:
                 try:
-                    _detect_thw_member_ext(exp, m, pairs_df, thr_t2m)
+                    _detect_thw_member_ext(exp, m, pairs_df, thr_t2m,
+                                           suffix=dtag)
                 except Exception as e:
                     print(f"!! THW(x) 失败 {exp} {m}: {e}")
                     continue
                 try:
                     _detect_mhw_member(exp, m, pairs_df,
-                                       thresh_ext=thr_sst, suffix="_x")
+                                       thresh_ext=thr_sst, suffix=dtag)
                 except Exception as e:
                     print(f"!! MHW(x) 失败 {exp} {m}: {e}")
         return
     for exp in ("ALL", "XGHG"):
-        for m in MEMBERS_P0[: args.members]:
+        for m in members:
             try:
                 _detect_thw_member(exp, m)
             except Exception as e:
@@ -488,7 +599,7 @@ def cmd_compound(args):
     pairs_df = pd.read_csv(PAIRS_CSV)
     rows = []
     for exp in ("ALL", "XGHG"):
-        for m in MEMBERS_P0[: args.members]:
+        for m in select_members(getattr(args, 'members', C.CESM_P0_MEMBERS)):
             thw_f = os.path.join(CESM_INT, f"thw{tag}_{exp}_{m}.csv")
             mhw_f = os.path.join(CESM_INT, f"mhw{tag}_{exp}_{m}.csv")
             if not (os.path.exists(thw_f) and os.path.exists(mhw_f)):
@@ -496,12 +607,18 @@ def cmd_compound(args):
                 continue
             t2m = xr.open_dataset(os.path.join(CESM_INT, f"{exp}_{m}_T2m.nc"))
             time_da = t2m["T2m"]
-            t0 = pd.Timestamp(time_da.time.values[0])
+            # ★ F8：原点归一（见 _annual_per_pair 注释）
+            t0 = pd.Timestamp(time_da.time.values[0]).normalize()
             nt = time_da.sizes["time"]
 
             thw = pd.read_csv(thw_f, parse_dates=["event_start", "event_end"])
             mhw = pd.read_csv(mhw_f, parse_dates=["event_start", "event_end"])
-            comp = identify_compound_events(mhw, thw, pairs_df, time_da.time)
+            # ★ F8：传入已归一到 00:00 的时间轴，使 THW（T2m 轴，ALL 组为 12:00）
+            #   与 MHW（SST 轴，00:00）的日期→索引映射一致。
+            time_norm = xr.DataArray(
+                pd.DatetimeIndex(time_da.time.values).normalize(),
+                dims="time", coords={"time": time_da.time})
+            comp = identify_compound_events(mhw, thw, pairs_df, time_norm)
 
             # 暴露时间 (与 identify_compound_events 同一套逐日口径)
             lpd = _pair_maps(pairs_df)
@@ -550,14 +667,17 @@ def _annual_per_pair(comp, time_da, pairs_df):
     uyears = np.unique(years)
     pos = {(int(r.land_lat_idx), int(r.land_lon_idx)): p
            for p, r in enumerate(pairs_df.itertuples(index=False))}
-    t0 = pd.Timestamp(time_da.time.values[0])
+    # ★ F8 修复：把原点归一到 00:00。ALL 组成品的 T2m 时间是 12:00，
+    #   而事件表时刻继承各自的序列轴（MHW 来自 SST=00:00），
+    #   `(date - t0).days` 的向下取整会让 ALL 组的 MHW 掩码整体早 1 天。
+    t0 = pd.Timestamp(time_da.time.values[0]).normalize()
     daily = np.zeros((nt, len(pairs_df)), dtype=np.int8)
     for seg in comp.itertuples(index=False):
         p = pos.get((int(seg.land_lat_idx), int(seg.land_lon_idx)))
         if p is None:
             continue
-        a = (pd.Timestamp(seg.thw_start) - t0).days
-        b = (pd.Timestamp(seg.thw_end) - t0).days
+        a = (pd.Timestamp(seg.thw_start).normalize() - t0).days
+        b = (pd.Timestamp(seg.thw_end).normalize() - t0).days
         daily[max(a, 0):min(b, nt - 1) + 1, p] = 1
     ann = np.stack([daily[years == y].sum(axis=0) for y in uyears])  # (yr, pair)
     med = (pairs_df.land_lat.between(30, 47) & pairs_df.land_lon.between(5, 42)).values
@@ -589,12 +709,22 @@ def _obs_annual_threshold():
 
 
 def _pr_boot(x_thresh, sample_all, sample_fix, n_boot=N_BOOTSTRAP, seed=42):
-    """PR/FAR + bootstrap (按年重采样, 与论文 1000 次一致)。返回 (PR, FAR, lo, hi)。"""
+    """PR/FAR + bootstrap。返回 dict（含 CI 与 inf 计数）。
+
+    ★ F7 修复：不再静默丢弃 inf 重复。
+      P_fix=0 的重复意味着"反事实世界中一次都没发生"——这是最强证据，
+      原实现 `boots[np.isfinite(boots)]` 把它丢掉会把 CI 系统性压低
+      （P0 实测 med_max 口径 372/1000 为 inf；med_mean 口径 1000/1000 全 inf）。
+      现在：`lo/hi` 为**保留 inf** 的经验分位数（上界可为 inf）；
+      `lo_fin/hi_fin` 为仅有限样本的对照区间；并报告 inf/nan 比例。
+    """
     rng = np.random.default_rng(seed)
 
     def pr(sa, sf):
         p_all = float((sa >= x_thresh).mean())
         p_fix = float((sf >= x_thresh).mean())
+        if p_all == 0 and p_fix == 0:
+            return np.nan          # ★ 0/0 不是 ∞
         if p_fix == 0:
             return np.inf
         return p_all / p_fix
@@ -605,12 +735,27 @@ def _pr_boot(x_thresh, sample_all, sample_fix, n_boot=N_BOOTSTRAP, seed=42):
         a = sample_all[rng.integers(0, len(sample_all), len(sample_all))]
         f = sample_fix[rng.integers(0, len(sample_fix), len(sample_fix))]
         boots.append(pr(a, f))
-    boots = np.array(boots)
+    boots = np.array(boots, dtype=float)
+    n_inf = int(np.isinf(boots).sum())
+    n_nan = int(np.isnan(boots).sum())
+    with np.errstate(invalid="ignore", all="ignore"):
+        # 经验分位数用**次序统计量**实现：np.percentile 在两端都是 inf 时会算出
+        # inf-inf=nan，把"上界为 ∞"这个正确结论错误地变成 nan。
+        _sv = np.sort(boots[~np.isnan(boots)])
+
+        def _q(p):
+            if len(_sv) == 0:
+                return np.nan
+            k = int(np.ceil(p / 100.0 * len(_sv))) - 1
+            return float(_sv[min(max(k, 0), len(_sv) - 1)])
+
+        lo, hi = _q(CI[0] * 100), _q(CI[1] * 100)
     fin = boots[np.isfinite(boots)]
-    lo, hi = (np.percentile(fin, [CI[0] * 100, CI[1] * 100])
-              if len(fin) else (np.nan, np.nan))
+    lo_f, hi_f = (np.percentile(fin, [CI[0] * 100, CI[1] * 100])
+                  if len(fin) else (np.nan, np.nan))
     far = 1 - 1 / point if np.isfinite(point) and point > 0 else np.nan
-    return point, far, lo, hi, boots
+    return dict(pr=point, far=far, lo=lo, hi=hi, lo_fin=lo_f, hi_fin=hi_f,
+                n_inf=n_inf, n_nan=n_nan, n_boot=len(boots), boots=boots)
 
 
 def cmd_attrib(args):
@@ -654,12 +799,18 @@ def cmd_attrib(args):
         x22 = v22_mean if col == "med_mean" else v22_max
         sa, _ = load_sample("ALL", col)
         sf, _ = load_sample("XGHG", col)
-        pr, far, lo, hi, boots = _pr_boot(x22, sa, sf)
-        results[col] = (pr, far, lo, hi)
-        prs = f"{pr:.1f}" if np.isfinite(pr) else "∞"
+        R = _pr_boot(x22, sa, sf)
+        pr, far, lo, hi = R["pr"], R["far"], R["lo"], R["hi"]
+        boots = R["boots"]
+        results[col] = R
+        prs = f"{pr:.1f}" if np.isfinite(pr) else ("nan" if np.isnan(pr) else "∞")
+        prs_lo = "inf" if np.isinf(lo) else f"{lo:.1f}"
+        prs_hi = "inf" if np.isinf(hi) else f"{hi:.1f}"
         print(f"[{col}] 阈值={x22:.1f} 天: P_ALL={np.mean(sa >= x22):.3f} "
-              f"P_fix={np.mean(sf >= x22):.3f}  PR={prs} FAR={far:.2f} "
-              f"(bootstrap CI {lo:.1f}-{hi:.1f})")
+              f"P_fix={np.mean(sf >= x22):.3f}  PR={prs} FAR={far:.3f} "
+              f"| 90%CI(含 inf)={prs_lo}-{prs_hi} "
+              f"| 90%CI(仅有限)={R['lo_fin']:.1f}-{R['hi_fin']:.1f} "
+              f"| bootstrap inf={R['n_inf']}/{R['n_boot']} nan={R['n_nan']}")
 
         ax = axes[0, k]
         bins = np.histogram_bin_edges(np.concatenate([sa, sf, [x22]]), bins=14)
@@ -700,8 +851,14 @@ def main():
         if name == "detect":
             q.add_argument("--baseline", choices=["own", "xghg"], default="own",
                            help="own=成员自身气候态(v1); xghg=XGHG 合并反事实基准(v2)")
+            q.add_argument("--tag", default="_x2",
+                           help="输出事件表后缀（默认 _x2，不覆盖旧 P0 的 _x 产物）")
+            q.add_argument("--loo", action="store_true",
+                           help="leave-one-out：检测成员 m 时从 XGHG 池中剔除 m 自身"
+                                "（仅 --baseline xghg 有效；TECHNICAL_SPEC_PHASE_B 步骤 2b 主口径）")
         if name != "pairs":
-            q.add_argument("--members", type=int, default=C.CESM_P0_MEMBERS)
+            q.add_argument("--members", type=int, default=C.CESM_P0_MEMBERS,
+                           help="成员数（作用于全量 20 人名单，不再被 CESM_P0_MEMBERS 截断）")
         if name in ("compound", "attrib"):
             q.add_argument("--tag", default="",
                            help="事件文件后缀: ''=v1(own), '_x'=v2(XGHG 基准)")
