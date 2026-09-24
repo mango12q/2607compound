@@ -130,6 +130,93 @@ def main():
         shutil.rmtree(tmp, ignore_errors=True)
 
     print("\n" + "=" * 74)
+    print("4) OAFlux 蒸发链路（图5b）—— 合成件，端到端口径核对")
+    print("=" * 74)
+    tmp2 = tempfile.mkdtemp(prefix="phase5_oaflux_")
+    try:
+        import xarray as xr
+        from calc_wbt import seasonal_mean, linear_trend_per_decade
+        import load_data as L
+
+        # 合成：1° 网格、1991–2020 逐月、单位 cm/yr，JAS 值 = 基线 + 已知线性趋势
+        lat = np.arange(25.0, 70.01, 1.0)
+        lon = np.arange(-20.0, 45.01, 1.0)
+        times = xr.date_range("1991-01-01", "2020-12-01", freq="MS")
+        yrs = times.year.values
+        doy_season = np.where(np.isin(times.month.values, [7, 8, 9]), 1.0, 0.0)
+        slope_per_year = 0.6                       # 6.0 cm/yr per decade
+        base = 40.0 + (yrs - 1991) * slope_per_year
+        field = (base[:, None, None] * doy_season[:, None, None]
+                 + 5.0 * (1 - doy_season)[:, None, None]
+                 + np.zeros((times.size, lat.size, lon.size), dtype="float32"))
+        ds = xr.Dataset({"evap": (("time", "lat", "lon"), field.astype("float32"),
+                                  {"units": "cm/yr"})},
+                        coords={"time": times, "lat": lat, "lon": lon})
+        p = os.path.join(tmp2, "OAFlux_evap_synth.nc")
+        ds.to_netcdf(p)
+
+        oa = L.load_oaflux(filepath=p)
+        check("load_oaflux 读出合成件并归一维度",
+              {"lat", "lon"} <= set(oa.dims) or {"lat", "lon"} <= set(oa["evap"].dims),
+              f"dims={dict(oa.sizes)}")
+        ev = L.oaflux_evap_cm_per_year(oa, var="evap")
+        check("单位保留原始值（cm/yr）", ev.attrs.get("units_original") == "cm/yr")
+        slope, _ = linear_trend_per_decade(seasonal_mean(ev, (7, 8, 9), (1991, 2020)))
+        got = float(np.nanmedian(slope.values))
+        check("合成趋势 +6.0 cm/yr/decade 被准确恢复", abs(got - 6.0) < 1e-3,
+              f"got {got:+.4f}")
+        # 未登记单位必须明确报错，不能静默当成 cm/yr
+        ds2 = ds.copy()
+        ds2["evap"].attrs["units"] = "furlongs/fortnight"
+        p2 = os.path.join(tmp2, "bad_units.nc")
+        ds2.to_netcdf(p2)
+        try:
+            L.oaflux_evap_cm_per_year(L.load_oaflux(filepath=p2), var="evap")
+            check("未登记单位明确报错", False, "居然没报错")
+        except ValueError as exc:
+            check("未登记单位明确报错（不静默当 cm/yr）", "未登记" in str(exc))
+    except Exception as exc:                                   # pragma: no cover
+        import traceback
+        traceback.print_exc()
+        check("OAFlux 链路端到端", False, f"{type(exc).__name__}: {exc}")
+    finally:
+        shutil.rmtree(tmp2, ignore_errors=True)
+
+    print("\n" + "=" * 74)
+    print("5) 图6d–f 地图面板（cartopy + 离散色标）—— 合成场")
+    print("=" * 74)
+    tmp3 = tempfile.mkdtemp(prefix="phase5_maps_")
+    _old_int = C.INTERMEDIATE_DIR
+    try:
+        import xarray as xr
+        lat = np.arange(30.0, 60.01, 0.25)
+        lon = np.arange(-10.0, 40.01, 0.25)
+        for yr, bias in zip(C.WBT_RP_YEARS, (1.0, 3.0, 5.0)):
+            f = 20.0 + bias + 2.0 * np.cos(np.deg2rad(lat))[:, None] * 0 + \
+                0.02 * lon[None, :]
+            da = xr.DataArray(f.astype("float32"), dims=("lat", "lon"),
+                              coords={"lat": lat, "lon": lon})
+            xr.Dataset({"wbt_mean": da, "wbt_max": da + 1.5}).to_netcdf(
+                os.path.join(tmp3, f"wbt_compound_{yr}.nc"))
+        jpath = os.path.join(tmp3, "fig6_stats.json")
+        with open(jpath, "w", encoding="utf-8") as fh:
+            json.dump(stats, fh, default=str)
+        C.INTERMEDIATE_DIR = tmp3          # fig6_wbt 在调用时读该常量
+        import fig6_wbt
+        out = fig6_wbt.make_figure(outdir=tmp3, dpi=80, only_curves=False,
+                                   stats_path=jpath, outname="fig6_maps_probe")
+        check("含 d–f 地图面板的完整图6 渲染成功",
+              os.path.exists(out) and os.path.getsize(out) > 20_000,
+              f"{os.path.getsize(out) if os.path.exists(out) else 0} bytes")
+    except Exception as exc:                                   # pragma: no cover
+        import traceback
+        traceback.print_exc()
+        check("图6d–f 地图面板渲染", False, f"{type(exc).__name__}: {exc}")
+    finally:
+        C.INTERMEDIATE_DIR = _old_int
+        shutil.rmtree(tmp3, ignore_errors=True)
+
+    print("\n" + "=" * 74)
     if FAIL:
         print(f"SELFTEST FAILED: {len(FAIL)} 项 -> {FAIL}")
         return 1
