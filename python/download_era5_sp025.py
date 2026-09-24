@@ -153,8 +153,14 @@ def verify_month(path, year, month):
         lname = next((c for c in ("latitude", "lat") if c in ds.coords), None)
         if lname is not None:
             lat = ds[lname].values
-            if not (lat.min() >= 29 and lat.max() <= 67):
-                return False, f"纬度范围异常: {lat.min()}~{lat.max()}"
+            # ★ 2026-09-24 修复：此处的期望纬度范围必须与 AREA 一起改。
+            #   上次把 AREA 由 [66,-10,30,40] 扩到 [70,-16,28,44] 时漏改本行
+            #   （仍写着 29~67），会使**每一个下载成功的月文件都被判为坏文件**、
+            #   进而被删除并无限重下。现在按 AREA 推导期望范围并留 1° 容差。
+            lat_lo, lat_hi = float(AREA[2]), float(AREA[0])
+            if not (lat.min() >= lat_lo - 1.0 and lat.max() <= lat_hi + 1.0):
+                return False, (f"纬度范围异常: {lat.min()}~{lat.max()}"
+                               f"（期望 {lat_lo}~{lat_hi}±1）")
 
         # 量纲/变量正确性: 必须是地面气压量级 (Pa)
         v = ds[dvars[0]]
