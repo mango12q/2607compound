@@ -4,7 +4,25 @@
 
 学术复现项目，非典型软件仓库。目标：复现论文 *Compound coastal marine–terrestrial heatwaves associated with humid-heat stress in Europe*（Scientific Reports 2025）。
 
-**当前进度（2026-09-24）**：Phase 1-4（观测链路：检测→配对→复合→图1/图2/S1/S2）完成；图1j-l 已切换为 MHW 包络口径（方案 B），共超标口径备份为 fig1_compound_spatial_exceedance_backup.*；**图1j/l 的绝对量级已定稿为"未复现项"**（定性一致、定量不可复现、原文口径不足以唯一确定——见 `results/复现报告.md` §6，停止口径搜索）；Phase 6 P0（CESM 3 成员管线 + v2 反事实基准）验证通过，全量未跑；**Phase 5 数值链路已落地**（`calc_wbt.py` / `gev_return_period.py` / `load_data.py` 的 ERA5·OAFlux 加载器 / `phase5_humid.py`），**图5·图6 绘图脚本与 Phase 6 的 `gev` 子命令仍待补**；Phase 7 未开始。详见 `results/复现报告.md`。
+**2026-09-24 第七批：图5/图6 出图落地 + PHASE_C 五处口径更正（第五轮一致性审查）**：
+- **新增**：`python/fig5_sst_trend.py`（图5 a/b/c 趋势图，含 `--synthetic` 版式自检）、
+  `python/fig6_wbt.py`（图6 a–f，含合成 demo 路径 `--stats`）、`python/table1_attribution.py`（Table 1）、
+  `results/phase5_selftest.py`（纯合成自检 → `ALL PHASE5 SELFTESTS PASSED`）。
+- **★ 推翻 `TECHNICAL_SPEC_PHASE_C.md` 五处关键口径**（逐像素校准论文原图）：
+  ① 图6a/b 不是"每年一根柱"，而是**14 条曲线**（x = 阈值 WBT 25.5–27.1 °C / SH 19.0–20.9 g/kg）；
+  ② 非复合年是论文 Fig.6c 图例直接列出的 **11 年**（1984/1986/1988/1990/1991/1992/1993/1996/2000/2004/2008），
+  不是 S1 判读的 8 年——**caption 的"11"对、正文的"10"错**；
+  ③ 锚点"非复合年 <5 天"实为 **≤~8 天**（2004 ≈7.8、1992 ≈3.9）；
+  ④ ERA5 下载框太小（论文 Fig.5 范围 lon −15…43.5 / lat 29…69）→ **sp 0.25° 下载框已扩到
+  `[70,−16,28,44]`**（用户尚未下载，零代价修正）；
+  ⑤ 图6d–f 是**全域陆地**地图（lon −10…40.5 / lat 35…62），不是 100 km 缓冲域。
+- **代码同步**：`config.WBT_NONCOMPOUND_YEARS` 改为论文 11 年（S1 8 年降为 `_S1` 敏感性）、
+  新增 `WBT_EXCEED_THRESHOLDS`/`SH_EXCEED_THRESHOLDS`/`ERA5_MAP_BOX`；
+  `phase5_humid.stats_fig6` 新增逐阈值扫描 `exceedance_curves`，6d–f 改全域；
+  `fig5_sst_trend.py` 的地图范围与色板按原图；`fig6_wbt.py` 的配色/轴范围/色标按原图。
+- 详见 `results/规划一致性审查.md` 第五轮（A6–A10 / B6–B10 / C1–C4）。
+
+**当前进度（2026-09-24）**：Phase 1-4（观测链路：检测→配对→复合→图1/图2/S1/S2）完成；图1j-l 已切换为 MHW 包络口径（方案 B），共超标口径备份为 fig1_compound_spatial_exceedance_backup.*；**图1j/l 的绝对量级已定稿为"未复现项"**（定性一致、定量不可复现、原文口径不足以唯一确定——见 `results/复现报告.md` §6，停止口径搜索）；Phase 6 P0（CESM 3 成员管线 + v2 反事实基准）验证通过，全量未跑；**Phase 5 全链路代码已就绪（图5/图6/Table 1 均可出图，待数据）**；**图3/图4 绘图已就绪**（图4 需 `phase6_cesm.py gev` 子命令，待补）；Phase 7 未开始。详见 `results/复现报告.md`。
 
 **2026-09-24 第六批：Phase 5 数值链路 + 图3/图4 绘图代码 + 图版式逐像素校准**：
 - **新增代码**：`python/calc_wbt.py`（RH / WBT(Stull + psychrometric 迭代) / SH / 趋势；25 项合成自检全过）、
@@ -59,7 +77,11 @@ Phase 5（湿热应力，2026-09-24 新增，数值链路已验证）：
 - `python/phase5_humid.py` — Phase 5 主链路：`check` / `fields`（逐日 WBT·SH）/ `stats`（图5 趋势 + 图6 统计）/ `all`
 - `python/fig3_attribution.py` — **论文图3**（FAR/PR 2×2，按原图逐像素校准）
 - `python/fig4_return_period.py` — **论文图4**（重现期位移 1×3；`--demo` 可渲染论文锚点版式自检图）
-- ⬜ 待补：`fig5_sst_trend.py`、`fig6_wbt.py`、`phase6_cesm.py gev`、`table1_attribution.py`
+- `python/fig5_sst_trend.py` — **论文图5**（SST / 蒸发 / 比湿 JAS 趋势三面板；`--synthetic` 版式自检）
+- `python/fig6_wbt.py` — **论文图6**（a/b 超阈曲线、c 重现期、d–f 复合日最大 WBT 场）
+- `python/table1_attribution.py` — **论文 Table 1**（62/78/72 天三点的 FAR/PR + 论文对照列）
+- `results/phase5_selftest.py` — Phase 5 纯合成自检（不读观测）→ `ALL PHASE5 SELFTESTS PASSED`
+- ⬜ 待补：`phase6_cesm.py gev`（图4 的海洋/陆地年暴露序列）、论文版 Supplementary Fig. S1
 
 ⚠️ **检测链路口径提示**：`python/detect_thw.R` 有吞错 bug，**仅存档勿用**。
 **（第三轮更正）`python/run_all.py` 现已海陆双路都走正式链路 `python/detect_events.R`**

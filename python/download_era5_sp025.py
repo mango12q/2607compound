@@ -25,7 +25,11 @@ download_era5_sp025.py — Phase 5 (湿热应力) 输入数据: ERA5 地表气�
     - daily_statistic   : daily_mean      (气压用日均值; WBT 公式的 p 为当日平均场)
     - time_zone         : utc+00:00
     - frequency         : 1_hourly
-    - area              : [66, -10, 30, 40]   (N, W, S, E) —— 与 tmax 下载框一致
+    - area              : [70, -16, 28, 44]   (N, W, S, E)
+                          ★ 2026-09-24 第五轮扩大：论文 Fig.5c 的地图范围实测为
+                          lon −15…43.5、lat 29…69，旧框 [66, −10, 30, 40] 会在
+                          西/北/东三侧被裁掉（图与论文不符）。此框同时覆盖
+                          Fig.6 的地中海缓冲分析域，故 sp 只需下一份。
     - data_format       : netcdf  (变量短名 sp)
 
 输出:
@@ -58,12 +62,18 @@ MERGED_PATH = os.path.join(ERA5_DIR, "ERA5_sp_1984_2023_daily.nc")
 DATASET = "derived-era5-single-levels-daily-statistics"
 VARIABLE = "surface_pressure"
 DAILY_STATISTIC = "daily_mean"
-AREA = [66, -10, 30, 40]          # CDS area 顺序: [N, W, S, E]
+AREA = [70, -16, 28, 44]          # CDS area 顺序: [N, W, S, E]
+# ★ 第五轮（2026-09-24）由 [66,-10,30,40] 扩大而来：论文 Fig.5c 的地图范围是
+#   lon −15…43.5 / lat 29…69，旧框会在西、北、东三侧裁掉（复现图与论文不一致）。
+#   本框也是 Fig.5c/Fig.6 的并集，故 sp 0.25° 只需下载这一份。
 DEFAULT_START, DEFAULT_END = 1984, 2023
 MAX_RETRY = 5
 
-# sp 合理性区间 (Pa): 欧洲框 30-66N 地面气压约 9.5e4 ~ 1.04e5 Pa
-SP_MIN, SP_MAX = 9.0e4, 1.06e5
+# sp 合理性区间 (Pa)
+# ★ 第五轮：下载框扩到 lat 28–70 / lon −16…44 后，框内含阿尔卑斯、挪威等高海拔格点，
+#   地面气压可低至 ~6.5e4 Pa（不再只是"海平面附近 9.5e4~1.04e5"）。
+#   这里放宽为 6.0e4 ~ 1.06e5 Pa；真正的范围检查在 phase5_humid 侧按域统计。
+SP_MIN, SP_MAX = 6.0e4, 1.06e5
 
 
 def ensure_utf8_console():

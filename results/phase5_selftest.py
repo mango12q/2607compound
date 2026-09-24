@@ -1,0 +1,141 @@
+"""
+phase5_selftest.py — Phase 5（图5/图6）**纯合成**自检：不读任何真实观测数据
+
+覆盖三件事：
+  1. 统计口径正确性：`phase5_humid.stats_fig6` 在**构造好的** WBT/SH 场上是否给出
+     可解析预期的超阈频率曲线、重现期曲线与复合日 WBT 场；
+  2. 年集合口径：图6 的 3 个复合年 + 论文 Fig.6c 图例的 11 个非复合年是否被正确使用；
+  3. 出图链路：`fig6_wbt.make_figure` 能否在合成统计产物上产出 PNG（a–c 面板）。
+
+运行：`python results\\phase5_selftest.py` → 期望 `ALL PHASE5 SELFTESTS PASSED`
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+import tempfile
+
+import numpy as np
+import xarray as xr
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(_HERE), "python"))
+
+import config as C              # noqa: E402
+import phase5_humid as P        # noqa: E402
+
+FAIL = []
+
+
+def check(name, cond, extra=""):
+    print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f"  {extra}" if extra else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def _synth_field(years, base=20.0, amp=3.0, seed=0, name="WBT"):
+    """
+    构造 (time, lat, lon) 合成场：与掩码网格一致，逐年升温便于验证超阈/重现期。
+
+    ⚠️ 必须**向量化**构造：40 年 × 68×148 的逐日循环会产生 1.4×10⁸ 个随机数，
+    第一版按天循环直接跑到超时。
+    """
+    mask = P._buffer_mask()
+    lat, lon = mask["lat"].values, mask["lon"].values
+    rng = np.random.default_rng(seed)
+    times = xr.date_range(f"{min(years)}-01-01", f"{max(years)}-12-31", freq="D")
+    doy = times.dayofyear.values.astype(float)
+    yr = times.year.values.astype(float)
+    season = amp * np.sin(2 * np.pi * (doy - 172) / 365.25)
+    year_off = (yr - min(years)) * 0.08
+    spatial = np.linspace(-1.0, 1.0, lat.size)[:, None] * np.ones(lon.size)
+    vals = (base + year_off[:, None, None] + season[:, None, None]
+            + spatial[None, :, :]
+            + rng.normal(0, 0.3, (times.size, lat.size, lon.size)))
+    return xr.DataArray(vals.astype("float32"), dims=("time", "lat", "lon"),
+                        coords={"time": times, "lat": lat, "lon": lon}, name=name)
+
+
+def main():
+    print("=" * 74)
+    print("Phase 5 自检（纯合成数据，不读磁盘观测）")
+    print("=" * 74)
+
+    mask = P._buffer_mask()
+    # 只需覆盖"复合年 + 若干非复合年"即可验证口径；全量 40 年会显著拖慢自检
+    years = sorted({*C.WBT_RP_YEARS, C.WBT_NONCOMPOUND_YEAR_PAPER,
+                    1984, 1988, 2004, 2008})
+
+    # 1) 年集合口径
+    print("\n1) 图6 年份集合口径（以论文 Fig.6c 图例为准）")
+    check("复合年 = 2003/2022/2023", tuple(C.WBT_RP_YEARS) == (2003, 2022, 2023))
+    check("非复合年 = 论文图例 11 年（含 2000）",
+          len(C.WBT_NONCOMPOUND_YEARS) == 11 and 2000 in C.WBT_NONCOMPOUND_YEARS,
+          f"{len(C.WBT_NONCOMPOUND_YEARS)} 年：{C.WBT_NONCOMPOUND_YEARS}")
+    check("S1 判读口径保留为敏感性对照",
+          set(C.WBT_NONCOMPOUND_YEARS_S1) <= set(C.WBT_NONCOMPOUND_YEARS) | {1985, 1989, 1998})
+
+    # 2) 统计链路
+    print("\n2) stats_fig6 在合成场上跑通并给出可解析结果")
+    wbt = _synth_field(years, base=22.0, amp=4.0, seed=1, name="WBT")
+    sh = wbt - 7.0
+    sh.name = "SH"
+    stats = P.stats_fig6(wbt, sh, verbose=False)
+    check("exceedance_curves 两种变量都在",
+          set(stats["exceedance_curves"]) == {"wbt", "sh"})
+    ec = stats["exceedance_curves"]["wbt"]
+    want = set(C.WBT_RP_YEARS) | set(C.WBT_NONCOMPOUND_YEARS)
+    check("超阈曲线覆盖全部 14 个设计年份（3 复合 + 11 非复合）",
+          set(map(int, ec)) == want,
+          f"got {len(ec)} 年 / need {len(want)} 年")
+    d23 = ec[2023]["days"]
+    d84 = ec[1984]["days"]
+    check("超阈天数随阈值单调不增",
+          all(np.diff([v for v in d23 if v is not None]) <= 1e-6))
+    check("升温年（2023）同阈值天数 ≥ 早期年（1984）",
+          float(d23[0]) >= float(d84[0]), f"2023={d23[0]:.1f} vs 1984={d84[0]:.1f}")
+    check("阈值轴长度 = config 定义",
+          len(ec[2023]["thresholds"]) == len(C.WBT_EXCEED_THRESHOLDS))
+    check("rp_curves 非空且含 2023", 2023 in set(map(int, stats["rp_curves"])),
+          f"got {sorted(map(int, stats['rp_curves']))}")
+    rp = stats["rp_curves"][2023]
+    fin = [v for v in rp["rp"] if v is not None]
+    check("重现期随阈值单调不减",
+          all(np.diff(fin) >= -1e-9), f"rp={np.round(fin[:5], 2)}…")
+    check("spatial_fields 三个复合年都在",
+          set(map(int, stats["spatial_fields"])) == set(C.WBT_RP_YEARS))
+    check("annual_days 含 25.5 与 19 两档",
+          set(stats["annual_days"]) == {"wbt25.5", "sh19"})
+
+    # 3) 出图链路（合成统计产物 → PNG）
+    print("\n3) fig6_wbt 出图链路（a–c 面板）")
+    tmp = tempfile.mkdtemp(prefix="phase5_selftest_")
+    try:
+        jpath = os.path.join(tmp, "fig6_stats.json")
+        with open(jpath, "w", encoding="utf-8") as fh:
+            json.dump(stats, fh, default=lambda o: (None if isinstance(o, float)
+                                                    and not np.isfinite(o) else str(o)))
+        import fig6_wbt
+        out = fig6_wbt.make_figure(outdir=tmp, dpi=90, only_curves=True,
+                                   stats_path=jpath)
+        check("fig6_wbt 产出 PNG", os.path.exists(out) and os.path.getsize(out) > 10_000,
+              f"{os.path.getsize(out) if os.path.exists(out) else 0} bytes")
+    except Exception as exc:                                   # pragma: no cover
+        import traceback
+        traceback.print_exc()
+        check("fig6_wbt 产出 PNG", False, f"{type(exc).__name__}: {exc}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    print("\n" + "=" * 74)
+    if FAIL:
+        print(f"SELFTEST FAILED: {len(FAIL)} 项 -> {FAIL}")
+        return 1
+    print("ALL PHASE5 SELFTESTS PASSED")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -51,6 +51,10 @@ ERA5_SP1_PATTERN = os.path.join(ERA5_SP1_DIR, "pres.sfc.daily.era5.????.nc")
 
 # 欧洲分析框（与下载脚本一致：N, W, S, E = 66, −10, 30, 40）
 ERA5_EUROPE_BOX = {"lat": (30.0, 66.0), "lon": (-10.0, 40.0)}
+# 论文 Fig.5 三个面板的**地图范围**（第五轮实测拟合：lon −15…43.5、lat 29…69）
+# —— 比下载框大；SH 趋势（图5c）按此范围计算，sp 0.25° 的下载框已相应扩大到
+#    [70, −16, 28, 44]（见 download_era5_sp025.AREA）
+ERA5_MAP_BOX = {"lat": (29.0, 69.0), "lon": (-15.0, 43.5)}
 
 # ── OAFlux 蒸发（Phase 5 图5b 输入）──
 OAFLUX_RAW_DIR = os.path.join(OAFLUX_DIR, "raw")
@@ -67,10 +71,17 @@ TREND_MONTHS = (7, 8, 9)          # 图5 = JAS
 WBT_RP_MONTHS = (6, 7, 8)         # 图6c = JJA（论文自身与图5不同，勿统一）
 WBT_RP_THRESHOLDS = tuple(round(22.0 + 0.5 * i, 1) for i in range(13))  # 图6c：22–28 °C 步长 0.5
 WBT_RP_YEARS = (2003, 2022, 2023)              # 复合年（论文明确）
-WBT_NONCOMPOUND_YEARS = (1984, 1985, 1986, 1988, 1989, 1991, 1993, 1998)  # S1 判读主口径
-WBT_NONCOMPOUND_YEARS_10 = WBT_NONCOMPOUND_YEARS + (1992, 1996)           # 敏感性 A
-WBT_NONCOMPOUND_YEARS_11 = WBT_NONCOMPOUND_YEARS + (1992, 1996, 1987)     # 敏感性 B
-WBT_NONCOMPOUND_YEAR_PAPER = 2000               # 论文正文点名的"非复合年 2000"（敏感性 C）
+# ★ 2026-09-24 第五轮：论文 Fig.6c 图例直接列出 11 个"非复合年" —— 以论文为准（不再靠 S1 判读拼凑）：
+#   1984 1986 1988 1990 1991 1992 1993 1996 2000 2004 2008
+#   （与 caption "compared to 11 non-compound years" 一致，且含正文点名的 2000 年）
+WBT_NONCOMPOUND_YEARS = (1984, 1986, 1988, 1990, 1991, 1992, 1993, 1996, 2000, 2004, 2008)
+# 以下为"读 Supplementary Fig. S1 逐格判读"得到的旧口径，保留作敏感性对照（第五轮降级）：
+WBT_NONCOMPOUND_YEARS_S1 = (1984, 1985, 1986, 1988, 1989, 1991, 1993, 1998)
+WBT_NONCOMPOUND_YEARS_S1_10 = WBT_NONCOMPOUND_YEARS_S1 + (1992, 1996)
+WBT_NONCOMPOUND_YEAR_PAPER = 2000               # 论文正文点名的"非复合年 2000"
+# 图6a/6b 的**超阈频率曲线**阈值轴（论文原图：a 为 25.5–27.0 °C；b 为 19.0–20.7 g/kg）
+WBT_EXCEED_THRESHOLDS = tuple(round(25.5 + 0.1 * i, 1) for i in range(16))   # 25.5 … 27.0
+SH_EXCEED_THRESHOLDS = tuple(round(19.0 + 0.1 * i, 1) for i in range(21))    # 19.0 … 21.0
 DAILY_STATS_TMPL = "ERA5 daily-statistics（daily_maximum / daily_mean, UTC, 1-hourly）"
 
 

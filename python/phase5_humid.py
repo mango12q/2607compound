@@ -123,17 +123,18 @@ def _sel_box(da: xr.DataArray, lat: Tuple[float, float], lon: Tuple[float, float
 # ══════════════════════════════════════════════════════════════════════════
 # 步骤 1：逐日 WBT / SH 场
 # ══════════════════════════════════════════════════════════════════════════
-def _sp_for_year(year: int, sp_source: str):
+def _sp_for_year(year: int, sp_source: str, region: Optional[dict] = None):
     """返回该年的 sp（Pa）——0.25° 优先，缺失时按 sp_source 退回 1.0°。"""
     if sp_source in ("auto", "sp025"):
         try:
-            return load_era5_var("sp025", period=(year, year), to_celsius=False)
+            return load_era5_var("sp025", period=(year, year), to_celsius=False,
+                                 region=region)
         except FileNotFoundError as exc:
             if sp_source == "sp025":
                 raise
             print(f"  [warn] 0.25° sp 不可用（{exc.__class__.__name__}）；"
                   f"退回 1.0° sp（分辨率降级，D11）")
-    return load_era5_var("sp", period=(year, year), to_celsius=False)
+    return load_era5_var("sp", period=(year, year), to_celsius=False, region=region)
 
 
 def compute_fields(years: Sequence[int] = None, wbt_method: str = None,
@@ -221,11 +222,12 @@ def load_fields(period: Optional[Tuple[int, int]] = None):
 def trends_fig5(save: bool = True, verbose: bool = True) -> Dict:
     _ensure_dirs()
     out = {}
+    box = C.ERA5_MAP_BOX          # 论文 Fig.5 的地图范围（比下载框大，第五轮实测）
 
-    # 5a OISST SST，JAS 1994–2023 —— 只算地中海/欧洲海域框，省内存
+    # 5a OISST SST，JAS 1994–2023 —— 只算论文 Fig.5 的地图范围，省内存
     oisst = load_oisst()
     sst = lon_to_180(oisst["SST"])
-    sst = _sel_box(sst, (30.0, 50.0), (-10.0, 45.0))
+    sst = _sel_box(sst, box["lat"], box["lon"])
     slope, pval = calc_sst_trend(sst.to_dataset(name="SST"),
                                  period=C.SST_TREND_PERIOD, months=C.TREND_MONTHS)
     out["sst"] = (slope, pval)
@@ -237,7 +239,7 @@ def trends_fig5(save: bool = True, verbose: bool = True) -> Dict:
     try:
         oa = load_oaflux()
         ev = oaflux_evap_cm_per_year(oa)
-        ev = _sel_box(lon_to_180(ev), (30.0, 50.0), (-10.0, 45.0))
+        ev = _sel_box(lon_to_180(ev), box["lat"], box["lon"])
         slope, pval = linear_trend_per_decade(
             seasonal_mean(ev, C.TREND_MONTHS, C.EVAP_TREND_PERIOD))
         slope.attrs["units"] = "cm/yr per decade"
@@ -251,10 +253,11 @@ def trends_fig5(save: bool = True, verbose: bool = True) -> Dict:
 
     # 5c ERA5 SH，JAS 1994–2023（g/kg per decade）
     # ★ 只用 d2m（+sp）算 SH —— **不需要 tmax**，因此 tmax 未下载也能先跑图5c
+    #   区域按论文 Fig.5 的地图范围取（d2m 是全球场；sp 0.25° 的下载框已相应扩大）
     sh_parts = []
     for yr in range(C.SH_TREND_PERIOD[0], C.SH_TREND_PERIOD[1] + 1):
-        d2m = load_era5_var("d2m", period=(yr, yr), to_celsius=True)
-        sp = _sp_for_year(yr, "auto")
+        d2m = load_era5_var("d2m", period=(yr, yr), to_celsius=True, region=box)
+        sp = _sp_for_year(yr, "auto", region=box)
         if not (sp.sizes.get("lat") == d2m.sizes.get("lat")
                 and sp.sizes.get("lon") == d2m.sizes.get("lon")):
             sp = sp.reindex(lat=d2m.lat, lon=d2m.lon, method="nearest")
@@ -334,8 +337,40 @@ def stats_fig6(wbt: xr.DataArray, sh: xr.DataArray, verbose: bool = True) -> Dic
         "region": C.COASTAL_BUFFER_REGION, "buffer_km": C.COASTAL_BUFFER_KM,
         "n_cells": int(mask.sum()),
     }}
+    # 图6 关心的年份 = 3 个复合年 + 论文 Fig.6c 图例列出的 11 个非复合年
+    # （★ 第五轮：**不含** S1 判读的敏感性年份——论文原图正好 14 条曲线，
+    #   多画年份会让图与论文不一致；S1 口径另在 groups 里登记备用）
+    years_of_interest = sorted(set(C.WBT_RP_YEARS) | set(C.WBT_NONCOMPOUND_YEARS))
 
-    # ── 6a / 6b：全年超阈天数的区域平均序列 ────────────────────────────
+    # ── 6a / 6b：超阈频率曲线（论文原图是"曲线家族"，不是单值柱状图）─────
+    # ★ 2026-09-24 第五轮更正：论文 Fig.6a/b 的 x 轴是**阈值**（a: WBT 25.5–27.0 °C、
+    #   b: SH 19.0–20.7 g/kg），y 轴是"Exceedance frequency (Days)"，**每年一条曲线**
+    #   （3 个复合年粗实线 + 11 个非复合年细虚线）。TECHNICAL_SPEC_PHASE_C §C.4 把它
+    #   写成"每个年份一根柱"是错的，出图与统计都按原图改。
+    #   统计口径：对每个阈值 t，先逐格点统计"全年 ≥t 的天数"，再在缓冲区内做区域平均
+    #   ——即 mean_cells(Σ_days 1[v≥t])，不能先区域平均再判阈值（两者不等价）。
+    curves = {"wbt": {}, "sh": {}}
+    for tag, da, thresholds in (("wbt", wbt, C.WBT_EXCEED_THRESHOLDS),
+                                ("sh", sh, C.SH_EXCEED_THRESHOLDS)):
+        buf = _to_buffer_grid(da, mask)
+        thr_arr = np.asarray(thresholds, dtype="float32")
+        for yr in years_of_interest:
+            sub = buf.sel(time=(buf["time"].dt.year == yr))
+            if sub.sizes.get("time", 0) == 0:
+                continue
+            v = sub.values                                  # (time, lat, lon)
+            cnt = (v[:, None, :, :] >= thr_arr[None, :, None, None]).sum(axis=0)
+            cnt = np.where(mask.values[None, :, :], cnt, np.nan)
+            days = np.nanmean(cnt, axis=(1, 2))
+            curves[tag][int(yr)] = {
+                "thresholds": [float(t) for t in thresholds],
+                "days": [None if not np.isfinite(d) else float(d) for d in days],
+            }
+    out["exceedance_curves"] = curves
+    out["exceedance_thresholds"] = {"wbt": list(C.WBT_EXCEED_THRESHOLDS),
+                                    "sh": list(C.SH_EXCEED_THRESHOLDS)}
+
+    # 单阈值年度天数（保留：报告与锚点核对用；论文正文的"2023 ≈40 天"即出自 6a 的 25.5 点）
     series = {}
     for tag, da, thr in (("wbt25.5", wbt, C.WBT_THRESHOLD), ("sh19", sh, C.SH_THRESHOLD)):
         buf = _to_buffer_grid(da, mask)
@@ -349,23 +384,21 @@ def stats_fig6(wbt: xr.DataArray, sh: xr.DataArray, verbose: bool = True) -> Dic
             nc_mean = float(np.mean(nc_vals)) if nc_vals else float("nan")
             print(f"  [{tag}] 2023 = "
                   f"{'（该年不在数据里）' if y23 is None else f'{y23:.1f} 天'}；"
-                  f"非复合年主口径均值 = "
+                  f"非复合年（论文 Fig.6c 图例 11 年）均值 = "
                   f"{'（无可用年）' if not nc_vals else f'{nc_mean:.1f} 天'}")
     out["annual_days"] = series
     out["groups"] = {
         "compound_years": list(C.WBT_RP_YEARS),
-        "noncompound_main": list(C.WBT_NONCOMPOUND_YEARS),
-        "noncompound_10": list(C.WBT_NONCOMPOUND_YEARS_10),
-        "noncompound_11": list(C.WBT_NONCOMPOUND_YEARS_11),
+        "noncompound_paper11": list(C.WBT_NONCOMPOUND_YEARS),
+        "noncompound_s1_judgement": list(C.WBT_NONCOMPOUND_YEARS_S1),
         "paper_named_2000": C.WBT_NONCOMPOUND_YEAR_PAPER,
     }
 
     # ── 6c：WBT 22–28 °C 的重现期（JJA 窗口）───────────────────────────
     buf_wbt = _to_buffer_grid(wbt, mask)
     jja = buf_wbt.where(buf_wbt["time"].dt.month.isin(list(C.WBT_RP_MONTHS)), drop=True)
-    curves, daily_jja = {}, {}
-    for yr in list(C.WBT_RP_YEARS) + list(C.WBT_NONCOMPOUND_YEARS_11) + \
-            [C.WBT_NONCOMPOUND_YEAR_PAPER]:
+    curves_rp, daily_jja = {}, {}
+    for yr in sorted(years_of_interest):
         if yr not in set(jja["time"].dt.year.values):
             continue
         ser = domain_mean_series(jja.sel(time=jja.time.dt.year == yr))
@@ -374,7 +407,7 @@ def stats_fig6(wbt: xr.DataArray, sh: xr.DataArray, verbose: bool = True) -> Dic
                               "max": float(np.nanmax(vals)),
                               "mean": float(np.nanmean(vals))}
         curve = gev_return_period_curve(vals, C.WBT_RP_THRESHOLDS)
-        curves[int(yr)] = {
+        curves_rp[int(yr)] = {
             "thresholds": [float(t) for t in curve["thresholds"]],
             "rp": [None if not np.isfinite(v) else float(v) for v in curve["rp"]],
             "rp_lo": [None if not np.isfinite(v) else float(v) for v in curve["rp_lo"]],
@@ -385,27 +418,31 @@ def stats_fig6(wbt: xr.DataArray, sh: xr.DataArray, verbose: bool = True) -> Dic
                         "scale": curve["params"][2]}),
         }
         if verbose:
-            rp26 = curves[int(yr)]["rp"][C.WBT_RP_THRESHOLDS.index(26.0)]
+            rp26 = curves_rp[int(yr)]["rp"][C.WBT_RP_THRESHOLDS.index(26.0)]
             print(f"  [6c {yr}] JJA 区域平均 WBT max={daily_jja[int(yr)]['max']:.2f} °C，"
                   f"RP(26 °C) = {rp26 if rp26 is None else round(rp26, 2)} 年")
-    out["rp_curves"] = curves
+    out["rp_curves"] = curves_rp
     out["jja_summary"] = daily_jja
 
     # ── 6d–f：复合日 WBT 空间场（平均 + 最大）──────────────────────────
+    # ★ 第五轮更正：论文 d–f 是**整个地中海—欧洲陆地区域**的地图（不限 100 km 缓冲），
+    #   故这里用复合掩码的完整网格（裁到 ERA5 欧洲框内）做映射。
     comp = _compound_mask((min(C.WBT_RP_YEARS), max(C.WBT_RP_YEARS)))
-    comp_buf = _to_buffer_grid(comp.astype("float32"), mask).fillna(0) > 0.5
-    wbt_buf = _to_buffer_grid(wbt, mask)
+    lat0, lat1 = C.ERA5_EUROPE_BOX["lat"]
+    lon0, lon1 = C.ERA5_EUROPE_BOX["lon"]
+    template = comp.sel(lat=slice(lat0, lat1), lon=slice(lon0, lon1))
+    wbt_reg = wbt.reindex(lat=template.lat, lon=template.lon, method="nearest")
+    comp_reg = (template.fillna(0) > 0.5)
     fields = {}
     for yr in C.WBT_RP_YEARS:
         # ⚠️ 两边的年份布尔掩码必须各自基于**自己的** time 轴构造
-        #    （复合掩码覆盖 2003–2023，WBT 场可能只覆盖其中一段）
-        c = comp_buf.sel(time=(comp_buf["time"].dt.year == yr))
-        w = wbt_buf.sel(time=(wbt_buf["time"].dt.year == yr))
+        c = comp_reg.sel(time=(comp_reg["time"].dt.year == yr))
+        w = wbt_reg.sel(time=(wbt_reg["time"].dt.year == yr))
         w, c = xr.align(w, c, join="inner")
         n_days = int(c.sum())
         sel = w.where(c)
         if n_days == 0 or sel.sizes.get("time", 0) == 0:
-            empty = wbt_buf.isel(time=0, drop=True) * np.nan
+            empty = wbt_reg.isel(time=0, drop=True) * np.nan
             fields[int(yr)] = {"n_compound_days": 0, "mean": empty, "max": empty.copy()}
             if verbose:
                 print(f"  [6d-f {yr}] 该年无复合日 / 不在 WBT 数据范围内 → 场置 NaN")
@@ -416,7 +453,7 @@ def stats_fig6(wbt: xr.DataArray, sh: xr.DataArray, verbose: bool = True) -> Dic
             "max": sel.max(dim="time", skipna=True),
         }
         if verbose:
-            print(f"  [6d-f {yr}] 缓冲区内复合日 {n_days} 天，"
+            print(f"  [6d-f {yr}] 陆地区域内复合日 {n_days} 天，"
                   f"复合日平均 WBT 区域均值 "
                   f"{float(sel.mean(dim='time').mean()):.2f} °C，"
                   f"最大 {float(sel.max()):.2f} °C")
