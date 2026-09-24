@@ -7,10 +7,12 @@
 
 | 文件 | 内容 | 什么时候读 |
 |---|---|---|
-| `复现报告.md` | **主报告**：进度、锚点验证总表 §4、方法学决策 **D1–D7**、偏差清单 §5.1、图1j/l 定稿 §6 | 任何时候，第一份 |
+| `复现报告.md` | **主报告**：进度、锚点验证总表 §4、方法学决策 **D1–D11**、偏差清单 §5.1、图1j/l 定稿 §6 | 任何时候，第一份 |
 | `phase6审计报告.md` | Phase 6 归因管线审计（6 份合并）：问题清单、逐维度结论、修复前后对比、4 份分报告全文 | 跑 Phase 6 之前 |
-| `规划一致性审查.md` | 规划文件 vs 论文**三轮**审查（含第二轮对第一轮的 3 处更正、第三轮的 P0 阻塞项） | 动 Phase 5/6 规格之前 |
+| `规划一致性审查.md` | 规划文件 vs 论文**四轮**审查（含第二轮对第一轮的 3 处更正、第三轮的 P0 阻塞项、第四轮的图版式逐像素校准与数据探针） | 动 Phase 5/6 规格之前 |
 | `方法与证据.md` | 目视比对、E-OBS 版本核查、S1 读取、R/Python 检测交叉验证 + 2 份历史存档 | 追溯某个结论怎么来的 |
+
+> 另外两份在**仓库根目录 / docs/**：根目录 `待办.md`（操作指引）、`docs/阶段计划.md`（阶段计划与验收锚点）。
 
 ## 代码（留在本目录的）
 
@@ -22,13 +24,16 @@
 | `run_detection_R.py` | Phase 1：手动重跑海陆检测（`--help` 看用法） |
 | `phase6_selftest.py` | Phase 6 口径**纯合成**自检（不读数据），应输出 `ALL SELFTESTS PASSED` |
 
+> Phase 5 的公式自检在 `python/calc_wbt.py` 与 `python/gev_return_period.py` 的 `__main__` 里
+> （各自直接 `python python\calc_wbt.py` / `python python\gev_return_period.py` 即可）。
+
 ## 子目录
 
 | 目录 | 内容 |
 |---|---|
-| `figures/` | 全部出图（图1/图2/S1/S2、`fig7_p0_validation*.png` = Phase 6 P0 验证图，**沿用旧编号命名**）。**图3–图6 尚未产出**：Phase 6 的阈值扫描图 `fig3_attribution_sweep{tag}.png` 待全量跑通后生成 |
-| `tables/` | 数值快照 JSON/CSV（`fig_stats_*.json` 等，**不入 Git**） |
-| `intermediate/` | 中间产物（不入 Git；OISST/E-OBS/CESM 检测结果与年度指标） |
+| `figures/` | 全部出图。**已完成**：图1（a–m）、图2（a–d）、S1（j–l maxcell）、S2（MHW 包络）、**图3**（`fig3_attribution{tag}.*`，2026-09-24 新增）。**待补**：图4（`fig4_return_period{tag}.*`；当前只有 `_demo` 版式自检图）、图5、图6。`fig7_p0_validation*.png` = Phase 6 P0 验证图（沿用旧编号命名） |
+| `tables/` | 数值快照 JSON/CSV（`fig_stats_*.json`、`fig5_stats.json`、`fig6_stats.json`、`phase6_attrib_sweep*.csv` 等，**不入 Git**） |
+| `intermediate/` | 中间产物（不入 Git；OISST/E-OBS/CESM 检测结果、年度指标、逐日 WBT/SH、趋势场） |
 | `tools/` | 诊断与复算脚本，按主题分组，见 `tools/README.md` |
 | `s1/` | 补充材料 Fig. S1 的裁剪图（不入 Git，由 `tools/S1读取/` 复现） |
 
