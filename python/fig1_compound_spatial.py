@@ -137,7 +137,7 @@ def plot_figure1(output_dir=None):
             sc = ax.scatter(LON[m], LAT[m], c=data[m], cmap=CMAP_A_I,
                             vmin=CB_A_I['vmin'], vmax=CB_A_I['vmax'],
                             s=16, marker='o', linewidths=0,
-                            transform=proj, zorder=4, rasterized=True)
+                            transform=proj, zorder=4)
             sc_ref = sc_ref or sc
         ax.text(0.02, 0.985, f"({chr(ord('a') + pi)})", transform=ax.transAxes,
                 ha='left', va='top', fontsize=11, fontweight='bold', zorder=6)
@@ -202,8 +202,7 @@ def plot_figure1(output_dir=None):
     if ok.any():
         sc2 = ax.scatter(LON[ok], LAT[ok], c=pv[ok], cmap=CMAP_M,
                          vmin=CB_M['vmin'], vmax=CB_M['vmax'],
-                         s=16, marker='o', linewidths=0, transform=proj, zorder=4,
-                         rasterized=True)
+                         s=16, marker='o', linewidths=0, transform=proj, zorder=4)
     # 用相对本面板的 set_title，避免与上方 j–l 的 x 轴标签重叠
     ax.set_title('Co-occurrence Probability\n(mean over 2003-2023)',
                  fontsize=14, pad=10)

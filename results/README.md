@@ -33,6 +33,7 @@
 | 目录 | 内容 |
 |---|---|
 | `figures/` | 全部出图（**论文图画清单已全部有脚本**）：图1（a–m）、图2（a–d）、图3（`fig3_attribution{tag}.*`）、图4（`fig4_return_period{tag}.*`）、图5（`fig5_sst_trend.*`）、图6（`fig6_wbt.*`）、**论文版 S1**（`figS1_paper_annual_maps.*`，1984–2023 年际组图）、本项目补充图 S2（`figS2_jkl_mhw_envelope.*`）。另有 `*_synthetic_demo.*` / `*_demo.*` / `fig7_p0_validation*.png` 等**版式自检与流程验证图，不是结果** |
+| `figures/*_pyEvents.pdf`、`fig1_compound_spatial_exceedance_backup.*` | **历史存档**：`_pyEvents` 是早期 **Python 检测口径**（D1 已弃用、改用 R heatwaveR）的图1/图2 版本；`_exceedance_backup` 是**方案 A（逐日共超标）**的图1 主图备份（2026-09-23 切到 MHW 包络后留档）。**均不代表当前口径**，仅作对照 |
 | `tables/` | 数值快照 JSON/CSV（`fig_stats_*.json`、`fig5_stats.json`、`fig6_stats.json`、`phase6_attrib_sweep*.csv` 等，**不入 Git**） |
 | `intermediate/` | 中间产物（不入 Git；OISST/E-OBS/CESM 检测结果、年度指标、逐日 WBT/SH、趋势场） |
 | `tools/` | 诊断与复算脚本，按主题分组，见 `tools/README.md` |
