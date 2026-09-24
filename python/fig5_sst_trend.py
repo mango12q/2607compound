@@ -130,7 +130,8 @@ def make_figure(outdir: str = None, dpi: int = 300, synthetic: bool = False) -> 
         cmap = ListedColormap(colors)
         norm = BoundaryNorm(levels, cmap.N)
         mm = ax.pcolormesh(da["lon"], da["lat"], da.values, cmap=cmap, norm=norm,
-                           shading="auto", transform=ccrs.PlateCarree(), zorder=3)
+                           shading="auto", transform=ccrs.PlateCarree(), zorder=3,
+                                     rasterized=True)
         mappable[letter] = mm
         ax.set_title(f"{title}\n{subtitle}", fontsize=12)
         ax.text(-0.02, 1.02, f"{letter})", transform=ax.transAxes, fontsize=14,

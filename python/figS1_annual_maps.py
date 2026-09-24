@@ -73,7 +73,8 @@ def make_figure(outdir: str = None, var: str = "compound_mhw_thw", vmax: float =
         f = f.where(f > 0)
         mappable = ax.pcolormesh(f["lon"], f["lat"], f.values, cmap="YlOrRd",
                                  vmin=0, vmax=float(vmax), shading="auto",
-                                 transform=ccrs.PlateCarree(), zorder=2)
+                                 transform=ccrs.PlateCarree(), zorder=2,
+                                 rasterized=True)
         ax.set_xticks([])
         ax.set_yticks([])
         ax.set_title(str(int(yr)), fontsize=9, pad=1.5)

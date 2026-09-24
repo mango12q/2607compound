@@ -1,4 +1,4 @@
-"""
+r"""
 fig6_wbt.py — 论文图 6：地中海海岸 100 km 缓冲区的湿热极端（WBT / SH）
 
 ★ 2026-09-24 第五轮：按 `pdf_extract/fig6_p08.png` **原图**重定面板语义
@@ -277,7 +277,8 @@ def _plot_maps(fig, gs, comp_years, ListedColormap, BoundaryNorm, plt):
             field = ds["wbt_max"] if "wbt_max" in ds else ds[list(ds.data_vars)[0]]
             mappable = ax.pcolormesh(field["lon"], field["lat"], field.values,
                                      cmap=cmap, norm=norm, shading="auto",
-                                     transform=ccrs.PlateCarree(), zorder=3)
+                                     transform=ccrs.PlateCarree(), zorder=3,
+                                     rasterized=True)
         else:
             print(f"  [warn] 缺 {path}（先跑 phase5_humid.py stats）")
         ax.text(0.97, 0.97, str(yr), transform=ax.transAxes, fontsize=15,
