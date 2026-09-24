@@ -27,6 +27,53 @@ LOGS_DIR = os.path.join(BASE_DIR, "logs")
 OISST_RAW_PATTERN = os.path.join(OISST_DIR, "temp_raw", "oisst-avhrr-v02r01.*.nc")
 OISST_MERGED_FILE = os.path.join(OISST_DIR, "oisst_v2.1_1982_2023.nc")
 
+# ── ERA5（Phase 5 输入；实测结构见 results/规划一致性审查.md 第四轮 §数据探针）──
+# tmax   欧洲框 0.25° 日最高（CDS daily-statistics, daily_maximum），变量 mx2t，K，
+#        维度 (valid_time, latitude, longitude)，lat 66→30 **降序**，lon −10→40 升序
+ERA5_TMAX_DIR = os.path.join(ERA5_DIR, "tmax_eur_daily")
+ERA5_TMAX_PATTERN = os.path.join(ERA5_TMAX_DIR, "tmax_eur_*.nc")
+ERA5_TMAX_MERGED_FILE = os.path.join(ERA5_DIR, "ERA5_tmax_1984_2023_daily.nc")
+
+# d2m    全球 0.25° 日露点（daily_mean），变量 d2m，K，(valid_time, lat, lon)，
+#        lat 90→−90 降序，lon −180..180 升序；573 个月度文件 + yearly/ 47 个年度文件
+ERA5_D2M_DIR = os.path.join(ERA5_DIR, "d2m_global_daily")
+ERA5_D2M_PATTERN = os.path.join(ERA5_D2M_DIR, "d2m_global_????_??.nc")
+ERA5_D2M_YEARLY_PATTERN = os.path.join(ERA5_D2M_DIR, "yearly", "d2m_global_????.nc")
+
+# sp     0.25° 欧洲框（数据集 3b+，⬜ 待下载）：变量 sp，Pa，(valid_time, lat, lon)
+ERA5_SP025_DIR = os.path.join(ERA5_DIR, "sp_eur_daily")
+ERA5_SP025_PATTERN = os.path.join(ERA5_SP025_DIR, "sp_eur_*.nc")
+ERA5_SP025_MERGED_FILE = os.path.join(ERA5_DIR, "ERA5_sp_1984_2023_daily.nc")
+
+# sp     1.0° 全球（旧件，仅作敏感性/兜底）：⚠️ lon 为 0..360、时间戳 11:30、维度名 time
+ERA5_SP1_DIR = os.path.join(ERA5_DIR, "sp")
+ERA5_SP1_PATTERN = os.path.join(ERA5_SP1_DIR, "pres.sfc.daily.era5.????.nc")
+
+# 欧洲分析框（与下载脚本一致：N, W, S, E = 66, −10, 30, 40）
+ERA5_EUROPE_BOX = {"lat": (30.0, 66.0), "lon": (-10.0, 40.0)}
+
+# ── OAFlux 蒸发（Phase 5 图5b 输入）──
+OAFLUX_RAW_DIR = os.path.join(OAFLUX_DIR, "raw")
+OAFLUX_MERGED_FILE = os.path.join(OAFLUX_DIR, "OAFlux_evap_1991_2020_monthly.nc")
+
+# ── Phase 5 计算口径 ──
+WBT_METHOD = "iterative"          # {'iterative','stull'}；论文未给公式，见 calc_wbt.py 文档与 D8
+WBT_VALID_RANGE = (-20.0, 50.0)   # Stull 公式适用范围（仅用于合理性检查）
+SH_MIN, SH_MAX = 0.0, 40.0        # SH 合理性区间（g/kg）
+SST_TREND_PERIOD = (1994, 2023)   # 图5a
+EVAP_TREND_PERIOD = (1991, 2020)  # 图5b
+SH_TREND_PERIOD = (1994, 2023)    # 图5c
+TREND_MONTHS = (7, 8, 9)          # 图5 = JAS
+WBT_RP_MONTHS = (6, 7, 8)         # 图6c = JJA（论文自身与图5不同，勿统一）
+WBT_RP_THRESHOLDS = tuple(round(22.0 + 0.5 * i, 1) for i in range(13))  # 图6c：22–28 °C 步长 0.5
+WBT_RP_YEARS = (2003, 2022, 2023)              # 复合年（论文明确）
+WBT_NONCOMPOUND_YEARS = (1984, 1985, 1986, 1988, 1989, 1991, 1993, 1998)  # S1 判读主口径
+WBT_NONCOMPOUND_YEARS_10 = WBT_NONCOMPOUND_YEARS + (1992, 1996)           # 敏感性 A
+WBT_NONCOMPOUND_YEARS_11 = WBT_NONCOMPOUND_YEARS + (1992, 1996, 1987)     # 敏感性 B
+WBT_NONCOMPOUND_YEAR_PAPER = 2000               # 论文正文点名的"非复合年 2000"（敏感性 C）
+DAILY_STATS_TMPL = "ERA5 daily-statistics（daily_maximum / daily_mean, UTC, 1-hourly）"
+
+
 EOBS_RAW_FILES = [
     os.path.join(EOBS_DIR, "tg_ens_mean_0.25deg_reg_1980-1994_v33.0e.nc"),
     os.path.join(EOBS_DIR, "tg_ens_mean_0.25deg_reg_1995-2010_v33.0e.nc"),

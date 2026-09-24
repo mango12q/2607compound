@@ -4,7 +4,23 @@
 
 学术复现项目，非典型软件仓库。目标：复现论文 *Compound coastal marine–terrestrial heatwaves associated with humid-heat stress in Europe*（Scientific Reports 2025）。
 
-**当前进度（2026-09-23）**：Phase 1-4（观测链路：检测→配对→复合→图1/图2/S1/S2）完成；图1j-l 已切换为 MHW 包络口径（方案 B），共超标口径备份为 fig1_compound_spatial_exceedance_backup.*；**图1j/l 的绝对量级已定稿为"未复现项"**（定性一致、定量不可复现、原文口径不足以唯一确定——见 `results/复现报告.md` §6，停止口径搜索）；Phase 6 P0（CESM 3 成员管线 + v2 反事实基准）验证通过，全量未跑；Phase 5（湿热应力）与 Phase 7（写作）未开始。详见 `results/复现报告.md`。
+**当前进度（2026-09-24）**：Phase 1-4（观测链路：检测→配对→复合→图1/图2/S1/S2）完成；图1j-l 已切换为 MHW 包络口径（方案 B），共超标口径备份为 fig1_compound_spatial_exceedance_backup.*；**图1j/l 的绝对量级已定稿为"未复现项"**（定性一致、定量不可复现、原文口径不足以唯一确定——见 `results/复现报告.md` §6，停止口径搜索）；Phase 6 P0（CESM 3 成员管线 + v2 反事实基准）验证通过，全量未跑；**Phase 5 数值链路已落地**（`calc_wbt.py` / `gev_return_period.py` / `load_data.py` 的 ERA5·OAFlux 加载器 / `phase5_humid.py`），**图5·图6 绘图脚本与 Phase 6 的 `gev` 子命令仍待补**；Phase 7 未开始。详见 `results/复现报告.md`。
+
+**2026-09-24 第六批：Phase 5 数值链路 + 图3/图4 绘图代码 + 图版式逐像素校准**：
+- **新增代码**：`python/calc_wbt.py`（RH / WBT(Stull + psychrometric 迭代) / SH / 趋势；25 项合成自检全过）、
+  `python/gev_return_period.py`（GEV MLE + bootstrap + FixGHG→ALL 重现期映射 + 图6c 阈值曲线；16 项自检全过）、
+  `python/phase5_humid.py`（Phase 5 主链路：`check` / `fields` / `stats` / `all`）、
+  `python/fig3_attribution.py`（论文图3，已用 P0 产物实跑出图）、
+  `python/fig4_return_period.py`（论文图4，含 `--demo` 版式自检图）。
+- **`python/load_data.py` 扩展**：ERA5 tmax / d2m / sp（0.25° 与 1.0° 兜底）/ OAFlux 加载器；
+  统一维度名（`valid_time`→`time`）、经度（0..360→−180..180）、纬度升序、时间戳 floor 到日；
+  `check_phase5_inputs()` 做开工前就位检查。实测 tmax(1 月) / d2m(全年) / sp 1.0°(全年) 均正常加载。
+- **★ 图版式逐像素校准（推翻 SPEC 两处描述）**：`TECHNICAL_SPEC_PHASE_B.md` §B.4 称图4 为"双对数"——
+  **实测 x 轴是 5/10/20/50/100 等距分类轴**；且 **§B.5 的图4 锚点（2.1/3.3/5.5/11.5/20.7 等）是图上
+  印刷的 CI 下界，不是柱高**（柱高 = 中位数，图中不印）。图3 为 **2×2**（a/b 欧岸、c/d 地中海&黑海），
+  x 上限上行 105、下行 100；PR 面板 b 为 1–1000 对数、d 为 1–100 对数；不确定带 alpha=0.40。
+- **文档**：新增根目录 **`待办.md`**（操作指引：下载 → 复核 → Phase 5 → Phase 6）与
+  **`docs/阶段计划.md`**（阶段计划、图号清单、验收锚点、阶段闸门）。
 
 **2026-09-23 第四批：Phase 6 归因管线正确性审计 + 修复（任务 D）**：Lead + 3 名独立审计员四路并行，逐项核验 `python/phase6_cesm.py`。**发现 2 个 P0 级检测层错误**——① `_pooled_threshold_t2m` 的 `axis` 崩溃使 206 个陆点共用一条全欧阈值曲线（阈值 mean\|Δ\| 8.26 °C）；② `_run_events` 是「先桥接后过滤」而 heatwaveR `proto_event` 是「先过滤后桥接」（450 例模糊测试 429/450 不一致）；另模型侧 MHW 阈值缺 11 天窗。**3 个 P0 级工程缺陷**：`--members 20` 静默只跑 3 个成员、阈值缓存无成员指纹、不支持 leave-one-out。已修复 9 项（F1–F9）并给出前后对比：THW 的 ALL/XGHG 事件比 1.73→3.01，`PR=48.0/FAR=0.98` **作废**（修复后该阈值下 P_fix=0），可判读阈值（20.7 天）下 PR=52.0/FAR=0.981。**观测链路（Phase 1–4）不受影响**（全部走 R heatwaveR）。详见 **`results/Phase6审计报告.md`**（6 份分报告已合并为一件：§1 汇总 / §2 修复对比 / §3–§6 四份分报告全文）。
 
@@ -35,7 +51,15 @@
 - `python/phase6_cesm.py` — Phase 6 归因管线（P0 验证版；**2026-09-23 审计修复 F1–F9**：
   检测端与 R heatwaveR 等价、阈值逐点、11 天窗、缓存带指纹、`--members` 作用于全量 20 人名单、
   `--loo`、doy=366 阈值行）
-- `python/coastal_buffer.py` — 图6 分析域：海岸向内 100 km 缓冲掩码（Phase 5 前置，已实现待接入）
+- `python/coastal_buffer.py` — 图6 分析域：海岸向内 100 km 缓冲掩码（Phase 5 前置，已接入 `phase5_humid.py`）
+
+Phase 5（湿热应力，2026-09-24 新增，数值链路已验证）：
+- `python/calc_wbt.py` — RH / WBT（Stull 2011 + psychrometric 牛顿迭代）/ SH / JAS 趋势；`python python\calc_wbt.py` 跑 25 项合成自检
+- `python/gev_return_period.py` — GEV MLE + bootstrap + FixGHG→ALL 重现期映射（图4/图6c 内核）；自带 16 项自检
+- `python/phase5_humid.py` — Phase 5 主链路：`check` / `fields`（逐日 WBT·SH）/ `stats`（图5 趋势 + 图6 统计）/ `all`
+- `python/fig3_attribution.py` — **论文图3**（FAR/PR 2×2，按原图逐像素校准）
+- `python/fig4_return_period.py` — **论文图4**（重现期位移 1×3；`--demo` 可渲染论文锚点版式自检图）
+- ⬜ 待补：`fig5_sst_trend.py`、`fig6_wbt.py`、`phase6_cesm.py gev`、`table1_attribution.py`
 
 ⚠️ **检测链路口径提示**：`python/detect_thw.R` 有吞错 bug，**仅存档勿用**。
 **（第三轮更正）`python/run_all.py` 现已海陆双路都走正式链路 `python/detect_events.R`**
@@ -60,6 +84,7 @@
 
 ```
 D:\2607compound\        ← 工作区根目录（代码、文档、结果）
+├── 待办.md              # ★ 你的操作指引（下载 → 复核 → Phase 5 → Phase 6），先读这份
 ├── data/                # NTFS Junction → E:\2607compound\data（原始数据 ~210 GB）
 │   ├── OISST/           # 全球合并件 23.1 GB + 欧洲裁剪件 1.1 GB
 │   ├── E-OBS/           # 合并件 0.5 GB（14975 天）+ 3 个分段原始
@@ -128,6 +153,11 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
 | Phase 6 归因（全量，口径已定） | `pairs` → `prepare --members 20` → `detect --members 20 --baseline xghg --loo --tag _v4` → `compound --members 20 --tag _v4 --compound-def envelope` → `attrib --members 20 --tag _v4 --compound-def envelope` |
 | Phase 6 口径决策 | 复合=**MHW 包络**(D7.1)；归因=**阈值扫描+62/78/72 参考线**(D7.2)；主口径 **med_mean**(D7.3)；基准期 **XGHG+LOO**(D7.4)；bootstrap **indep**(D7.5) —— 见 `results/复现报告.md` §5 D7 |
 | Phase 6 逻辑自检（不读数据） | `python results\phase6_selftest.py` → `ALL SELFTESTS PASSED` |
+| **Phase 5 输入检查** | `python python\phase5_humid.py check`（明确列出缺哪一项） |
+| **Phase 5 全长链路** | `python python\coastal_buffer.py` → `python python\phase5_humid.py all`（逐日 WBT/SH + 图5 趋势 + 图6 统计） |
+| Phase 5 公式自检 | `python python\calc_wbt.py`（25 项）/ `python python\gev_return_period.py`（16 项） |
+| **图3（FAR/PR）** | `python python\fig3_attribution.py --tag _v4`（旧产物可 `--agg-eur eur_max`） |
+| **图4（重现期）** | `python python\fig4_return_period.py --tag _v4`；版式自检 `--demo` |
 | 检查数据完整性 | `python python\verify_data.py` |
 | 环境搭建 | 见 §技术栈；关键包 xarray/cartopy/heatwaveR(R)/cdsapi |
 
