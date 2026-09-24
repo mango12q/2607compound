@@ -351,6 +351,7 @@ def calc_sst_trend(oisst: xr.Dataset, period: Tuple[int, int] = (1994, 2023),
     yearly = seasonal_mean(da, months, period)
     slope, pval = linear_trend_per_decade(yearly)
     slope.attrs["long_name"] = f"SST trend ({'JAS' if tuple(months) == (7, 8, 9) else months})"
+    slope.attrs["units"] = "degC per decade"
     return slope, pval
 
 
