@@ -23,6 +23,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOCS = ["待办.md", "AGENTS.md", "DATA_REQUIREMENTS.md",
         os.path.join("docs", "阶段计划.md"),
         os.path.join("results", "README.md"),
+        os.path.join("results", "图版对照表.md"),
         os.path.join("results", "复现报告.md"),
         os.path.join("results", "规划一致性审查.md"),
         os.path.join("results", "方法与证据.md"),
