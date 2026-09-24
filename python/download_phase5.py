@@ -31,11 +31,21 @@ ROOT = os.path.dirname(HERE)
 PY = sys.executable
 
 
-def run(step: str, args: list, dry: bool) -> bool:
-    cmd = [PY, os.path.join(HERE, args[0])] + args[1:]
+def run(step: str, args: list, dry: bool, dry_args: list = None) -> bool:
+    """
+    跑一步。`dry=True` 时：
+      · `dry_args` 给定 → 用底层脚本自己的"只计划不下载"开关（能打印待下月份数）；
+      · `dry_args is None` → 该步只是后处理（合并），dry 模式下跳过。
+    """
+    if dry and dry_args is None:
+        print(f"\n[{step}] （--dry-run：后处理步骤，跳过）", flush=True)
+        return True
+    use = (dry_args if dry else args)
+    cmd = [PY, os.path.join(HERE, use[0])] + use[1:]
     print(f"\n{'=' * 74}\n[{step}] {' '.join(cmd)}\n{'=' * 74}", flush=True)
     if dry:
-        return True
+        p = subprocess.run(cmd, cwd=ROOT)      # 底层脚本自己的 dry/probe/list
+        return p.returncode == 0
     t0 = time.time()
     p = subprocess.run(cmd, cwd=ROOT)
     ok = (p.returncode == 0)
@@ -46,27 +56,33 @@ def run(step: str, args: list, dry: bool) -> bool:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Phase 5 数据下载（ERA5 tmax + sp0.25° + OAFlux）")
-    ap.add_argument("--dry-run", action="store_true", help="只打印计划")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="真正的前置检查：把 --dry-run/--probe 透传给底层脚本，"
+                         "打印各自待下载的月份数与镜像情况（不联网下载）")
     ap.add_argument("--skip-oaflux", action="store_true", help="跳过 OAFlux（图5b 会留空）")
     a = ap.parse_args(argv)
 
     print("Phase 5 输入下载：ERA5 tmax / ERA5 sp 0.25° / OAFlux 蒸发")
     print(f"工作目录：{ROOT}")
     if a.dry_run:
-        print("（--dry-run：只打印命令，不联网）")
+        print("（--dry-run：透传给底层脚本做前置检查，不下载）")
 
+    # (步骤名, 正式参数, dry 模式参数；dry 参数为 None = 该步在 dry 下跳过)
     steps = [
-        ("1/5 ERA5 tmax 月度下载", ["download_era5_tmax.py"]),
-        ("2/5 ERA5 tmax 合并", ["download_era5_tmax.py", "--merge"]),
-        ("3/5 ERA5 sp 0.25° 月度下载", ["download_era5_sp025.py"]),
-        ("4/5 ERA5 sp 0.25° 合并", ["download_era5_sp025.py", "--merge"]),
+        ("1/5 ERA5 tmax 月度下载", ["download_era5_tmax.py"],
+         ["download_era5_tmax.py", "--dry-run"]),
+        ("2/5 ERA5 tmax 合并", ["download_era5_tmax.py", "--merge"], None),
+        ("3/5 ERA5 sp 0.25° 月度下载", ["download_era5_sp025.py"],
+         ["download_era5_sp025.py", "--dry-run"]),
+        ("4/5 ERA5 sp 0.25° 合并", ["download_era5_sp025.py", "--merge"], None),
     ]
     if not a.skip_oaflux:
-        steps.append(("5/5 OAFlux 蒸发下载", ["download_oaflux_evap.py"]))
+        steps.append(("5/5 OAFlux 蒸发下载", ["download_oaflux_evap.py"],
+                      ["download_oaflux_evap.py", "--probe"]))
 
     t0 = time.time()
-    for name, args in steps:
-        if not run(name, args, a.dry_run):
+    for name, args, dry_args in steps:
+        if not run(name, args, a.dry_run, dry_args):
             print("\n⚠️ 上一步失败，已停止。修好网络/CDS 条款后**原样重跑本脚本**即可续传。")
             return 1
 

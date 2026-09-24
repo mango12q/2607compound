@@ -30,11 +30,21 @@ ROOT = os.path.dirname(HERE)
 PY = sys.executable
 
 
-def run(step: str, args: list, dry: bool) -> bool:
-    cmd = [PY, os.path.join(HERE, args[0])] + args[1:]
+def run(step: str, args: list, dry: bool, dry_args: list = None) -> bool:
+    """
+    跑一步。`dry=True` 时：
+      · `dry_args` 给定 → 用底层脚本自己的"只解析不下载"开关；
+      · `dry_args is None` → 后处理步骤（trim），dry 模式下跳过。
+    """
+    if dry and dry_args is None:
+        print(f"\n[{step}] （--dry-run：后处理步骤，跳过）", flush=True)
+        return True
+    use = (dry_args if dry else args)
+    cmd = [PY, os.path.join(HERE, use[0])] + use[1:]
     print(f"\n{'=' * 74}\n[{step}] {' '.join(cmd)}\n{'=' * 74}", flush=True)
     if dry:
-        return True
+        p = subprocess.run(cmd, cwd=ROOT)
+        return p.returncode == 0
     t0 = time.time()
     p = subprocess.run(cmd, cwd=ROOT)
     ok = (p.returncode == 0)
@@ -46,23 +56,26 @@ def run(step: str, args: list, dry: bool) -> bool:
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Phase 6 数据下载（CESM1-LE 20 成员）")
     ap.add_argument("--members", type=int, default=20, help="成员数（默认 20 = 全量）")
-    ap.add_argument("--dry-run", action="store_true", help="只打印计划")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="真正的前置检查：gdex 走 --list 只解析目录并导出清单（不下载）")
     a = ap.parse_args(argv)
     m = str(int(a.members))
 
     print(f"Phase 6 输入下载：CESM1-LE ALL + XGHG，{m} 个成员/组")
     print(f"工作目录：{ROOT}")
     if a.dry_run:
-        print("（--dry-run：只打印命令，不联网）")
+        print("（--dry-run：不下载，只解析远端目录）")
 
     steps = [
-        ("1/3 ALL 日值 TREFHT（AWS zarr 切片）", ["download_cesm1le.py", "aws", "--members", m]),
-        ("2/3 SST 日值 + XGHG（GDEX THREDDS）", ["download_cesm1le.py", "gdex", "--members", m]),
-        ("3/3 裁剪到 2000–2021 欧洲框（trim）", ["download_cesm1le.py", "trim"]),
+        ("1/3 ALL 日值 TREFHT（AWS zarr 切片）", ["download_cesm1le.py", "aws", "--members", m], None),
+        ("2/3 SST 日值 + XGHG（GDEX THREDDS）",
+         ["download_cesm1le.py", "gdex", "--members", m],
+         ["download_cesm1le.py", "gdex", "--members", m, "--list"]),
+        ("3/3 裁剪到 2000–2021 欧洲框（trim）", ["download_cesm1le.py", "trim"], None),
     ]
     t0 = time.time()
-    for name, args in steps:
-        if not run(name, args, a.dry_run):
+    for name, args, dry_args in steps:
+        if not run(name, args, a.dry_run, dry_args):
             print("\n⚠️ 上一步失败，已停止。修好网络后**原样重跑本脚本**即可续传"
                   "（已完成的成员/段会自动跳过）。")
             return 1
