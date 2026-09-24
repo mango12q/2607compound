@@ -51,7 +51,8 @@ def _map(ax, LON, LAT, data, cmap, cb, title, letter):
     if m.any():
         sc = ax.scatter(LON[m], LAT[m], c=d[m], cmap=cmap,
                         vmin=cb['vmin'], vmax=cb['vmax'], s=22, marker='o',
-                        linewidths=0, transform=ccrs.PlateCarree(), zorder=4)
+                        linewidths=0, transform=ccrs.PlateCarree(), zorder=4,
+                        rasterized=True)
     ax.text(0.0, 1.045, f'{letter})', transform=ax.transAxes, ha='left',
             va='bottom', fontsize=13, fontweight='bold')
     ax.set_title(title, fontsize=12)
