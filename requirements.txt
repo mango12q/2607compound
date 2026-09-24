@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# requirements.txt — 论文复现项目（Compound coastal marine–terrestrial heatwaves）
+#
+#   安装：python -m pip install -r requirements.txt
+#
+# 版本 = 本仓库实测通过的版本（Windows / Python 3.13.9，2026-09-24）。
+# 不写死上限：本复现的数值结论对下面这些库的**次版本**不敏感；
+# 但 `heatwaveR`（R 侧）与检测结果直接相关，必须按 R 侧说明核对。
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 数值与数组
+numpy==2.5.2
+scipy==1.18.1          # GEV 拟合（scipy.stats.genextreme）、KDTree（scipy.spatial）
+pandas==2.3.3          # 事件表 / 年度指标 CSV
+
+# 网格数据 IO
+xarray==2026.7.0
+netCDF4==1.7.4
+dask==2026.8.0         # open_mfdataset 必需（ERA5 573 个月度件、OISST 原始件）
+
+# 绘图
+matplotlib==3.11.1
+cartopy==0.26.0        # 地图投影与海岸线（首次运行会下载 Natural Earth 50m 数据）
+
+# 数据下载（仅下载脚本需要；跑处理链路不需要）
+cdsapi==0.7.7          # ERA5（Copernicus CDS）——需 ~/.cdsapirc
+requests==2.34.2       # OAFlux 多镜像探测与下载
+s3fs==2026.7.0         # CESM1-LE AWS zarr 镜像（s3://ncar-cesm-lens）
+
+# 工具
+joblib==1.6.0          # 仅在部分诊断脚本里用于并行（主链路不依赖）
+pymupdf==1.28.2        # scripts/extract_paper_figs.py：从论文 PDF 提取插图
+
+# ─────────────────────────────────────────────────────────────────────────────
+# R 侧（热浪检测正式链路，经 Rscript 子进程调用；**不用 rpy2**）
+#
+#   R 4.6.1
+#   heatwaveR   0.5.5   ← 检测核心；论文标注 v0.4.6，两版语义已逐行核验一致
+#                          （见 results/方法与证据.md §4 与复现报告 D1）
+#   ncdf4       （R 读写 NetCDF）
+#   doParallel / foreach（detect_events.R 的 PSOCK 并行；核数见 config.R_WORKERS）
+#
+#   R 安装示例：
+#     install.packages(c("heatwaveR", "ncdf4", "doParallel", "foreach"))
+#
+#   路径在 python/config.py 的 RSCRIPT_PATH 中指定（默认
+#   C:\Program Files\R\R-4.6.1\bin\Rscript.exe）。
+# ─────────────────────────────────────────────────────────────────────────────

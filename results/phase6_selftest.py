@@ -228,6 +228,43 @@ finally:
 
 print()
 print("=" * 74)
+print("6) gev 子命令的辅助函数（第八批：图4 的三类年暴露序列）")
+print("=" * 74)
+_pairs = pd.DataFrame({
+    "land_lat_idx": [0, 0, 1, 2], "land_lon_idx": [0, 1, 0, 0],
+    "ocean_lat_idx": [9, 9, 8, 9], "ocean_lon_idx": [9, 9, 8, 9],
+    "land_lat": [40.0, 40.0, 35.0, 50.0], "land_lon": [10.0, 10.0, 6.0, 30.0],
+    "ocean_lat": [40.1, 40.1, 35.1, 50.1], "ocean_lon": [10.1, 10.1, 6.1, 30.1],
+    "dist_deg": [0.1, 0.1, 0.1, 0.1]})
+_med = (_pairs.land_lat.between(30, 47) & _pairs.land_lon.between(5, 42)).values
+check("区域掩码只选中框内陆点（4 对里 3 对）", int(_med.sum()) == 3, f"got {int(_med.sum())}")
+
+_ev = pd.DataFrame({
+    "event_start": pd.to_datetime(["2000-01-01", "2000-01-10", "2000-01-05"]),
+    "event_end": pd.to_datetime(["2000-01-03", "2000-01-12", "2000-01-06"]),
+    "lat_idx": [9, 9, 8], "lon_idx": [9, 9, 8]})
+_masks = P._event_masks_by_key(_ev, {(9, 9), (8, 8)}, NT, T0)
+check("事件表 → 掩码只保留 keys 里的键（2 个）", set(_masks) == {(9, 9), (8, 8)},
+      f"got {sorted(_masks)}")
+check("掩码长度 = 时间轴长度", all(len(m) == NT for m in _masks.values()))
+check("掩码天数与事件跨度一致（(9,9) 共 3+3=6 天）", int(_masks[(9, 9)].sum()) == 6,
+      f"got {int(_masks[(9, 9)].sum())}")
+
+# 合成的"年份"轴：3 个 20 天桶（2000/2001/2002），事件全落在第一个桶内
+_years = np.array([2000] * 20 + [2001] * 20 + [2002] * 20)
+_ann, _uy = P._annual_exposure_from_masks(_masks, [(9, 9), (8, 8)], _years)
+check("年暴露矩阵形状 = (n_year, n_key)", _ann.shape == (3, 2), f"got {_ann.shape}")
+check("年份轴 = 唯一值升序", list(_uy) == [2000, 2001, 2002], f"got {list(_uy)}")
+check("事件所在年份合计正确（(9,9)=6、(8,8)=2）",
+      _ann[0].tolist() == [6, 2], f"got {_ann[0].tolist()}")
+check("无事件的年份为 0（而非 NaN）", _ann[1].sum() == 0 and _ann[2].sum() == 0,
+      f"got {_ann[1].tolist()} / {_ann[2].tolist()}")
+check("含事件但未被选中的键不参与统计（键集合外无列）", _ann.shape[1] == 2)
+check("空事件表返回空字典", P._event_masks_by_key(pd.DataFrame(
+    columns=["event_start", "event_end", "lat_idx", "lon_idx"]), {(9, 9)}, NT, T0) == {})
+
+print()
+print("=" * 74)
 if FAIL:
     print(f"SELFTEST FAILED: {len(FAIL)} 项 -> {FAIL}")
     sys.exit(1)

@@ -879,16 +879,23 @@ def _event_masks_by_key(events: pd.DataFrame, keys: set, nt: int, t0) -> dict:
 
 
 def _annual_exposure_from_masks(masks: dict, keys: list, years: np.ndarray):
-    """{key: 日掩码} → (n_year, n_key) 的年暴露天数矩阵。"""
+    """
+    {key: 日掩码} → (n_year, n_key) 的年暴露天数矩阵 + 年份数组。
+
+    ★ 第九批修复：原实现里混进了一个草稿表达式
+    （`daily[years == uyears[0]] * 0 + …`），会把结果撑成 (n_days, n_key) 的三维形状。
+    该错误由 `results/phase6_selftest.py` 第 6 节捕获。
+    """
+    keys = list(keys)
     nt = int(len(next(iter(masks.values())))) if masks else 0
     daily = np.zeros((max(nt, 1), len(keys)), dtype=np.int16)
     for j, k in enumerate(keys):
         m = masks.get(k)
         if m is not None:
-            daily[:len(m), j] = m.astype(np.int16)
+            daily[:len(m), j] = np.asarray(m, dtype=np.int16)
     uyears = np.unique(years)
-    return np.stack([daily[years == uyears[0]] * 0 + daily[years == y].sum(axis=0)
-                     for y in uyears]), uyears
+    ann = np.stack([daily[years == y].sum(axis=0) for y in uyears])   # (n_year, n_key)
+    return ann, uyears
 
 
 def _member_exposure_series(exp: str, member: str, tag: str, pairs_df: pd.DataFrame,
@@ -924,19 +931,8 @@ def _member_exposure_series(exp: str, member: str, tag: str, pairs_df: pd.DataFr
 
     mo = _event_masks_by_key(mhw, set(ocean_keys), nt, t0)
     tl = _event_masks_by_key(thw, set(land_keys), nt, t0)
-    ann_o = np.stack([np.zeros(len(ocean_keys), dtype=np.int16)
-                      for _ in np.unique(years)])
-    daily_o = np.zeros((nt, len(ocean_keys)), dtype=np.int16)
-    for j, k in enumerate(ocean_keys):
-        if k in mo:
-            daily_o[:, j] = mo[k].astype(np.int16)
-    daily_l = np.zeros((nt, len(land_keys)), dtype=np.int16)
-    for j, k in enumerate(land_keys):
-        if k in tl:
-            daily_l[:, j] = tl[k].astype(np.int16)
-    uyears = np.unique(years)
-    ann_o = np.stack([daily_o[years == y].sum(axis=0) for y in uyears])
-    ann_l = np.stack([daily_l[years == y].sum(axis=0) for y in uyears])
+    ann_o, uyears = _annual_exposure_from_masks(mo, ocean_keys, years)
+    ann_l, _ = _annual_exposure_from_masks(tl, land_keys, years)
 
     comp_path = os.path.join(CESM_INT, f"annual{tag}_{exp}_{member}.csv")
     if os.path.exists(comp_path):

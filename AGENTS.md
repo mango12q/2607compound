@@ -24,6 +24,19 @@
 
 **当前进度（2026-09-24）**：Phase 1-4（观测链路：检测→配对→复合→**图1/图2/S1/S2**）完成；图1j-l 已切换为 MHW 包络口径（方案 B），**图1j/l 的绝对量级已定稿为"未复现项"**（见 `results/复现报告.md` §6）；Phase 6 P0（CESM 3 成员管线）验证通过，全量未跑；**Phase 5 全链路代码就绪（图5/图6/Table 1）**；**图3/图4/Table 1 已可出图**（第三轮补上 `phase6_cesm.py gev` 子命令与 `figS1_annual_maps.py` 论文版 S1 ⇒ **论文图画清单全部有脚本**）；Phase 7（环境固化/一键入口）未开始。详见 `results/复现报告.md`。
 
+**2026-09-24 第九批：Phase 7 打包（一键入口 + 环境固化）+ 自检捕获 gev 辅助函数 bug**：
+- **新增 `run_all_phases.bat` / `python/run_phases.py`**：Phase 0→7 一键串联，
+  每步调用文档里的**同一条命令**；缺数据自动跳过并说明缺哪一项；支持 `--dry-run` / `--phases` / `--tag`，
+  末尾打印"完成/跳过/失败"总表与**论文图画清单核对**（图1–6 / Table 1 / 论文版 S1）。
+- **新增 `requirements.txt`**：Python 依赖锁定本机实测版本 + R 侧（heatwaveR 0.5.5 等）安装说明。
+- **`results/phase6_selftest.py` 新增第 6 节**（gev 辅助函数断言）——**当场捕获一个真 bug**：
+  `_annual_exposure_from_masks` 里混进草稿表达式 `daily[years == uyears[0]] * 0 + …`，
+  会把结果撑成 (n_days, n_key) 的三维数组。已修复，并让生产函数 `_member_exposure_series`
+  **改走同一个被测试的函数**（消除"测的不是跑的那份"的漂移风险）。修复后 `gev` 结果不变
+  （compound 100 年 Gap 86.8 年，与修复前同量级）。
+- 文档同步：`待办.md`（懒人入口 + 全绿清单）、`docs/阶段计划.md` §4（Phase 7 完成）、
+  `results/复现报告.md` §9（一键/分步复现命令 + 四套自检）。
+
 **2026-09-24 第八批：图4 数据链路 + 论文版 Supplementary Fig. S1**：
 - `phase6_cesm.py` 新增 **`gev` 子命令**：从 `mhw*_*.csv` / `thw*_*.csv` 汇总**海洋 / 陆地 / 复合**三类
   区域年暴露序列（地中海&黑海，点均值），调 `gev_return_period.py` 做 FixGHG→ALL 重现期映射，
