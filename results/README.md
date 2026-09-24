@@ -31,7 +31,7 @@
 
 | 目录 | 内容 |
 |---|---|
-| `figures/` | 全部出图。**已完成**：图1（a–m）、图2（a–d）、S1（j–l maxcell）、S2（MHW 包络）、**图3**（`fig3_attribution{tag}.*`，2026-09-24 新增）。**待补**：图4（`fig4_return_period{tag}.*`；当前只有 `_demo` 版式自检图）、图5、图6。`fig7_p0_validation*.png` = Phase 6 P0 验证图（沿用旧编号命名） |
+| `figures/` | 全部出图（**论文图画清单已全部有脚本**）：图1（a–m）、图2（a–d）、图3（`fig3_attribution{tag}.*`）、图4（`fig4_return_period{tag}.*`）、图5（`fig5_sst_trend.*`）、图6（`fig6_wbt.*`）、**论文版 S1**（`figS1_paper_annual_maps.*`，1984–2023 年际组图）、本项目补充图 S2（`figS2_jkl_mhw_envelope.*`）。另有 `*_synthetic_demo.*` / `*_demo.*` / `fig7_p0_validation*.png` 等**版式自检与流程验证图，不是结果** |
 | `tables/` | 数值快照 JSON/CSV（`fig_stats_*.json`、`fig5_stats.json`、`fig6_stats.json`、`phase6_attrib_sweep*.csv` 等，**不入 Git**） |
 | `intermediate/` | 中间产物（不入 Git；OISST/E-OBS/CESM 检测结果、年度指标、逐日 WBT/SH、趋势场） |
 | `tools/` | 诊断与复算脚本，按主题分组，见 `tools/README.md` |

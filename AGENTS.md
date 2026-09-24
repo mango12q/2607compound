@@ -22,7 +22,16 @@
   `fig5_sst_trend.py` 的地图范围与色板按原图；`fig6_wbt.py` 的配色/轴范围/色标按原图。
 - 详见 `results/规划一致性审查.md` 第五轮（A6–A10 / B6–B10 / C1–C4）。
 
-**当前进度（2026-09-24）**：Phase 1-4（观测链路：检测→配对→复合→图1/图2/S1/S2）完成；图1j-l 已切换为 MHW 包络口径（方案 B），共超标口径备份为 fig1_compound_spatial_exceedance_backup.*；**图1j/l 的绝对量级已定稿为"未复现项"**（定性一致、定量不可复现、原文口径不足以唯一确定——见 `results/复现报告.md` §6，停止口径搜索）；Phase 6 P0（CESM 3 成员管线 + v2 反事实基准）验证通过，全量未跑；**Phase 5 全链路代码已就绪（图5/图6/Table 1 均可出图，待数据）**；**图3/图4 绘图已就绪**（图4 需 `phase6_cesm.py gev` 子命令，待补）；Phase 7 未开始。详见 `results/复现报告.md`。
+**当前进度（2026-09-24）**：Phase 1-4（观测链路：检测→配对→复合→**图1/图2/S1/S2**）完成；图1j-l 已切换为 MHW 包络口径（方案 B），**图1j/l 的绝对量级已定稿为"未复现项"**（见 `results/复现报告.md` §6）；Phase 6 P0（CESM 3 成员管线）验证通过，全量未跑；**Phase 5 全链路代码就绪（图5/图6/Table 1）**；**图3/图4/Table 1 已可出图**（第三轮补上 `phase6_cesm.py gev` 子命令与 `figS1_annual_maps.py` 论文版 S1 ⇒ **论文图画清单全部有脚本**）；Phase 7（环境固化/一键入口）未开始。详见 `results/复现报告.md`。
+
+**2026-09-24 第八批：图4 数据链路 + 论文版 Supplementary Fig. S1**：
+- `phase6_cesm.py` 新增 **`gev` 子命令**：从 `mhw*_*.csv` / `thw*_*.csv` 汇总**海洋 / 陆地 / 复合**三类
+  区域年暴露序列（地中海&黑海，点均值），调 `gev_return_period.py` 做 FixGHG→ALL 重现期映射，
+  输出 `results/tables/phase6_gev{tag}.json`（`fig4_return_period.py` 直接消费）。
+  P0 三成员实跑通过（N=66/组）：marine 208 vs 28、terrestrial 48 vs 11、compound 41 vs 3.7 天/年。
+- `python/figS1_annual_maps.py` — **论文版 Supplementary Fig. S1**（1984–2023，4×10=40 面板年际
+  复合日空间分布，色标 0–50 天）；与既有的 `figS1_jkl_maxcell.*`（图1j–l 替代口径，仅沿用旧编号）不是同一张图。
+- `fig4_return_period.py` 修 CI 夹取导致的负误差棒崩溃（inf 按轴顶处理并强制 lo ≤ med ≤ hi）。
 
 **2026-09-24 第六批：Phase 5 数值链路 + 图3/图4 绘图代码 + 图版式逐像素校准**：
 - **新增代码**：`python/calc_wbt.py`（RH / WBT(Stull + psychrometric 迭代) / SH / 趋势；25 项合成自检全过）、
@@ -81,7 +90,8 @@ Phase 5（湿热应力，2026-09-24 新增，数值链路已验证）：
 - `python/fig6_wbt.py` — **论文图6**（a/b 超阈曲线、c 重现期、d–f 复合日最大 WBT 场）
 - `python/table1_attribution.py` — **论文 Table 1**（62/78/72 天三点的 FAR/PR + 论文对照列）
 - `results/phase5_selftest.py` — Phase 5 纯合成自检（不读观测）→ `ALL PHASE5 SELFTESTS PASSED`
-- ⬜ 待补：`phase6_cesm.py gev`（图4 的海洋/陆地年暴露序列）、论文版 Supplementary Fig. S1
+- `python/figS1_annual_maps.py` — **论文版 Supplementary Fig. S1**（1984–2023 年际组图，4×10 面板）
+- `phase6_cesm.py gev` — 图4 的海洋/陆地/复合年暴露序列 + GEV → `results/tables/phase6_gev{tag}.json`
 
 ⚠️ **检测链路口径提示**：`python/detect_thw.R` 有吞错 bug，**仅存档勿用**。
 **（第三轮更正）`python/run_all.py` 现已海陆双路都走正式链路 `python/detect_events.R`**

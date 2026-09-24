@@ -860,6 +860,188 @@ def cmd_compound(args):
 # ──────────────────────────────────────────────
 # attrib
 # ──────────────────────────────────────────────
+def _event_masks_by_key(events: pd.DataFrame, keys: set, nt: int, t0) -> dict:
+    """
+    事件表 → {key: 逐日布尔掩码}，只保留 keys 里出现过的键。
+
+    key = (lat_idx, lon_idx)；MHW 表用海洋索引、THW 表用陆地索引
+    （与 `cmd_compound` 里 `_pair_maps` 的用法一致）。
+    """
+    from compound_events import _event_daily_mask
+    out = {}
+    if events is None or len(events) == 0:
+        return out
+    for k, g in events.groupby(["lat_idx", "lon_idx"]):
+        kk = (int(k[0]), int(k[1]))
+        if kk in keys:
+            out[kk] = _event_daily_mask(g, nt, t0)
+    return out
+
+
+def _annual_exposure_from_masks(masks: dict, keys: list, years: np.ndarray):
+    """{key: 日掩码} → (n_year, n_key) 的年暴露天数矩阵。"""
+    nt = int(len(next(iter(masks.values())))) if masks else 0
+    daily = np.zeros((max(nt, 1), len(keys)), dtype=np.int16)
+    for j, k in enumerate(keys):
+        m = masks.get(k)
+        if m is not None:
+            daily[:len(m), j] = m.astype(np.int16)
+    uyears = np.unique(years)
+    return np.stack([daily[years == uyears[0]] * 0 + daily[years == y].sum(axis=0)
+                     for y in uyears]), uyears
+
+
+def _member_exposure_series(exp: str, member: str, tag: str, pairs_df: pd.DataFrame,
+                            med: np.ndarray, verbose: bool = True) -> dict:
+    """
+    单个成员的三类**区域年暴露序列**（地中海 & 黑海，图4 的 a/b/c）：
+      marine      —— 区域内**唯一海洋点**的 MHW 年天数（点均值）
+      terrestrial —— 区域内**配对陆点**的 THW 年天数（点均值）
+      compound    —— 复用 `annual{tag}_{exp}_{member}.csv` 的 `med_mean` 列
+    """
+    t2m_path = os.path.join(CESM_INT, f"{exp}_{member}_T2m.nc")
+    if not os.path.exists(t2m_path):
+        raise FileNotFoundError(f"缺 {t2m_path}（先跑 prepare）")
+    with xr.open_dataset(t2m_path) as ds:
+        time_da = ds["T2m"]
+        nt = time_da.sizes["time"]
+        years = time_da.time.dt.year.values
+        t0 = pd.Timestamp(time_da.time.values[0]).normalize()
+
+    mhw_f = os.path.join(CESM_INT, f"mhw{tag}_{exp}_{member}.csv")
+    thw_f = os.path.join(CESM_INT, f"thw{tag}_{exp}_{member}.csv")
+    for f in (mhw_f, thw_f):
+        if not os.path.exists(f):
+            raise FileNotFoundError(f"缺 {f}（先跑 detect）")
+    mhw = pd.read_csv(mhw_f, parse_dates=["event_start", "event_end"])
+    thw = pd.read_csv(thw_f, parse_dates=["event_start", "event_end"])
+
+    sub = pairs_df[med]
+    ocean_keys = list({(int(a), int(b)) for a, b in
+                       sub[["ocean_lat_idx", "ocean_lon_idx"]].itertuples(index=False)})
+    land_keys = list({(int(a), int(b)) for a, b in
+                      sub[["land_lat_idx", "land_lon_idx"]].itertuples(index=False)})
+
+    mo = _event_masks_by_key(mhw, set(ocean_keys), nt, t0)
+    tl = _event_masks_by_key(thw, set(land_keys), nt, t0)
+    ann_o = np.stack([np.zeros(len(ocean_keys), dtype=np.int16)
+                      for _ in np.unique(years)])
+    daily_o = np.zeros((nt, len(ocean_keys)), dtype=np.int16)
+    for j, k in enumerate(ocean_keys):
+        if k in mo:
+            daily_o[:, j] = mo[k].astype(np.int16)
+    daily_l = np.zeros((nt, len(land_keys)), dtype=np.int16)
+    for j, k in enumerate(land_keys):
+        if k in tl:
+            daily_l[:, j] = tl[k].astype(np.int16)
+    uyears = np.unique(years)
+    ann_o = np.stack([daily_o[years == y].sum(axis=0) for y in uyears])
+    ann_l = np.stack([daily_l[years == y].sum(axis=0) for y in uyears])
+
+    comp_path = os.path.join(CESM_INT, f"annual{tag}_{exp}_{member}.csv")
+    if os.path.exists(comp_path):
+        ca = pd.read_csv(comp_path)
+        comp = ca.set_index("year")["med_mean"].reindex(uyears).values
+    else:
+        raise FileNotFoundError(
+            f"缺 {comp_path}（先跑：phase6_cesm.py compound --tag {tag}）")
+
+    res = {"year": uyears,
+           "marine": ann_o.mean(axis=1),
+           "terrestrial": ann_l.mean(axis=1),
+           "compound": comp}
+    if verbose:
+        print(f"  {exp} {member}: marine={res['marine'].mean():7.2f} "
+              f"terrestrial={res['terrestrial'].mean():7.2f} "
+              f"compound={np.nanmean(res['compound']):7.2f} 天/年（区域均值）")
+    return res
+
+
+def cmd_gev(args):
+    """
+    图 4：海洋 / 陆地 / 复合热浪日的**重现期位移**（ALL vs FixGHG）。
+
+    论文口径（Methods "Return level and period estimation using GEV"）：
+      ① FixGHG 区域年暴露序列 1000 次 bootstrap + MLE 拟合 GEV → 5/10/20/50/100 年重现水平
+         （中位数 + 2.5–97.5 % CI）；
+      ② 把各重现水平映射到 ALL 的等效重现期（同样 bootstrap）；
+      ③ Gap = FixGHG 重现期 − ALL 等效重现期（论文图 4c 的红色标注）。
+
+    输出契约（`python/fig4_return_period.py` 直接消费）：
+        results/tables/phase6_gev{tag}.json
+    """
+    import json
+    from gev_return_period import analyse_return_periods
+
+    tag = getattr(args, "tag", "")
+    members = select_members(getattr(args, "members", C.CESM_P0_MEMBERS))
+    n_boot = int(getattr(args, "n_boot", C.N_BOOTSTRAP))
+    pairs_df = pd.read_csv(PAIRS_CSV)
+    med = (pairs_df.land_lat.between(30, 47) & pairs_df.land_lon.between(5, 42)).values
+    print(f"== 图4 重现期分析：{len(members)} 个成员/组，"
+          f"bootstrap={n_boot}，区域 = 地中海&黑海（{int(med.sum())} 对）==")
+
+    series = {"marine": {"ALL": [], "XGHG": []},
+              "terrestrial": {"ALL": [], "XGHG": []},
+              "compound": {"ALL": [], "XGHG": []}}
+    for exp in ("ALL", "XGHG"):
+        for m in members:
+            try:
+                r = _member_exposure_series(exp, m, tag, pairs_df, med,
+                                            verbose=not getattr(args, "quiet", False))
+            except FileNotFoundError as exc:
+                print(f"!! 跳过 {exp} {m}: {exc}")
+                continue
+            for k in series:
+                series[k][exp].extend(np.asarray(r[k], dtype=float).tolist())
+
+    out = {"_meta": {"tag": tag, "n_members": len(members),
+                     "agg": "med_mean (regional mean over coastal pairs)",
+                     "region": "lat 30-47 / lon 5-42 (Mediterranean & Black Sea)",
+                     "n_boot": n_boot, "ci": list(C.GEV_CI),
+                     "compound_def": getattr(args, "compound_def", COMPOUND_DEF),
+                     "source": "CESM1-LE ALL vs FixGHG"}}
+    for k, d in series.items():
+        a = np.asarray(d["ALL"], dtype=float)
+        f = np.asarray(d["XGHG"], dtype=float)
+        print(f"\n[{k}] 样本 N_ALL={a.size} N_XGHG={f.size}；"
+              f"年暴露均值 ALL={np.nanmean(a):.2f} XGHG={np.nanmean(f):.2f} 天")
+        if a.size < 8 or f.size < 8:
+            print("  [skip] 样本不足 8，跳过 GEV 拟合（P0 3 成员时属正常）")
+            out[k] = None
+            continue
+        res = analyse_return_periods(a, f, n_bootstrap=n_boot,
+                                     rps=C.GEV_RETURN_PERIODS, ci=C.GEV_CI)
+        block = {"fixghg": {f"{rp:g}": res["fixghg"]["rp"][float(rp)]
+                            for rp in C.GEV_RETURN_PERIODS},
+                 "all": {f"{rp:g}": res["all"][float(rp)]
+                         for rp in C.GEV_RETURN_PERIODS},
+                 "gap": {f"{rp:g}": res["gap"][float(rp)]
+                         for rp in C.GEV_RETURN_PERIODS},
+                 "n_years_all": res["n_years_all"],
+                 "n_years_fixghg": res["n_years_fixghg"],
+                 "n_valid_boot_fixghg": res["fixghg"]["n_valid"],
+                 "n_failed_boot_fixghg": res["fixghg"]["n_failed"]}
+        out[k] = block
+        print("  FixGHG 重现水平 → ALL 等效重现期（中位数）与 Gap：")
+        for rp in C.GEV_RETURN_PERIODS:
+            rpv = float(rp)
+            lv = block["fixghg"][f"{rp:g}"]["median"]
+            av = block["all"][f"{rp:g}"]["median"]
+            g = block["gap"][f"{rp:g}"]
+            print(f"    {rpv:5.0f} 年：水平={lv:6.1f} 天 → ALL {av:6.2f} 年"
+                  f"（Gap {g:6.2f}）")
+
+    os.makedirs(C.TABLES_DIR, exist_ok=True)
+    path = os.path.join(C.TABLES_DIR, f"phase6_gev{tag}.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(out, fh, ensure_ascii=False, indent=2,
+                  default=lambda o: (None if isinstance(o, float) and not np.isfinite(o)
+                                     else str(o)))
+    print(f"\n-> {path}")
+    print("   出图：python python\\fig4_return_period.py --tag " + (tag or "<空>"))
+
+
 def _annual_per_pair(comp, time_da, pairs_df):
     """复合日段表 -> 逐年逐配对点复合日数 + 区域聚合列 (Med 框同 fig1)。"""
     nt = time_da.sizes["time"]
@@ -1189,7 +1371,7 @@ def cmd_attrib(args):
 def main():
     p = argparse.ArgumentParser(description="CESM1-LE Phase 6 归因管线 (P0)")
     sp = p.add_subparsers(dest="cmd", required=True)
-    for name in ("prepare", "pairs", "detect", "compound", "attrib"):
+    for name in ("prepare", "pairs", "detect", "compound", "attrib", "gev"):
         q = sp.add_parser(name)
         if name == "detect":
             q.add_argument("--baseline", choices=["own", "xghg"], default="own",
@@ -1202,22 +1384,24 @@ def main():
         if name != "pairs":
             q.add_argument("--members", type=int, default=C.CESM_P0_MEMBERS,
                            help="成员数（作用于全量 20 人名单，不再被 CESM_P0_MEMBERS 截断）")
-        if name in ("compound", "attrib"):
+        if name in ("compound", "attrib", "gev"):
             q.add_argument("--tag", default="",
                            help="事件文件后缀: ''=v1(own), '_x'=v2(XGHG 基准)")
             q.add_argument("--compound-def", choices=["envelope", "exceed"],
                            default=COMPOUND_DEF, dest="compound_def",
                            help="复合定义: envelope=MHW 包络(论文模型 Methods, 决策 1B, 默认); "
                                 "exceed=逐日共超标(观测 Methods L503)")
-        if name == "attrib":
+        if name in ("attrib", "gev"):
             q.add_argument("--boot", choices=["indep", "block"], default=BOOT_MODE,
                            help="bootstrap: indep=模型年独立重采样(论文口径, 默认); "
                                 "block=成员内分层+块(附录稳健性)")
+            q.add_argument("--n-boot", type=int, default=N_BOOTSTRAP)
+            q.add_argument("--quiet", action="store_true")
+        if name == "attrib":
             q.add_argument("--agg", nargs="+", default=list(AGG_COLS),
                            help=f"聚合口径列，默认 {list(AGG_COLS)}")
             q.add_argument("--thr-step", type=float, default=SWEEP_STEP,
                            help="阈值扫描步长（天）")
-            q.add_argument("--n-boot", type=int, default=N_BOOTSTRAP)
         q.set_defaults(func=globals()[f"cmd_{name}"])
     args = p.parse_args()
     args.func(args)

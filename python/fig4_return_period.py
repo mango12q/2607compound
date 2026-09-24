@@ -91,9 +91,13 @@ def _as_arrays(blk: dict):
     finite_lo = lo[np.isfinite(lo)]
     ymin = 0.8 * finite_lo.min() if finite_lo.size else 0.8
     ymax = 1.2e2
-    med = np.clip(med, ymin, ymax)
-    lo = np.clip(lo, ymin, ymax)
-    hi = np.clip(hi, ymin, ymax)
+    # inf 的 CI（ALL 下永不发生）按轴顶处理；再统一夹到 [ymin, ymax]
+    med = np.where(np.isfinite(med), med, ymax)
+    lo = np.where(np.isfinite(lo), lo, ymin)
+    hi = np.where(np.isfinite(hi), hi, ymax)
+    med, lo, hi = (np.clip(v, ymin, ymax) for v in (med, lo, hi))
+    # ⚠️ 夹取后必须保证 lo ≤ med ≤ hi，否则 errorbar 会因负误差直接报错
+    med = np.clip(med, lo, hi)
     return med, allm, lo, hi, ymin, ymax
 
 
@@ -166,11 +170,13 @@ def make_figure(tag: str = "", demo: bool = False, outdir: str = None,
     axes[0].legend(loc="upper left", fontsize=8, framealpha=1.0)
 
     meta = ({} if demo else data.get("_meta", {}))
-    subtitle = ("DEMO — paper anchors (pdf_extract/fig4_p06.png pixel read-out)"
-                if demo else
-                f"CESM1-LE — {meta.get('n_members', '?')} members, "
-                f"{meta.get('n_years', '?')} model-years, agg={meta.get('agg', '?')}, "
-                f"tag={tag or 'default'}")
+    if demo:
+        subtitle = "DEMO — paper anchors (pdf_extract/fig4_p06.png pixel read-out)"
+    else:
+        subtitle = (f"CESM1-LE — {meta.get('n_members', '?')} members, "
+                    f"agg={meta.get('agg', '?')}, tag={tag or 'default'}")
+    # 图内文字一律 ASCII：DejaVu 没有中文字形，混排会画出方框
+    subtitle = subtitle.encode("ascii", "ignore").decode("ascii")
     fig.suptitle(f"Return periods — {subtitle}", fontsize=9, y=0.99)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
 
