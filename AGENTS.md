@@ -24,6 +24,10 @@
 
 **当前进度（2026-09-24）**：Phase 1-4（观测链路：检测→配对→复合→**图1/图2/S1/S2**）完成；图1j-l 已切换为 MHW 包络口径（方案 B），**图1j/l 的绝对量级已定稿为"未复现项"**（见 `results/复现报告.md` §6）；Phase 6 P0（CESM 3 成员管线）验证通过，全量未跑；**Phase 5 全链路代码就绪（图5/图6/Table 1）**；**图3/图4/Table 1 已可出图**（第三轮补上 `phase6_cesm.py gev` 子命令与 `figS1_annual_maps.py` 论文版 S1 ⇒ **论文图画清单全部有脚本**）；Phase 7（环境固化/一键入口）未开始。详见 `results/复现报告.md`。
 
+> ★ **换对话/换 agent 继续时**：先读 **`待办.md` 顶部的「断点续做」一节**——那里固化了
+> 当前状态、数据下载完成后要跑的确切命令、要核对的锚点位置、已登记的交叉检查项、
+> 已定稿不必再追的未复现项，以及两处待拍板口径。**不要依赖上一轮 agent 的记忆。**
+
 **2026-09-24 第九批：Phase 7 打包（一键入口 + 环境固化）+ 自检捕获 gev 辅助函数 bug**：
 - **新增 `run_all_phases.bat` / `python/run_phases.py`**：Phase 0→7 一键串联，
   每步调用文档里的**同一条命令**；缺数据自动跳过并说明缺哪一项；支持 `--dry-run` / `--phases` / `--tag`，
@@ -189,8 +193,8 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
 |------|----------|
 | 一键复现 Phase 0-3 | `python python\run_all.py`（缓存命中 ~1 min；全量重检陆地 ~22 min）|
 | 出图 1/2/S1/S2 | `python python\figures.py` + `python python\fig_jkl_mhw_envelope.py` |
-| **下 Phase 5 全部输入** | `run_phase5_downloads.bat`（= ERA5 tmax + ERA5 sp 0.25° + OAFlux） |
-| **下 CESM 全量** | `run_phase6_download.bat`（20 成员；**实际走 gdex 服务端切片直写 `proc/`，约 +80–100 GB**；文档旧写的 "~750 GB / 4–5 天" 只适用于 raw 整档路径，E: 盘仅剩 190 GB，raw 路径不可行） |
+| **下 Phase 5 全部输入** | **`python python\download_phase5.py`**（VSCode 点开即跑；= ERA5 tmax + sp 0.25° + OAFlux；支持 `--dry-run` / `--skip-oaflux`） |
+| **下 CESM 全量** | **`python python\download_phase6.py`**（VSCode 点开即跑；默认 `--members 20`；**走 gdex/aws 服务端切片直写 `proc/`，约 +80–100 GB**，1–2 天，可续传。**不要**走 raw 全时段 ~750 GB，E: 仅剩 190 GB） |
 | 下 ERA5 tmax | `python python\download_era5_tmax.py [--dry-run]`（`--merge` 合并） |
 | 下 ERA5 sp 0.25° | `python python\download_era5_sp025.py [--dry-run]`（数据集 3b+） |
 | 下 OAFlux | `python python\download_oaflux_evap.py [--probe]` |
