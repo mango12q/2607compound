@@ -120,6 +120,24 @@ def _norm_latlon(obj):
     return obj.rename(ren) if ren else obj
 
 
+def _prefer_gdex(fs, gdex_path):
+    """同一成员若**同时**有 gdex 整段件与 raw/trim 分段件，只用 gdex 整段件。
+
+    ★ 2026-10-30（P0）：`proc` 目录里成员 001–003 同时存在旧 raw+trim 分段件
+      （`B20TRC5CNBDRD…18500102-20051231_2000-2021.nc` / `BRCP85C5CNBDRD…`）与新的
+      gdex 整段件（`sst_all_001_2000-2021.nc`）。两者时间轴都覆盖 2000–2021，
+      拼在一起会把同一时段算两遍（时间轴重复 ⇒ 阈值分位、事件天数、暴露量全部错）。
+      实测未修前 ALL-001 的 SST 段返回 **3 个**文件、T2m 返回 **2 个**。
+    """
+    if os.path.exists(gdex_path):
+        others = [s for s in fs if os.path.abspath(s) != os.path.abspath(gdex_path)]
+        if others:
+            print(f"  ⚠ 同一成员有 {len(others)} 个 raw/trim 分段件与 gdex 整段件并存 "
+                  f"→ 只用 {os.path.basename(gdex_path)}")
+        return [gdex_path]
+    return sorted(set(fs))
+
+
 def find_t2m_segments(exp, m):
     """返回该成员 (exp) 的 TREFHT proc 段文件列表 (按起始年排序)。
 
@@ -137,7 +155,8 @@ def find_t2m_segments(exp, m):
     fs = []
     for p in pats:
         fs += glob.glob(p)
-    return sorted(set(fs))
+    gdex = os.path.join(CESM_PROC_DIR, f"trefht_{'all' if exp == 'ALL' else 'xghg'}_{m}_2000-2021.nc")
+    return _prefer_gdex(fs, gdex)
 
 
 def find_sst_segments(exp, m):
@@ -161,7 +180,8 @@ def find_sst_segments(exp, m):
                          f"*xghg.{m}.pop.h.nday1.SST.*_2000-2021.nc"),
             os.path.join(CESM_PROC_DIR, f"sst_xghg_{m}_2000-2021.nc"),
         ]
-    return sorted(sum([glob.glob(p) for p in pats], []))
+    gdex = os.path.join(CESM_PROC_DIR, f"sst_{'all' if exp == 'ALL' else 'xghg'}_{m}_2000-2021.nc")
+    return _prefer_gdex(sum([glob.glob(p) for p in pats], []), gdex)
 
 
 # ──────────────────────────────────────────────
