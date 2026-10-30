@@ -26,6 +26,7 @@ cartopy==0.26.0        # 地图投影与海岸线（首次运行会下载 Natura
 cdsapi==0.7.7          # ERA5（Copernicus CDS）——需 ~/.cdsapirc
 requests==2.34.2       # OAFlux 多镜像探测与下载
 s3fs==2026.7.0         # CESM1-LE AWS zarr 镜像（s3://ncar-cesm-lens）
+zarr==3.4.1            # xarray.open_zarr 的后端（CESM1-LE AWS 镜像必需；2026-10-20 补装）
 
 # 工具
 joblib==1.6.0          # 仅在部分诊断脚本里用于并行（主链路不依赖）
@@ -46,3 +47,4 @@ pymupdf==1.28.2        # scripts/extract_paper_figs.py：从论文 PDF 提取插
 #   路径在 python/config.py 的 RSCRIPT_PATH 中指定（默认
 #   C:\Program Files\R\R-4.6.1\bin\Rscript.exe）。
 # ─────────────────────────────────────────────────────────────────────────────
+

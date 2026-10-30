@@ -17,11 +17,15 @@ download_oaflux_evap.py — OAFlux 月度蒸发 (evap) 下载工具 (Phase 5: �
     (TECHNICAL_SPEC.md §3.2 load_oaflux 的默认路径)
 
 数据源 (全部为官方分发, 已从 WHOI 官网 data-access 页核实):
-    主源   WHOI FTP       ftp://ftp.whoi.edu/pub/science/oaflux/data_v3
-    镜像1  WHOI HTTP      http://ftp1.whoi.edu/pub/science/oaflux/data_v3
-    镜像2  NOAA PSL       https://psl.noaa.gov/thredds/catalog/Datasets/oaflux/catalog.xml
-    镜像3  APDRC (U.Hawaii) http://apdrc.soest.hawaii.edu/dods/public_data/OAFlux/
-    本脚本按优先级自动探测各镜像目录树, 定位含 evap 的月值 NetCDF, 无需手工指路。
+    ★ 主源（2026-09-25 实测**唯一可用**）NSF NCAR GDEX / OSDF 公开匿名 HTTPS：
+      https://osdf-director.osg-htc.org/ncar/gdex/d260001/monthly/evaporation/evapr_oaflux_YYYY.nc.gz
+      （= RDA ds260.1 的 GDEX 镜像；文件名取自 rda.ucar.edu/datasets/d260001/filelist/2）
+      内容：月平均蒸发率，1° 全球 (180×360)，变量 evapr，units=cm/yr，1958–2022 齐全。
+    以下四个传统入口 2026-09-25 实测全部不可达，仅作降级备份：
+      主源   WHOI FTP       ftp://ftp.whoi.edu/pub/science/oaflux/data_v3        （端口 21 超时）
+      镜像1  WHOI HTTP      http://ftp1.whoi.edu/pub/science/oaflux/data_v3      （502）
+      镜像2  NOAA PSL       https://psl.noaa.gov/thredds/catalog/Datasets/oaflux （404，已撤下）
+      镜像3  APDRC (U.Hawaii) http://apdrc.soest.hawaii.edu/dods/public_data/OAFlux/ （超时）
     (2025-09-22 实测: 各镜像当日网络均不稳定, 故脚本设计为逐镜像降级 + 内容强校验,
      绝不下载未经校验的文件。)
 
@@ -61,6 +65,34 @@ def ensure_utf8_console():
         sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
+
+
+class _Tee:
+    """同时写控制台与 UTF-8 日志（避免 shell 重定向把中文编成乱码）。"""
+
+    def __init__(self, path, stream):
+        self._stream = stream
+        self._file = open(path, "a", encoding="utf-8", buffering=1)
+
+    def write(self, s):
+        try:
+            self._stream.write(s)
+        except Exception:
+            pass
+        self._file.write(s)
+
+    def flush(self):
+        try:
+            self._stream.flush()
+        except Exception:
+            pass
+        self._file.flush()
+
+    def reconfigure(self, *a, **k):
+        pass
+
+    def isatty(self):
+        return False
 
 
 def _http_get(url, timeout=60, binary=False):
@@ -227,11 +259,38 @@ def discover_apdrc():
 
 
 DISCOVERERS = [
+    ("NSF NCAR GDEX / OSDF (主源；2026-09-25 实测唯一可用)", None),  # 占位，下面注册
     ("WHOI FTP (主源)", discover_ftp_whoi),
     ("WHOI HTTP 镜像", discover_http_whoimirror),
     ("NOAA PSL THREDDS 镜像", discover_psl_thredds),
     ("APDRC 镜像", discover_apdrc),
 ]
+
+# ── NSF NCAR GDEX (RDA ds260.1 = GDEX d260001) 走 OSDF 公开匿名 HTTPS ──
+#   2026-09-25 实测：WHOI FTP/HTTP、PSL、APDRC 四个入口全部不可达，
+#   只有这条通（RDA 文件列表页内嵌的 osdf-director 直链）。
+#   文件 evapr_oaflux_YYYY.nc.gz：月平均蒸发率，1°(180×360)，变量 evapr，units=cm/yr。
+GDEX_OSDF_TMPL = ("https://osdf-director.osg-htc.org/ncar/gdex/d260001/"
+                  "monthly/evaporation/evapr_oaflux_{year}.nc.gz")
+GDEX_YEARS = list(range(1958, 2023))
+
+
+def discover_gdex_osdf():
+    """探测 GDEX/OSDF 是否在线（HEAD 一个文件即可），在线则返回全年份候选。"""
+    import urllib.request
+    probe = GDEX_OSDF_TMPL.format(year=1991)
+    try:
+        req = urllib.request.Request(probe, headers=UA, method="HEAD")
+        with urllib.request.urlopen(req, timeout=45) as r:
+            if getattr(r, "status", 200) != 200:
+                return []
+    except Exception as e:
+        print(f"  失败: {type(e).__name__}: {str(e)[:100]}")
+        return []
+    return [(GDEX_OSDF_TMPL.format(year=y), 0) for y in GDEX_YEARS]
+
+
+DISCOVERERS[0] = ("NSF NCAR GDEX / OSDF (主源；2026-09-25 实测唯一可用)", discover_gdex_osdf)
 
 
 def collect_candidates():
@@ -287,6 +346,20 @@ def fetch(url, dest):
                 ftp.quit()
             except Exception:
                 ftp.close()
+    elif url.lower().endswith(".gz"):
+        # GDEX/OSDF 的文件是 .gz：下完就地解压（不保留压缩件）
+        import gzip
+        import shutil
+        tmp = dest + ".gz"
+        data = _http_get(url, timeout=600, binary=True)
+        with open(tmp, "wb") as f:
+            f.write(data)
+        with gzip.open(tmp, "rb") as fi, open(dest, "wb") as fo:
+            shutil.copyfileobj(fi, fo)
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
     else:
         data = _http_get(url, timeout=600, binary=True)
         with open(dest, "wb") as f:
@@ -325,9 +398,15 @@ def download(start, end, allow_partial=False):
     mirror, cands = collect_candidates()
     if not cands:
         print("\n[失败] 所有官方镜像均不可达或无 evap 数据。")
-        print("WHOI FTP 端口 21 可能被本网络封锁; 请换网络/开系统代理后重跑,")
-        print("或手动从 https://oaflux.whoi.edu/data-access/ 列出的镜像下载 evap 月值,")
-        print(f"放到 {RAW_DIR} 后运行 --merge。")
+        print("★ 2026-09-25 实测（本机网络，四个入口全挂）:")
+        print("   · WHOI FTP   ftp.whoi.edu:21        —— 端口 21 超时（被网络封）")
+        print("   · WHOI HTTP  ftp1.whoi.edu / ftp.whoi.edu —— 502 Bad Gateway / SSL 中断")
+        print("   · NOAA PSL   psl.noaa.gov/thredds/Datasets/oaflux —— 404（已从 PSL 撤下）")
+        print("   · APDRC      apdrc.soest.hawaii.edu —— 连接超时（dods 与 whoi_oaflux.php 都不通）")
+        print("   官网 https://oaflux.whoi.edu/data-access/ 可达，但只指向上面这三个入口；")
+        print("   另一入口 NCAR RDA https://rda.ucar.edu/datasets/ds260.1/ 需注册账号，"
+              "且 tds.rda.ucar.edu 在本机同样 SSL 不通。")
+        print(f"   可换网络/开代理后重跑，或手动下载 evap 月值放到 {RAW_DIR} 再 --merge。")
         return 1
     print(f"\n使用镜像: {mirror}")
     got, missed = 0, []
@@ -388,6 +467,26 @@ def _rename_std(obj):
     return obj
 
 
+def _with_real_time(da, year):
+    """OAFlux 原文件的 time 只有 1..12（月号）、没有年份 —— 合并时必须补成真实日期。
+
+    否则 30 年拼起来会是 1..12,1..12,… 拼成的假时间轴，`load_data._normalise_dims`
+    的 `.dt.floor("D")` 也会直接报错。
+    """
+    import numpy as np
+    import pandas as pd
+    if "time" not in da.coords and "time" not in da.dims:
+        return da
+    t = da["time"]
+    if np.issubdtype(t.dtype, np.datetime64):
+        return da
+    vals = np.asarray(t.values)
+    if vals.size == 12:
+        idx = pd.date_range(f"{year}-01-01", periods=12, freq="MS")
+        return da.assign_coords(time=idx)
+    return da
+
+
 def merge(start, end):
     import numpy as np
     import xarray as xr
@@ -400,22 +499,28 @@ def merge(start, end):
         ds = xr.open_dataset(p)
         var = [v for v in ds.data_vars if "evap" in v.lower()][0]
         da = _rename_std(ds[var]).load()
+        da = _with_real_time(da, y)
         ds.close()
         das.append(da)
     if not das:
         print("raw/ 中没有可合并文件。")
         return 1
     merged = xr.concat(das, dim="time").sortby("time")
-    merged.attrs.update({
-        "source": "WHOI OAFlux (objectively analyzed air-sea fluxes), monthly evaporation",
+    # merged 是 DataArray（单个蒸发变量）—— 历史上这里按 Dataset 写，是从未执行过的死代码
+    var_out = merged.name or "evap"
+    if "units" not in merged.attrs:            # 下游 oaflux_evap_cm_per_year 依赖 units
+        merged.attrs["units"] = "cm/yr"
+    out = merged.to_dataset(name=var_out)
+    out.attrs.update({
+        "source": "WHOI OAFlux v3 (objectively analyzed air-sea fluxes), monthly evaporation",
+        "mirror": "NSF NCAR GDEX d260001 / OSDF (via rda.ucar.edu filelist)",
         "period": f"{start}-{end}",
         "history": "merged by python/download_oaflux_evap.py",
     })
     os.makedirs(OAFLUX_DIR, exist_ok=True)
-    enc = {"evap": {"zlib": True, "complevel": 4, "_FillValue": np.float32(9.96921e36)}} \
-        if "evap" in merged.data_vars else {v: {"zlib": True, "complevel": 4} for v in merged.data_vars}
-    merged.to_netcdf(MERGED_PATH, encoding=enc)
-    n = merged.sizes["time"]
+    enc = {var_out: {"zlib": True, "complevel": 4}}
+    out.to_netcdf(MERGED_PATH, encoding=enc)
+    n = out.sizes["time"]
     exp = (end - start + 1) * 12
     status = "OK" if n == exp else f"警告: {n} != 预期 {exp} 月 (缺 {missing})"
     print(f"合并完成: {MERGED_PATH}  时间步 {n}  {status}")
@@ -445,7 +550,16 @@ def main():
     ap.add_argument("--merge", action="store_true")
     ap.add_argument("--probe", action="store_true", help="只探测镜像, 不下载")
     ap.add_argument("--allow-partial", action="store_true", help="允许缺年合并")
+    ap.add_argument("--log", default=None,
+                    help="同时把输出写入该日志文件（UTF-8；不依赖 shell 重定向）")
     args = ap.parse_args()
+    if args.log:
+        d = os.path.dirname(os.path.abspath(args.log))
+        if d:
+            os.makedirs(d, exist_ok=True)
+        sys.stdout = _Tee(args.log, sys.stdout)
+        sys.stderr = sys.stdout
+        print(f"日志同步写入: {os.path.abspath(args.log)}")
     if args.probe:
         probe()
         return 0

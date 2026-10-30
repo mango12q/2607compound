@@ -7,14 +7,16 @@ download_phase5.py — Phase 5（图5/图6）的三项数据下载，**无需参
 
 本脚本只是把下面这 5 条官方命令按顺序跑一遍（每步失败即停并给出原因）：
 
-    1) python python\download_era5_tmax.py           # ERA5 日最高气温 0.25°（CDS）
+    1) python python\download_era5_tmax.py           # ERA5 日最高气温 0.25°（CDS；按年一个请求 + 6 并发）
     2) python python\download_era5_tmax.py --merge   # 合并为 ERA5_tmax_1984_2023_daily.nc
     3) python python\download_era5_sp025.py          # ERA5 地表气压 0.25°（CDS，框 [70,-16,28,44]）
     4) python python\download_era5_sp025.py --merge  # 合并为 ERA5_sp_1984_2023_daily.nc
     5) python python\download_oaflux_evap.py         # OAFlux 月蒸发（WHOI 多镜像自动降级）
 
-预计：tmax 479 个月 + sp 480 个月 ≈ 3 GB，几小时（取决于 CDS 队列）。
-中断后**原样重跑**即可：已完成的月份会自动跳过。
+预计：tmax 479 个月 + sp 480 个月 ≈ 3 GB。★ 2026-09-25 起走 `download_era5_fast.py` 引擎：
+**默认一次申请一年 + 2 路并发**（CDS 排队按"任务"计、与请求大小无关，年块把排队次数
+由 936 降到 78；实测年请求 3.1/6.1 h 各交付 8/12 个月）。想改成月粒度加 `--chunk-months 1`。
+撞上 CDS"同数据集排队限流"会自动冷却重试。中断后**原样重跑**即可：已完成的月份会自动跳过。
 
 跑完用 `python python\phase5_humid.py check` 确认三项都变成 [OK]。
 """

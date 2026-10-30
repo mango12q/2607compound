@@ -2,8 +2,12 @@
 # ══════════════════════════════════════════════════════════════════════════
 #  快速开始（Phase 5 湿热应力输入：ERA5 地表气压 sp，0.25° 欧洲框）
 #    python python\download_era5_sp025.py --dry-run  # 先看要下多少个月（不下载）
-#    python python\download_era5_sp025.py            # 正式下载（逐月，断点续传）
+#    python python\download_era5_sp025.py            # 正式下载（默认：一次申请一年 + 2 并发）
+#    python python\download_era5_sp025.py --chunk-months 1  # 改成"一次一个月"（排队次数 ×12）
+#    python python\download_era5_sp025.py --jobs 3   # 改并发数（默认 2；≥4 实测会被限流拒单）
 #  一键入口: run_phase5_downloads.bat
+#  ★ 2026-09-25：默认走 download_era5_fast.py 的分块并发引擎，粒度由 --chunk-months 控制
+#    （**默认 12 = 一次申请一年**）；输出文件名/校验口径/下游完全不变。
 #  为什么需要：现有 data/ERA5/sp/ 是 1.0° 全球件，而论文要求的 WBT/SH 全变量为
 #              0.25°；把 1.0° 插到 0.25° 不产生新信息，属方法学降级。
 #  前置：同 download_era5_tmax.py（CDS 凭据 + 接受数据集条款）。
@@ -349,12 +353,24 @@ def main():
     ap.add_argument("--end", type=int, default=DEFAULT_END)
     ap.add_argument("--merge", action="store_true", help="仅把已下载的月文件合并为单文件")
     ap.add_argument("--dry-run", action="store_true", help="只列计划, 不联网不写盘")
+    ap.add_argument("--chunk-months", type=int, default=12, dest="chunk_months",
+                    help="每个 CDS 请求含几个月：**默认 12 = 一次申请一年**（排队次数最少）；"
+                         "1 = 一次一个月；6 = 半年。平台 size 上限 400 天，最多 12 个月")
+    ap.add_argument("--jobs", "-j", type=int, default=2,
+                    help="并发请求数（默认 2；CDS 对同数据集排队请求数有临时限制，"
+                         "实测 ≥4 会开始拒单；1=串行）")
     args = ap.parse_args()
 
     if args.merge:
         return merge(args.start, args.end)
     if args.dry_run:
         return dry_run(args.start, args.end)
+    if args.chunk_months > 1 or args.jobs > 1:
+        # 分块 + 并发：交由 download_era5_fast.py（同一套 verify_month / merge）
+        import download_era5_fast as F
+        return F.run_one("sp", args.start, args.end,
+                         months_per_request=args.chunk_months, jobs=args.jobs)
+    # 以下为旧的逐月串行路径（--chunk-months 1 --jobs 1）
     check_credentials()
     return download_months(args.start, args.end)
 
