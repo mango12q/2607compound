@@ -6,6 +6,9 @@ results/intermediate/
 results/tables/
 logs/
 
+# 图3 的阈值扫描诊断图（每个口径一张、纯中间产物；主线 fig3_attribution_<tag>.png 仍入库）
+results/figures/fig3_attribution_sweep_*.png
+
 # 论文/补充材料 PDF 的纯文本提取（版权内容，与 results/tables/paper_fulltext.txt 同类）
 results/paper_text.txt
 results/paper_supp_text.txt
