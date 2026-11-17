@@ -85,6 +85,8 @@ def load_cesm1le_dir(forcing: str) -> xr.Dataset:
    CLI = `python python\phase6_cesm.py detect --baseline xghg --loo --members N`；池按成员剔除自身，
    缓存名带成员名单指纹 `thresh_{sst,t2m}_xghg_v3_w11_loo_<members>.npz`）。
    3 成员实测：LOO 使 XGHG 复合暴露 +4.2%/+11.0%/+29.1%，阈值 |Δ| 均 0.07–0.12 °C（SST）/0.24 °C（T2m）。
+   > ⚠️ **口径更新（2026-11-08，D7.4rev）**：主口径已改为 `--baseline self --loo --clim-period 1983-2012`
+   > （各实验自算气候态；`--baseline xghg` 仅作“共用冷基准”敏感性）。本节其余内容仍适用。
    **注意**：3 成员下 LOO 后池只剩 2 个，成员数噪声会高估影响；20 成员时（19 vs 20）小得多。
    详见 `results/phase6审计报告.md §5`。
    > ★ **第三轮补充（2026-09-23 已改码、未运行）**：模型侧还有两处**口径正确性**修复必须随全量一起生效——
