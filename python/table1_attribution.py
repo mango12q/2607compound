@@ -117,9 +117,18 @@ def main(argv=None):
         pr = f"{_fmt(r.PR, 2)} [{_fmt(r.PR_lo, 2)}–{_fmt(r.PR_hi, 2)}]"
         pf = f"{r.paper_FAR:.2f} {r.paper_FAR_ci}"
         print(f"{int(r.year):<6}{r.threshold:<7.0f}{far:<26}{pr:<26}{pf:<16}{r.paper_PR}")
-    print("\n⚠️ P0（3 成员）产物只用于验证流程；结论须用 20 成员 + --loo 的全量结果。")
+    print(f"\n⚠️ 以上为 20 成员 + --loo 全量口径（tag {args.tag or '(默认)'}，聚合 {args.agg}）。")
     return 0
 
 
+def _force_utf8_stdout():
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
+    _force_utf8_stdout()
     sys.exit(main())

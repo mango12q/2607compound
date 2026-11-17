@@ -64,6 +64,51 @@ import xarray as xr
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config as C  # noqa: E402
 
+# ★ 2026-11-07：时段改为**运行期可变**（原写死 C.CESM_PERIOD = 2000-2021）。
+#   动机 = 论文阈值取 1983–2012 气候态 90 分位，而 CESM1-LE 切片只有 2000–2021，
+#   只能拿 1983–2012 另下一套做气候态基准（图4/Table 1 的基准期偏差，见 AGENTS.md 第二十批）。
+#   用法：`gdex --years 1983-2012` → 产出 `sst_all_001_1983-2012.nc`（与分析期文件并存）。
+PERIOD = tuple(C.CESM_PERIOD)
+
+
+def _apply_years(args):
+    """把 `--years Y0-Y1`（或 `Y0-01-01:Y1-12-31`）落到模块级 PERIOD。"""
+    global PERIOD
+    spec = (getattr(args, "years", "") or "").strip()
+    if not spec:
+        PERIOD = tuple(C.CESM_PERIOD)
+        return PERIOD
+    if spec.count("-") == 1:                      # 1983-2012
+        a, b = spec.split("-")
+        PERIOD = (f"{int(a):04d}-01-01", f"{int(b):04d}-12-31")
+    elif ":" in spec:                             # 1983-01-01:2012-12-31
+        a, b = spec.split(":")
+        PERIOD = (a.strip(), b.strip())
+    else:
+        raise SystemExit(f"--years 格式应为 Y0-Y1 或 START:END，收到 {spec!r}")
+    print(f"时段: {PERIOD[0]} … {PERIOD[1]}")
+    return PERIOD
+
+
+# ★ 2026-11-07：TDS 的 `.dods` 请求是**每次 30–60 s 固定延迟**（与响应大小无关），
+#   原来一年一请求 ⇒ 17 年 = 17 次延迟 ≈ 17 min/文件。改成 **N 年一块一次请求**：
+#   默认 5 年（≈18 MB，远低于当年触发 ChunkedEncodingError 的 27 375 步整条取），
+#   17 年只需 4 次请求。实测块越大越快，但太大有断流风险，5 年是稳妥折中。
+BLOCK_YEARS = 5
+
+
+def _year_blocks(yy, n):
+    """年份 → [(label, la, lb)]：每 n 年一块，la/lb 是 yy 数组内的下标区间。"""
+    uy = np.unique(yy)
+    step = max(1, int(n))
+    out = []
+    for i in range(0, len(uy), step):
+        grp = uy[i:i + step]
+        sel = np.where(np.isin(yy, grp))[0]
+        out.append((f"{int(grp[0])}-{int(grp[-1])}" if len(grp) > 1 else f"{int(grp[0])}",
+                    int(sel[0]), int(sel[-1]) + 1))
+    return out
+
 AWS_TREFHT = {
     "20C": f"{C.AWS_LENS_BUCKET}/atm/daily/cesmLE-20C-TREFHT.zarr",
     "RCP85": f"{C.AWS_LENS_BUCKET}/atm/daily/cesmLE-RCP85-TREFHT.zarr",
@@ -145,7 +190,7 @@ def _to_datetimeindex(ds):
 
 
 def _slice_time_period(ds):
-    y0, y1 = C.CESM_PERIOD
+    y0, y1 = PERIOD
     ds = _to_datetimeindex(ds)
     sub = ds.sel(time=slice(y0, y1))
     if sub.sizes.get("time", 0) == 0:
@@ -554,7 +599,7 @@ def _load_dap2(url, var, retries=4):
     tname = dims[0]
     # ★ 2026-10-28：时间轴改走 `_dap2_time`（分块 + 重试），原来整条 time 数组一次取，
     #    XGHG seg2（27 375 步）经代理必被截断 ⇒ ChunkedEncodingError 整组报废。
-    tt, keys, yy, off = _dap2_time(f, tname, *C.CESM_PERIOD)
+    tt, keys, yy, off = _dap2_time(f, tname)
     latn = "lat" if "lat" in f.arrays else (dj if dj in f.arrays else "TLAT")
     lonn = "lon" if "lon" in f.arrays else (di if di in f.arrays else "TLONG")
     lat = _dap2_get1d(f, latn)
@@ -565,9 +610,7 @@ def _load_dap2(url, var, retries=4):
     lonww = (np.asarray(lon, dtype="float64") + 180) % 360 - 180
     loni = np.concatenate([lonww[a:b] for a, b in ib])
     blocks, times = [], []
-    for y in np.unique(yy):
-        sel = np.where(yy == y)[0]
-        la, lb = int(sel[0]), int(sel[-1]) + 1
+    for lab, la, lb in _year_blocks(yy, BLOCK_YEARS):
         t0, t1 = off + la, off + lb
         parts = None
         for attempt in range(retries + 1):
@@ -577,11 +620,11 @@ def _load_dap2(url, var, retries=4):
             except Exception as e:
                 if attempt >= retries:
                     raise
-                print(f"      [{int(y)}] 重试 {attempt+1}: {type(e).__name__} {str(e)[:80]}", flush=True)
+                print(f"      [{lab}] 重试 {attempt+1}: {type(e).__name__} {str(e)[:80]}", flush=True)
                 time.sleep(min(60, 10 * 2 ** attempt))
         blocks.append(np.concatenate([_clean_fill(p) for p in parts], axis=2))
         times.append(tt[la:lb])
-        print(f"      [{int(y)}] ✓ {blocks[-1].shape[0]} 天", flush=True)
+        print(f"      [{lab}] ✓ {blocks[-1].shape[0]} 天", flush=True)
     data = np.concatenate(blocks, axis=0)
     da = xr.DataArray(data, dims=("time", "lat", "lon"),
                       coords={"time": np.concatenate(times), "lat": land, "lon": loni},
@@ -620,8 +663,8 @@ def _dap2_time(f, tname, start=None, end=None):
     def _idx(y, m, d):
         return int(round(cftime.date2num(_dt.datetime(y, m, d), units, cal) - v0))
 
-    start = start or C.CESM_PERIOD[0]
-    end = end or C.CESM_PERIOD[1]
+    start = start or PERIOD[0]
+    end = end or PERIOD[1]
     y0, m0, d0 = (int(x) for x in str(start).split("-"))
     y1, m1, d1 = (int(x) for x in str(end).split("-"))
     off = max(0, _idx(y0, m0, d0))
@@ -666,11 +709,9 @@ def _load_dap2_ocn(url, var, retries=4):
     npts = (j1 - j0) * (i1 - i0)
     print(f"      ocn 子网格 j[{j0}:{j1}] i[{i0}:{i1}] = {npts}/{statics['TLAT'].size} 点 "
           f"({npts/statics['TLAT'].size:.1%})", flush=True)
-    tt, keys, yy, off = _dap2_time(f, tname, *C.CESM_PERIOD)
+    tt, keys, yy, off = _dap2_time(f, tname)
     blocks, times = [], []
-    for y in np.unique(yy):
-        sel = np.where(yy == y)[0]
-        la, lb = int(sel[0]), int(sel[-1]) + 1
+    for lab, la, lb in _year_blocks(yy, BLOCK_YEARS):
         t0, t1 = off + la, off + lb
         blk = None
         for attempt in range(retries + 1):
@@ -680,11 +721,11 @@ def _load_dap2_ocn(url, var, retries=4):
             except Exception as e:
                 if attempt >= retries:
                     raise
-                print(f"      [{int(y)}] 重试 {attempt+1}: {type(e).__name__} {str(e)[:80]}", flush=True)
+                print(f"      [{lab}] 重试 {attempt+1}: {type(e).__name__} {str(e)[:80]}", flush=True)
                 time.sleep(min(60, 10 * 2 ** attempt))
         blocks.append(_clean_fill(blk))
         times.append(tt[la:lb])
-        print(f"      [{int(y)}] ✓ {blk.shape[0]} 天", flush=True)
+        print(f"      [{lab}] ✓ {blk.shape[0]} 天", flush=True)
     data = np.concatenate(blocks, axis=0)
     ny, nx = statics["TLAT"].shape
     full = np.full((data.shape[0], ny, nx), np.nan, dtype="float32")
@@ -701,6 +742,10 @@ def _load_dap2_ocn(url, var, retries=4):
 def cmd_gdex(args):
     """OPeNDAP 服务端切片: 只传输 2000-2021(大气再裁欧洲框), 直接产出 proc 文件。"""
     _ensure_dirs()
+    _apply_years(args)
+    global BLOCK_YEARS
+    BLOCK_YEARS = max(1, int(getattr(args, "block_years", BLOCK_YEARS) or BLOCK_YEARS))
+    print(f"DAP2 每请求 {BLOCK_YEARS} 年")
     print(f"代理: {_setup_proxy() or '未检测到(将直连, 可能极慢)'}")
     members = C.CESM_ALL_MEMBERS[: args.members]
     # ★ 2026-10-27：分片下并发用（单流实测仅 ~31 kB/s，2/6 流聚合 265/488 kB/s）。
@@ -710,7 +755,11 @@ def cmd_gdex(args):
         if not members:
             raise SystemExit(f"--member-ids 没有匹配到任何成员: {args.member_ids}")
     comps = ("atm", "ocn") if args.only_comp == "both" else (args.only_comp,)
-    rows = _resolve_gdex(members, ("ALL", "XGHG"), comps)
+    # ★ 2026-11-07：补气候态时**只需要 XGHG**（`phase6_cesm._pooled_threshold` 的池子
+    #   硬编码读 XGHG：`_clim_series(kind, "XGHG", ...)`）；把 ALL 也下一遍纯属浪费一半流量。
+    exps = tuple(s.strip().upper() for s in str(getattr(args, "experiments", "ALL,XGHG")).split(",")
+                 if s.strip())
+    rows = _resolve_gdex(members, exps, comps)
     if not rows:
         raise SystemExit("目录解析为空")
     groups = defaultdict(list)
@@ -726,7 +775,7 @@ def cmd_gdex(args):
         print(f"清单 -> {out}（未下载任何数据）")
         return
 
-    y0, y1 = C.CESM_PERIOD
+    y0, y1 = PERIOD
     # 先跑便宜的大气组（欧洲框 ≈82 MB/组），再跑昂贵的海洋组（全球 POP ≈3.9 GB/组）。
     todo = sorted(groups.items(), key=lambda kv: (0 if kv[0][2] == "atm" else 1, kv[0][0], kv[0][1]))
     done = 0
@@ -737,9 +786,19 @@ def cmd_gdex(args):
             print(f"  [{gi}/{len(todo)}] 已存在，跳过 {os.path.basename(out)}")
             done += 1
             continue
+        # ★ 2026-11-07：**先按 manifest 的段范围剪枝**。补 1983–1999 时每个组都带一个
+        #   2006–2080 的 RCP85 段（n=27 375、time[0]=0），它与目标时段零重叠 ⇒
+        #   `_dap2_time` 内部 `stop <= off` 抛 "与该文件时间轴不重叠"，整组报废。
+        #   这里直接跳过零重叠段（判据用文件名里的 seg_start/seg_end，不发任何网络请求）。
+        _lo, _hi = int(str(y0)[:4] + "0101"), int(str(y1)[:4] + "1231")
+        segs_use = [r for r in segs
+                    if not (int(str(r["seg_end"])[:8]) < _lo or int(str(r["seg_start"])[:8]) > _hi)]
+        if not segs_use:
+            print(f"  [{gi}/{len(todo)}] 跳过 {exp}/{mem}/{comp}: 该组所有段都不含 {y0}…{y1}")
+            continue
         try:
             parts = []
-            for r in sorted(segs, key=lambda x: x["seg_start"]):
+            for r in sorted(segs_use, key=lambda x: x["seg_start"]):
                 if getattr(args, "engine", "pydap") == "dap2":
                     # ★ 2026-10-27：自制 DAP2 通道（快 ~14×）。
                     #   atm → 欧洲框规则网格；ocn → POP 曲线网格，只传欧洲邻近 slab 再 pad 回全球。
@@ -936,7 +995,8 @@ def cmd_download(args):
 # ──────────────────────────────────────────────
 def cmd_trim(args):
     _ensure_dirs()
-    y0, y1 = C.CESM_PERIOD
+    _apply_years(args)
+    y0, y1 = PERIOD
     raws = sorted(f for f in os.listdir(C.CESM_RAW_DIR) if f.endswith(".nc"))
     if not raws:
         raise SystemExit(f"{C.CESM_RAW_DIR} 里没有 .nc 文件")
@@ -982,9 +1042,14 @@ def main():
     p.add_argument("--members", type=int, default=C.CESM_P0_MEMBERS, help="成员数 (默认 P0=3, 全量 20)")
     p.add_argument("--member-ids", default="", help="只跑指定成员, 逗号分隔 (如 001,007; 用于多进程分片并发)")
     p.add_argument("--only-comp", default="both", choices=["both", "atm", "ocn"], help="只跑大气/只跑海洋 (分阶段下载用)")
+    p.add_argument("--experiments", default="ALL,XGHG", help="只下指定实验, 逗号分隔 (默认两者; 补气候态只需 XGHG)")
     p.add_argument("--engine", default="pydap", choices=["pydap", "dap2"],
                    help="取数通道: pydap(默认, 慢) | dap2(自制客户端, 实测快 ~14 倍; 目前支持 atm)")
     p.add_argument("--list", action="store_true", help="仅解析目录并导出清单, 不下载")
+    p.add_argument("--years", default="", help="覆盖时段, 如 1983-1999 / 1983-2012 "
+                                              "(默认 C.CESM_PERIOD=2000-2021); 产出名随之为 _Y0-Y1")
+    p.add_argument("--block-years", type=int, default=BLOCK_YEARS, dest="block_years",
+                   help=f"每次 DAP2 请求取多少年 (默认 {BLOCK_YEARS}; TDS 每次请求 30-60s 固定延迟)")
     p.set_defaults(func=cmd_gdex)
 
     p = sub.add_parser("download", help="按 URL 清单/RDA wget 脚本下载 (断点续传)")
@@ -994,11 +1059,22 @@ def main():
     p = sub.add_parser("trim", help="raw/ 全时段文件裁到 2000-2021 → proc/")
     p.add_argument("--region", default="none", choices=["none", "europe"], help="大气规则网格可裁欧洲框")
     p.add_argument("--keep-raw", action="store_true", help="保留原始文件（默认也保留，仅提示）")
+    p.add_argument("--years", default="", help="覆盖裁剪时段, 如 1983-2012 (默认 C.CESM_PERIOD)")
     p.set_defaults(func=cmd_trim)
 
     args = ap.parse_args()
     args.func(args)
 
 
+def _force_utf8_stdout():
+    """GBK 控制台/重定向文件里打 '✓'、'✗' 会 UnicodeEncodeError（2026-11-07 实跑踩到）。"""
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
+    _force_utf8_stdout()
     main()

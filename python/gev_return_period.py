@@ -273,6 +273,108 @@ def compute_gap(return_levels: Dict, mapped: Dict) -> Dict:
 
 
 # ──────────────────────────────────────────────
+# ★ 2026-11-08 第二十四批：**经验（分位）映射** —— 图4 的非参数版本
+#   动机（`logs/_diag_emp_rp.py` 实测）：440 个年值上做 GEV MLE，遇到
+#   零膨胀/有上界的序列时形状参数会跑飞（compound ξ=-0.885 ⇒ FixGHG 百年水平
+#   604 天/年 > 365 天的物理上界；marine 百年水平 284 天也超出 440 年样本的
+#   实测最大 237 天）。换成"FixGHG 的经验分位 → ALL 的经验 CDF"后，同一批
+#   事件表的五档重现期从 (compound) 2.56/5.29/12.1/40.8/104.9 变成
+#   2.43/3.83/5.30/8.63/13.3（论文 1.96/2.56/3.50/5.14/7.85），即残差
+#   13× → 1.7×。GEV 版本保留作敏感性（--mapping gev，主口径仍是它）。
+# ──────────────────────────────────────────────
+def emp_return_levels(annual_values: np.ndarray,
+                      n_bootstrap: int = N_BOOTSTRAP,
+                      seed: int = 42,
+                      rps: Sequence[float] = GEV_RETURN_PERIODS,
+                      ci: Tuple[float, float] = GEV_CI) -> Dict:
+    """经验重现水平 q_(1-1/rp)。返回结构与 `fit_return_levels` 一致。"""
+    vals = np.asarray(annual_values, dtype=np.float64)
+    vals = vals[np.isfinite(vals)]
+    out = {"n_years": int(vals.size), "n_valid": 0, "n_failed": 0,
+           "rp": {float(rp): {"median": np.nan, "ci_lower": np.nan, "ci_upper": np.nan}
+                  for rp in rps},
+           "rp_samples": {float(rp): np.array([]) for rp in rps},
+           "point_params": None, "method": "empirical"}
+    if vals.size < MIN_FIT_SAMPLES:
+        return out
+    for rp in rps:
+        out["rp"][float(rp)]["median"] = _emp_quantile(vals, 1.0 - 1.0 / float(rp))
+    idx = _bootstrap_indices(vals.size, n_bootstrap, seed)
+    samples = {float(rp): [] for rp in rps}
+    for b in range(idx.shape[0]):
+        v = vals[idx[b]]
+        for rp in rps:
+            samples[float(rp)].append(_emp_quantile(v, 1.0 - 1.0 / float(rp)))
+    for rp in rps:
+        arr = np.asarray(samples[float(rp)], dtype=np.float64)
+        arr = arr[np.isfinite(arr)]
+        out["rp_samples"][float(rp)] = arr
+        if arr.size:
+            out["rp"][float(rp)].update({
+                "ci_lower": _emp_quantile(arr, ci[0]),
+                "ci_upper": _emp_quantile(arr, ci[1])})
+    out["n_valid"] = int(n_bootstrap)
+    return out
+
+
+def map_return_period_emp(all_annual: np.ndarray, return_levels: Dict,
+                          n_bootstrap: int = N_BOOTSTRAP,
+                          seed: int = 43,
+                          ci: Tuple[float, float] = GEV_CI) -> Dict:
+    """把经验重现水平塞进 ALL 的**经验 CDF** 取等效重现期（0 个年超阈 ⇒ inf）。"""
+    vals = np.asarray(all_annual, dtype=np.float64)
+    vals = vals[np.isfinite(vals)]
+    rps = list(return_levels["rp"].keys())
+    res = {float(rp): {"median": np.nan, "ci_lower": np.nan, "ci_upper": np.nan}
+           for rp in rps}
+    if vals.size < MIN_FIT_SAMPLES:
+        return res
+
+    def _map(level, sample):
+        if not np.isfinite(level):
+            return np.nan
+        frac = float(np.mean(sample > level))
+        return np.inf if frac <= 0 else 1.0 / frac
+
+    for rp in rps:
+        res[float(rp)]["median"] = _map(return_levels["rp"][float(rp)]["median"], vals)
+    idx = _bootstrap_indices(vals.size, n_bootstrap, seed)
+    acc = {float(rp): [] for rp in rps}
+    for b in range(idx.shape[0]):
+        sample = vals[idx[b]]
+        for rp in rps:
+            arr = return_levels.get("rp_samples", {}).get(float(rp))
+            lvl = float(arr[b % len(arr)]) if (arr is not None and len(arr)) \
+                else return_levels["rp"][float(rp)]["median"]
+            v = _map(lvl, sample)
+            if np.isfinite(v):
+                acc[float(rp)].append(v)
+    for rp in rps:
+        arr = np.asarray(acc[float(rp)], dtype=np.float64)
+        if arr.size:
+            res[float(rp)].update({
+                "ci_lower": _emp_quantile(arr, ci[0]),
+                "ci_upper": _emp_quantile(arr, ci[1]),
+                "n_inf": int(np.sum(~np.isfinite(arr)))})
+    return res
+
+
+def analyse_return_periods_emp(all_annual: np.ndarray, fixghg_annual: np.ndarray,
+                               n_bootstrap: int = N_BOOTSTRAP,
+                               seed_fix: int = 42, seed_all: int = 43,
+                               rps: Sequence[float] = GEV_RETURN_PERIODS,
+                               ci: Tuple[float, float] = GEV_CI) -> Dict:
+    """非参数口径的一站式（结构同 `analyse_return_periods`）。"""
+    lv = emp_return_levels(fixghg_annual, n_bootstrap=n_bootstrap, seed=seed_fix,
+                           rps=rps, ci=ci)
+    mapped = map_return_period_emp(all_annual, lv, n_bootstrap=n_bootstrap,
+                                   seed=seed_all, ci=ci)
+    return {"fixghg": lv, "all": mapped, "gap": compute_gap(lv["rp"], mapped),
+            "n_years_all": int(np.isfinite(np.asarray(all_annual, dtype=float)).sum()),
+            "n_years_fixghg": lv["n_years"]}
+
+
+# ──────────────────────────────────────────────
 # 图 4 一站式：三类事件 → 三面板
 # ──────────────────────────────────────────────
 def analyse_return_periods(all_annual: np.ndarray, fixghg_annual: np.ndarray,

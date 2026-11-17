@@ -77,7 +77,14 @@ MAX_RETRY = 5
 # ★ 第五轮：下载框扩到 lat 28–70 / lon −16…44 后，框内含阿尔卑斯、挪威等高海拔格点，
 #   地面气压可低至 ~6.5e4 Pa（不再只是"海平面附近 9.5e4~1.04e5"）。
 #   这里放宽为 6.0e4 ~ 1.06e5 Pa；真正的范围检查在 phase5_humid 侧按域统计。
-SP_MIN, SP_MAX = 6.0e4, 1.06e5
+# ★ 2026-11-07 上游再放宽到 1.10e5：1.06e5 这个上限是拍脑袋的，会误杀真实数据。
+#   证据 ① 现存 479 个月文件全量扫描，最大 106 156.9 Pa（2012-01），已超 1.06e5，
+#        只因 verify_month 只看首时次才侥幸通过；② 2012-02 首日 106 418 Pa
+#        （= 1064 hPa，2012 年初西伯利亚高压造成的欧洲极值）被判"不在气压量级"
+#        ⇒ 该月被删重下、连续失败，卡住最后 1 个月。上限取 1100 hPa：
+#        地球海平面气压实测极值约 1084 hPa，1100 足够宽又能挡住"下错变量"
+#        （500 hPa 位势 ~5.5e4 撞下界、气温 ~280 K 撞下界）。
+SP_MIN, SP_MAX = 6.0e4, 1.10e5
 
 
 def ensure_utf8_console():
@@ -167,11 +174,14 @@ def verify_month(path, year, month):
                                f"（期望 {lat_lo}~{lat_hi}±1）")
 
         # 量纲/变量正确性: 必须是地面气压量级 (Pa)
+        # 2026-11-07：原来只看首时次，导致"首日越界才报错、其余日子越界看不出来"
+        # （2012-01 全天最大 106 156.9 Pa 就是这么混过去的）。现在取首/中/末三个时次。
         v = ds[dvars[0]]
-        sample = v.isel({tname: 0}).values
+        probe = sorted({0, n // 2, n - 1})
+        sample = v.isel({tname: probe}).values.ravel()
         sample = sample[np.isfinite(sample)]
         if sample.size == 0:
-            return False, "首时次全为 NaN"
+            return False, "抽查时次全为 NaN"
         vmin, vmax = float(sample.min()), float(sample.max())
         if vmin < SP_MIN or vmax > SP_MAX:
             return False, f"数值不在气压量级(Pa): {vmin:.0f}~{vmax:.0f}"
@@ -332,6 +342,10 @@ def merge(start, end):
         dss.append(da.load())
         ds.close()
     merged = xr.concat(dss, dim="time").sortby("time")
+    # ★ 2026-11-07 修复：concat DataArray 回来仍是 DataArray，原来直接取
+    #   merged.data_vars 会抛 AttributeError ⇒ --merge 必崩。收成单变量 Dataset。
+    if isinstance(merged, xr.DataArray):
+        merged = merged.to_dataset(name=merged.name or "sp")
     lon_name = "longitude" if "longitude" in merged.coords else "lon"
     lon = merged[lon_name].values
     if lon.max() > 180:

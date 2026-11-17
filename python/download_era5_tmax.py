@@ -311,6 +311,11 @@ def merge(start, end):
         dss.append(da.load())
         ds.close()
     merged = xr.concat(dss, dim="time").sortby("time")
+    # ★ 2026-11-07 修复：dss 里全是 DataArray，concat 回来仍是 DataArray，
+    #   原来直接 merged.data_vars 必抛 AttributeError（'DataArray' object has no
+    #   attribute 'data_vars'）⇒ --merge 与引擎末尾的合并步骤 100% 崩。收成单变量 Dataset。
+    if isinstance(merged, xr.DataArray):
+        merged = merged.to_dataset(name=merged.name or "tmax")
     # 统一经度到 -180..180 (与 d2m_global_daily 约定一致)
     lon_name = "longitude" if "longitude" in merged.coords else "lon"
     lon = merged[lon_name].values

@@ -7,7 +7,7 @@
 
 | 文件 | 内容 | 什么时候读 |
 |---|---|---|
-| `复现报告.md` | **主报告**：进度、锚点验证总表 §4、方法学决策 **D1–D11**、偏差清单 §5.1、图1j/l 定稿 §6 | 任何时候，第一份 |
+| `复现报告.md` | **主报告**：进度、锚点验证总表 §4、方法学决策 **D1–D7（含 D7.1–D7.7 及 -rev 修订，Phase 6 主口径 = D7.7 `_v12w50`）**、偏差清单 §5.1、**Phase 6 残差排查全过程 §5.2**、图1j/l 定稿 §6 | 任何时候，第一份 |
 | `phase6审计报告.md` | Phase 6 归因管线审计（6 份合并）：问题清单、逐维度结论、修复前后对比、4 份分报告全文 | 跑 Phase 6 之前 |
 | `规划一致性审查.md` | 规划文件 vs 论文**四轮**审查（含第二轮对第一轮的 3 处更正、第三轮的 P0 阻塞项、第四轮的图版式逐像素校准与数据探针） | 动 Phase 5/6 规格之前 |
 | `方法与证据.md` | 目视比对、E-OBS 版本核查、S1 读取、R/Python 检测交叉验证 + 2 份历史存档 | 追溯某个结论怎么来的 |
@@ -43,4 +43,16 @@
 
 - `paper_text.txt` / `paper_supp_text.txt`：论文与补充材料正文提取（版权原因不入库）
 - `results/tables/`（整目录，见 `.gitignore`；第三轮补登）
-- `data/`、`logs/`（`logs/` 目录当前已不存在）
+- `data/`（NTFS Junction → `E:\2607compound\data`）
+- `logs/`：**存在且很重要**（早期"目录已不存在"的说法已过期，2026-11-08 更正）——存放跑批日志
+  `logs\run_{tag}.log`、逐步日志 `logs\steps\<tag>_<step>.log`、一键脚本 `logs\_run_v12w50.ps1`，
+  以及 **Phase 6 残差排查的诊断脚本**（只读，不进 `python/` 主链）：
+  | 脚本 | 用途 |
+  |---|---|
+  | `logs\_cmp_gev_tags.py` | 各 tag 五档重现期 + FixGHG 百年水平 + 各自 Table 1 并排（全史对照） |
+  | `logs\_cmp_ci.py [tag…]` | **判"噪声 vs 真残差"专用**：五档 + bootstrap CI + 论文值 IN/out + `r100/r5` |
+  | `logs\_diag_emp_rp.py` | GEV 外推 vs 经验分位映射的逐档对照（N=440 模型年） |
+  | `logs\_diag_region_sens.py` | 分析域敏感性（地中海框 vs 全欧 206 对） |
+  | `logs\_diag_delta_clim.py` | δ = ALL−XGHG 的 1983–2012 强迫差（T2m 1.129 / SST 0.796 °C） |
+  | `logs\_diag_obs_bias.py` | β = CESM ALL 相对观测的暖偏差（T2m +0.783 / SST +0.431 °C） |
+  | `logs\_diag_v8_metric.py` / `logs\_diag_exp_series.py` | 暴露量纲敏感性 / 区域年暴露统计 |

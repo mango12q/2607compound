@@ -556,5 +556,19 @@ def main(argv=None):
             "stats": cmd_stats, "all": cmd_all}[args.cmd](args)
 
 
+def _force_utf8_stdout():
+    """GBK 控制台下打印 `⚠` 会抛 UnicodeEncodeError（实测 `check` 直接崩）。
+
+    直接 `python python\\phase5_humid.py all` 时先把自己切成 UTF-8；
+    经 bat 跑时 bat 已设 `PYTHONUTF8=1`，这里再兜一层。
+    """
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
+    _force_utf8_stdout()
     sys.exit(main())

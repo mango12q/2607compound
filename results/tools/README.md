@@ -16,6 +16,25 @@
 | `锚点核对/` | `snapshot_fig_stats.py` / `check_new_anchors.py` / `show_stats.py` | 图1/图2 数值快照、锚点核对、快照打印 | 改图后重新生成 `tables/fig_stats_*.json` |
 | `源码存档/` | `detect_event_source.txt` / `ts2clm_source.txt` / `proto_event_source.txt` | marineHeatWaves 与 heatwaveR 的源码存档（D1 与 Phase 6 审计的证据） | 需要核对包语义时 |
 
+## Phase 6 残差排查脚本（在 `logs/`，不在本目录 —— 2026-11-08 新增）
+
+2026-11-08 第二十三~二十六批把"图4/Table 1 与论文的量级残差"追到结案，证据链脚本全在仓库根的
+`logs/`（只读，不参与日常复现）。**结论出处 ↔ 脚本对照**：
+
+| 结论 | 脚本 | 关键产出 |
+|---|---|---|
+| 暴露量纲不是元凶（`frac` 逐位不变、`events` 更差） | `logs\_diag_v8_metric.py` | `logs\_diag_v8_metric_pre.log`、`_diag_v8_series.npz` |
+| 区域年暴露统计（440 模型年分位） | `logs\_diag_exp_series.py` | `logs\_exp_series_{tag}.npz`（**只存 22 长成员平均序列**） |
+| 复合面板 13× 残差是 **GEV 外推假象** | `logs\_diag_emp_rp.py` | GEV vs 经验分位逐档对照 |
+| 1983–2012 两实验强迫差 δ | `logs\_diag_delta_clim.py` | δ_t2m **1.129 °C** / δ_sst **0.796 °C** |
+| CESM 相对观测的暖偏差 β | `logs\_diag_obs_bias.py` | β_t2m +0.783（全对）/ +1.167（Med 框）、β_sst +0.431 / +0.065 |
+| 分析域是一阶因子（换全欧 15/15 全掉出 CI） | `logs\_diag_region_sens.py` | 地中海框 vs 206 对对照表 |
+| **终局判定：噪声 vs 真残差** | `logs\_cmp_ci.py` | 五档 + bootstrap CI + 论文值 IN/out |
+| 全史口径并排（13 个 tag） | `logs\_cmp_gev_tags.py` | 五档 + FixGHG 百年水平 + 各自 Table 1 |
+| 主口径一键全链（5.7 min） | `logs\_run_v12w50.ps1` | `results\tables\phase6_gev_v12w50.json` 等 |
+
+> 完整的"哪条假设被证伪"清单见 `results/复现报告.md` §5.2 与 `AGENTS.md` 第二十三~二十六批。
+
 ## 约定
 
 - 脚本里的相对路径多按 `<repo>/results/xxx.py` 写成 `os.path.join(BASE, "results", ...)`；

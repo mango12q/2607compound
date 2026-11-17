@@ -90,6 +90,31 @@ CI = C.CI_ALPHA
 MEMBERS_P0 = C.CESM_ALL_MEMBERS[:C.CESM_P0_MEMBERS]
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# ★ 2026-11-07：气候态基准期（论文 = 1983–2012 的 90 分位）可独立于分析期指定
+#   背景：论文 Methods 明写阈值取 "the 90th percentile of the 1983–2012
+#   climatological distribution"，而我们此前只有 CESM 的 2000–2021 切片，
+#   只好拿 XGHG+LOO 在**同一 22 年**上取分位（D7.4）。用户 2026-11-07 拍板「补齐」：
+#   另下 1983–2012 切片，阈值改用该期气候态，事件仍在 2000–2021 上检测。
+#   用法：`detect --clim-period 1983-2012`（文件 tag 与 proc 文件名一致）。
+# ══════════════════════════════════════════════════════════════════════════
+CLIM_PERIOD_TAG = ""          # "" = 用分析期自身（旧行为）；"1983-2012" = 论文口径
+
+
+def _period_tag_cli(spec):
+    """`--clim-period 1983-2012` → '1983-2012'（也接受 1983-01-01:2012-12-31）。"""
+    spec = (spec or "").strip()
+    if not spec:
+        return ""
+    if spec.count("-") == 1:
+        a, b = spec.split("-")
+        return f"{int(a):04d}-{int(b):04d}"
+    if ":" in spec:
+        a, b = spec.split(":")
+        return f"{a.strip()[:4]}-{b.strip()[:4]}"
+    raise SystemExit(f"--clim-period 格式应为 Y0-Y1 或 START:END，收到 {spec!r}")
+
+
 def select_members(n):
     """★ F6 修复：--members N 必须作用于**全量名单** CESM_ALL_MEMBERS。
 
@@ -138,49 +163,51 @@ def _prefer_gdex(fs, gdex_path):
     return sorted(set(fs))
 
 
-def find_t2m_segments(exp, m):
+def find_t2m_segments(exp, m, tag="2000-2021"):
     """返回该成员 (exp) 的 TREFHT proc 段文件列表 (按起始年排序)。
 
     ★F11：同时接受 **gdex 产出名** `trefht_{exp}_{m}_2000-2021.nc`
     （`download_cesm1le.py::cmd_gdex` 的命名规则 `{var}_{exp}_{mem}_{y0}-{y1}.nc`）
     与 aws/trim 派生名。两者的大气网格框一致（`config.CESM_EUROPE_LAT/LON`）。
+    ★ 2026-11-07：`tag` 选时段（默认分析期 2000-2021；气候态期用 1983-2012）。
     """
     pats = []
     if exp == "ALL":
-        pats.append(os.path.join(CESM_PROC_DIR, f"TREFHT_all_{m}_2000-2021_europe.nc"))
-        pats.append(os.path.join(CESM_PROC_DIR, f"trefht_all_{m}_2000-2021.nc"))
+        pats.append(os.path.join(CESM_PROC_DIR, f"TREFHT_all_{m}_{tag}_europe.nc"))
+        pats.append(os.path.join(CESM_PROC_DIR, f"trefht_all_{m}_{tag}.nc"))
     else:
-        pats.append(os.path.join(CESM_PROC_DIR, f"*xghg.{m}.cam.h1.TREFHT.*_2000-2021.nc"))
-        pats.append(os.path.join(CESM_PROC_DIR, f"trefht_xghg_{m}_2000-2021.nc"))
+        pats.append(os.path.join(CESM_PROC_DIR, f"*xghg.{m}.cam.h1.TREFHT.*_{tag}.nc"))
+        pats.append(os.path.join(CESM_PROC_DIR, f"trefht_xghg_{m}_{tag}.nc"))
     fs = []
     for p in pats:
         fs += glob.glob(p)
-    gdex = os.path.join(CESM_PROC_DIR, f"trefht_{'all' if exp == 'ALL' else 'xghg'}_{m}_2000-2021.nc")
+    gdex = os.path.join(CESM_PROC_DIR, f"trefht_{'all' if exp == 'ALL' else 'xghg'}_{m}_{tag}.nc")
     return _prefer_gdex(fs, gdex)
 
 
-def find_sst_segments(exp, m):
+def find_sst_segments(exp, m, tag="2000-2021"):
     """返回该成员 (exp) 的 POP SST proc 段文件列表。
 
     ★F11：额外接受 gdex 产出名 `sst_{exp}_{m}_2000-2021.nc`。
     注意 gdex 件必须保留 POP 全局网格（见 `download_cesm1le._mask_sst_box` 的说明），
     否则 `coastal_pairs_cesm.csv` 里缓存的网格索引会与文件错位。
+    ★ 2026-11-07：`tag` 选时段（默认分析期 2000-2021；气候态期用 1983-2012）。
     """
     if exp == "ALL":
         pats = [
             os.path.join(CESM_PROC_DIR,
-                         f"*B20TRC5CNBDRD.f09_g16.{m}.pop.h.nday1.SST.*_2000-2021.nc"),
+                         f"*B20TRC5CNBDRD.f09_g16.{m}.pop.h.nday1.SST.*_{tag}.nc"),
             os.path.join(CESM_PROC_DIR,
-                         f"*BRCP85C5CNBDRD.f09_g16.{m}.pop.h.nday1.SST.*_2000-2021.nc"),
-            os.path.join(CESM_PROC_DIR, f"sst_all_{m}_2000-2021.nc"),
+                         f"*BRCP85C5CNBDRD.f09_g16.{m}.pop.h.nday1.SST.*_{tag}.nc"),
+            os.path.join(CESM_PROC_DIR, f"sst_all_{m}_{tag}.nc"),
         ]
     else:
         pats = [
             os.path.join(CESM_PROC_DIR,
-                         f"*xghg.{m}.pop.h.nday1.SST.*_2000-2021.nc"),
-            os.path.join(CESM_PROC_DIR, f"sst_xghg_{m}_2000-2021.nc"),
+                         f"*xghg.{m}.pop.h.nday1.SST.*_{tag}.nc"),
+            os.path.join(CESM_PROC_DIR, f"sst_xghg_{m}_{tag}.nc"),
         ]
-    gdex = os.path.join(CESM_PROC_DIR, f"sst_{'all' if exp == 'ALL' else 'xghg'}_{m}_2000-2021.nc")
+    gdex = os.path.join(CESM_PROC_DIR, f"sst_{'all' if exp == 'ALL' else 'xghg'}_{m}_{tag}.nc")
     return _prefer_gdex(sum([glob.glob(p) for p in pats], []), gdex)
 
 
@@ -340,11 +367,14 @@ def cmd_pairs(args):
 # ──────────────────────────────────────────────
 # detect
 # ──────────────────────────────────────────────
-def _load_sst_points(exp, m, pairs_df):
-    """配对海点 SST 序列 (块读+对角抽取)。返回 (vals(nt,npair), time, kmt_pt)。"""
-    segs = find_sst_segments(exp, m)
+def _load_sst_points(exp, m, pairs_df, tag="2000-2021"):
+    """配对海点 SST 序列 (块读+对角抽取)。返回 (vals(nt,npair), time, kmt_pt)。
+
+    ★ 2026-11-07：`tag` 选时段文件（"2000-2021" = 分析期；"1983-2012" = 气候态期）。
+    """
+    segs = find_sst_segments(exp, m, tag=tag)
     if not segs:
-        raise FileNotFoundError(f"{exp} {m}: 无 SST 段")
+        raise FileNotFoundError(f"{exp} {m}: 无 SST 段（时段 {tag}）")
     pj = pairs_df.ocean_lat_idx.values
     pi = pairs_df.ocean_lon_idx.values
 
@@ -390,6 +420,115 @@ def _load_sst_points(exp, m, pairs_df):
     kmt_pt = np.asarray(np.ma.filled(kmt[pj, pi], 0))           # 配对点 KMT
     vals[:, kmt_pt <= 0] = np.nan               # 陆点/死海无值
     return vals, time, kmt_pt
+
+
+def _load_t2m_points(exp, m, pairs_df, tag="2000-2021"):
+    """配对陆点 T2m 序列 (nt, npair)，°C。返回 (vals, time)。
+    （内存缓存见 `_clim_series`，勿重复读盘）
+
+    ★ 2026-11-07：`tag` 选时段。
+      · 分析期（2000-2021）优先读 prepare 产出的中间件 `CESM_INT/{exp}_{m}_T2m.nc`
+        （已被 prepare 对齐到参考欧洲框，且单位已转 °C），省一次对齐；
+      · 其他时段（如气候态 1983-2012）直接读 proc 件，按与 prepare **完全相同**的
+        对齐规则（经度回 -180..180、就近取参考框、K→°C）落到同一网格，
+        再按 pairs 的 land_lat_idx/land_lon_idx 抽点。
+    对齐规则必须与 prepare 一致，否则 206 个陆点的索引会错位（网格同为 49×51）。
+    """
+    if tag == "2000-2021":
+        f = os.path.join(CESM_INT, f"{exp}_{m}_T2m.nc")
+        if os.path.exists(f):
+            ds = xr.open_dataset(f)
+            da = ds["T2m"].isel(
+                lat=xr.DataArray(pairs_df.land_lat_idx.values, dims="p"),
+                lon=xr.DataArray(pairs_df.land_lon_idx.values, dims="p"))
+            vals = da.transpose("time", "p").values.astype(np.float64)
+            time = pd.DatetimeIndex(da.time.values)
+            ds.close()
+            return vals, time
+        print(f"  !! 缺中间件 {os.path.basename(f)}，回落到直接读 proc 件（先跑 prepare 更快）")
+    ref = _norm_latlon(xr.open_dataset(_atm_reference()))
+    ref_lat, ref_lon = ref.lat.values, ref.lon.values
+    ref.close()
+    segs = find_t2m_segments(exp, m, tag=tag)
+    if not segs:
+        raise FileNotFoundError(f"{exp} {m}: 无 TREFHT 段（时段 {tag}）")
+    vals_l, time_l = [], []
+    for f in segs:
+        ds = xr.open_dataset(f)
+        var = "TREFHT" if "TREFHT" in ds.data_vars else "T2m"
+        da = _norm_latlon(ds[var])
+        lon180 = ((da.lon.astype(float) + 180) % 360) - 180
+        da = da.assign_coords(lon=lon180).sortby("lon")
+        da = da.sel(lat=ref_lat, lon=ref_lon, method="nearest")
+        if da.attrs.get("units", "").startswith("K") or float(np.nanmax(da.values)) > 150:
+            da = da - 273.15
+        da = da.isel(lat=xr.DataArray(pairs_df.land_lat_idx.values, dims="p"),
+                     lon=xr.DataArray(pairs_df.land_lon_idx.values, dims="p"))
+        vals_l.append(da.transpose("time", "p").values.astype(np.float64))
+        time_l.append(pd.DatetimeIndex(ds.time.values))
+        ds.close()
+    vals = np.concatenate(vals_l, axis=0)
+    time = pd.DatetimeIndex([t for idx in time_l for t in idx])
+    order = np.argsort(time.values)
+    return vals[order], time[order]
+
+
+_CLIM_CACHE = {}     # (kind, exp, m, tag) -> (vals, time)；detect 的 20 个 LOO 池反复用同批成员
+
+
+def _clim_series(kind, exp, m, pairs_df, tag):
+    """阈值池化用的成员序列，**进程内缓存**。
+
+    动机（2026-11-07）：`--clim-period` 让阈值改从 30 年气候态算，而 LOO 会为 20 个
+    成员各建一次池（每池 19 个成员）。不做缓存时同一成员的 30 年序列被读 19 次
+    ⇒ 单次 detect 读盘 ≈ 380 × 155 MB。缓存后每成员只读一次（内存 ≈ 18 MB/条）。
+    """
+    key = (kind, exp, m, tag)
+    if key not in _CLIM_CACHE:
+        vals, time = _load_stitched(kind, exp, m, pairs_df, tag)
+        _CLIM_CACHE[key] = (vals, time)
+    return _CLIM_CACHE[key]
+
+
+# 气候态时段 → [(文件 tag, 日期切片)] 的拼接表。
+# ★ 2026-11-07：论文气候态 1983–2012 里，**2000–2012 这 13 年已经在分析期文件里**，
+#   只补下 1983–1999 即可（省 40% 流量）。两个时段在时间轴上首尾相接、无重叠。
+CLIM_STITCH = {
+    "1983-2012": [("1983-1999", None), ("2000-2021", ("2000-01-01", "2012-12-31"))],
+}
+
+
+def _slice_series(vals, time, start, end):
+    m = (time >= pd.Timestamp(start)) & (time <= pd.Timestamp(end))
+    return vals[m], time[m]
+
+
+def _load_stitched(kind, exp, m, pairs_df, tag):
+    """按 CLIM_STITCH 把多段文件拼成一条气候态序列（未登记则按单段 tag 读）。"""
+    parts = CLIM_STITCH.get(tag)
+    if parts is None:
+        return _load_one(kind, exp, m, pairs_df, tag)
+    vs, ts = [], []
+    for ftag, sl in parts:
+        v, t = _load_one(kind, exp, m, pairs_df, ftag)
+        if sl:
+            v, t = _slice_series(v, t, *sl)
+        vs.append(v)
+        ts.append(t)
+    vals = np.concatenate(vs, axis=0)
+    time = ts[0].append(ts[1:]) if len(ts) > 1 else ts[0]
+    order = np.argsort(time.values)
+    print(f"  气候态拼接 {exp} {m} [{kind}]: " +
+          " + ".join(f"{f}({len(t)} 天)" for f, t in zip([p[0] for p in parts], ts)) +
+          f" = {len(time)} 天 {str(time[0])[:10]}~{str(time[-1])[:10]}")
+    return vals[order], time[order]
+
+
+def _load_one(kind, exp, m, pairs_df, ftag):
+    if kind == "sst":
+        v, t, _ = _load_sst_points(exp, m, pairs_df, tag=ftag)
+        return v, t
+    return _load_t2m_points(exp, m, pairs_df, tag=ftag)
 
 
 # ★ 审计修复 2026-09-23（结果见 results/phase6审计报告.md）★
@@ -462,14 +601,63 @@ def _run_events(x, time=None, min_dur=5, max_gap=2):
     return [(a, b) for v, a, b in _rle_all(dc) if v]
 
 
-def _thresh_cache_path(kind, members, exclude):
-    """阈值缓存路径带**成员名单指纹**，避免换 --members / 换 LOO 时静默复用旧缓存。"""
+def _thresh_cache_path(kind, members, exclude, clim_tag="2000-2021", pool_exp="XGHG"):
+    """阈值缓存路径带**成员名单指纹**，避免换 --members / 换 LOO 时静默复用旧缓存。
+
+    ★ 2026-11-07：再带**气候态时段**（`clim_tag`）——1983-2012 与 2000-2021 的阈值
+      数值完全不同，混用会静默给出错基准。
+    ★ 2026-11-08：再带**池的实验**（`pool_exp`）——`--baseline self` 时 ALL 用 ALL 的
+      气候态、XGHG 用 XGHG 的，两者数值不同，不能共用缓存。XGHG 池沿用旧文件名
+      （`_v5` 预计算的 20 个 LOO 缓存继续命中）。
+    """
     tag = "-".join(sorted(members)) + ("_loo" + exclude if exclude else "")
-    return os.path.join(CESM_INT, f"thresh_{kind}_xghg_{THRESH_VERSION}_{tag}.npz")
+    pe = "" if pool_exp == "XGHG" else f"_{pool_exp.lower()}"
+    return os.path.join(
+        CESM_INT, f"thresh_{kind}_xghg{pe}_{THRESH_VERSION}_{clim_tag}_{tag}.npz")
 
 
-def _pooled_threshold(pairs_df, members, exclude=None, kind="sst"):
-    """XGHG 合并反事实基准阈值 (366, npt)，heatwaveR ts2clm 语义。
+# ★ 第二十四批（_v9 标定扫描）：阈值整体加常数 °C。
+#   动机：_v5(共用 XGHG 冷基准) / _v7(各用各的) / _v8(共用 ALL 暖基准) 把论文图4 夹在中间，
+#   需要一个"参考气候态的暖度"标量 θ 来定位论文到底站在哪。实现只做**加法**，
+#   缓存里存的仍是未偏移的基准分位（⇒ 所有 θ 复用同一批 `thresh_*.npz`）。
+THRESH_OFFSET = 0.0
+# ★ 第二十五批（_v11）：**按变量**的附加偏移。θ_sst 走 `--thresh-offset`，θ_t2m 走
+#   `--thresh-offset-t2m`（额外叠加在 SST 偏移之上，所以两者互不覆盖）。
+#   动机：实测 CESM ALL 相对观测的暖偏差 β 在两个变量上差一个量级
+#   （T2m 地中海框 +1.17 °C，SST +0.07 °C），"观测阈值"读法要求陆地阈值单独抬高；
+#   共享单一标量（_v9o40/_v9o70）已证明会把海洋/复合面板一起打死。
+THRESH_OFFSET_T2M = 0.0
+# ★ 第二十五批（_v12）：**只加在反事实世界（pool_exp='XGHG'）陆地阈值**上的偏移。
+#   机理（_v11 双世界同偏移结果证明）：图4 的等效重现期几乎只由「两世界阈值之差」决定，
+#   共同抬高只通过零膨胀把尾部弄歪（θ_t2m=1.10 反而把陆地 100 年从 14.7 抬到 25.9）。
+#   所以真正能连续调节的旋钮是"参考气候态在两个实验之间的混合权重 w"：
+#     XGHG 阈值 += w·δ_t2m  ⇔  w=0 即 _v7/_v10（各用各的），w=1 即 _v8 的陆地侧（完全共用）。
+#   ⚠️ 只有 `--baseline self` 时 pool_exp == 被检测实验，才等价于"只动 XGHG 世界"；
+#   `--baseline xghg` 下两个世界都用 XGHG 池，这个偏移会同时加到两边。
+THRESH_OFFSET_XGHG_T2M = 0.0
+
+
+def _offset_of(kind, pool_exp=None):
+    """该 (变量, 池实验) 组合的总偏移（°C）。"""
+    off = float(THRESH_OFFSET)
+    if kind == "t2m":
+        off += float(THRESH_OFFSET_T2M)
+        if pool_exp == "XGHG":
+            off += float(THRESH_OFFSET_XGHG_T2M)
+    return off
+
+
+def _with_offset(thr, kind="sst", pool_exp=None):
+    """阈值 + 该 (变量, 池实验) 的偏移；总偏移 0 时原样返回。"""
+    off = _offset_of(kind, pool_exp)
+    if not off:
+        return thr
+    return np.asarray(thr, dtype=float) + off
+
+
+def _pooled_threshold(pairs_df, members, exclude=None, kind="sst", clim_tag="2000-2021",
+                      pool_exp="XGHG"):
+    """合并反事实基准阈值 (366, npt)，heatwaveR ts2clm 语义。
 
     kind='sst' : 配对海点 SST；kind='t2m': 配对陆点 T2m。
     两者统一为「11 天窗内**合并原始样本**再取 90 分位」（windowHalfWidth=5），
@@ -477,32 +665,25 @@ def _pooled_threshold(pairs_df, members, exclude=None, kind="sst"):
     smoothPercentile=FALSE) 同语义（smoothPercentile 只控制是否对阈值序列再做
     31 天滑动平均，不影响 11 天窗合并）。
     exclude：leave-one-out，从池中剔除该成员（主口径）。
+    pool_exp：**池来自哪个实验**。默认 XGHG（`--baseline xghg`，两个世界共用反事实
+      冷基准）；`--baseline self` 时传 exp 本身，各实验用自己的气候态。
     """
     pool = [m for m in members if m != exclude]
     if not pool:
         raise ValueError("池为空：exclude 后没有剩余成员")
-    cache = _thresh_cache_path(kind, pool, None)
+    cache = _thresh_cache_path(kind, pool, None, clim_tag, pool_exp=pool_exp)
     if os.path.exists(cache):
         z = np.load(cache)
         if int(z["n_members"]) == len(pool):
             print(f"  阈值缓存命中 {os.path.basename(cache)} (池={len(pool)} 成员)")
-            return z["thresh"]
+            return _with_offset(z["thresh"], kind, pool_exp)
         print(f"  !! 缓存成员数不符({int(z['n_members'])}!={len(pool)})，重建")
+    print(f"  阈值气候态时段: {clim_tag}  池实验: {pool_exp}")
     chunks = []
     for m in pool:
-        if kind == "sst":
-            vals, time, _ = _load_sst_points("XGHG", m, pairs_df)
-        else:
-            f = os.path.join(CESM_INT, f"XGHG_{m}_T2m.nc")
-            ds = xr.open_dataset(f)
-            da = ds["T2m"].isel(
-                lat=xr.DataArray(pairs_df.land_lat_idx.values, dims="p"),
-                lon=xr.DataArray(pairs_df.land_lon_idx.values, dims="p"))
-            vals = da.transpose("time", "p").values.astype(np.float64)
-            time = pd.DatetimeIndex(da.time.values)
-            ds.close()
+        vals, time = _clim_series(kind, pool_exp, m, pairs_df, clim_tag)
         chunks.append((vals, time.dayofyear.values))
-        print(f"  基准池({kind}): XGHG {m} ({vals.shape[0]} 天)")
+        print(f"  基准池({kind}): {pool_exp} {m} ({vals.shape[0]} 天, 时段 {clim_tag})")
     doy_all = np.concatenate([d for _, d in chunks])
     mat = np.concatenate([v for v, _ in chunks], axis=0)
     npt = mat.shape[1]
@@ -523,15 +704,19 @@ def _pooled_threshold(pairs_df, members, exclude=None, kind="sst"):
                         n_members=len(pool), members=np.array(pool),
                         version=THRESH_VERSION, calendar=cal)
     print(f"  {kind.upper()} 反事实基准 (11 天窗, 池 {len(pool)} 成员) -> {cache}")
-    return thresh
+    return _with_offset(thresh, kind, pool_exp)
 
 
-def _pooled_threshold_sst(pairs_df, members, exclude=None):
-    return _pooled_threshold(pairs_df, members, exclude, kind="sst"), np.arange(366)
+def _pooled_threshold_sst(pairs_df, members, exclude=None, clim_tag="2000-2021",
+                          pool_exp="XGHG"):
+    return _pooled_threshold(pairs_df, members, exclude, kind="sst",
+                             clim_tag=clim_tag, pool_exp=pool_exp), np.arange(366)
 
 
-def _pooled_threshold_t2m(pairs_df, members, exclude=None):
-    return _pooled_threshold(pairs_df, members, exclude, kind="t2m")
+def _pooled_threshold_t2m(pairs_df, members, exclude=None, clim_tag="2000-2021",
+                          pool_exp="XGHG"):
+    return _pooled_threshold(pairs_df, members, exclude, kind="t2m",
+                             clim_tag=clim_tag, pool_exp=pool_exp)
 
 
 def _detect_mhw_member(exp, m, pairs_df, thresh_ext=None, suffix=""):
@@ -716,9 +901,95 @@ def cmd_detect(args):
     members = select_members(n_mem)
     loo = bool(getattr(args, "loo", False))
     dtag = getattr(args, "tag", "_x2") or "_x2"
+    # ★ 2026-11-07：气候态基准期（论文 = 1983–2012）与事件分析期解耦。
+    global CLIM_PERIOD_TAG
+    CLIM_PERIOD_TAG = _period_tag_cli(getattr(args, "clim_period", "")) or "2000-2021"
+    clim_tag = CLIM_PERIOD_TAG
     print(f"检测成员: {members}（共 {len(members)} 个）"
           f"{'  [leave-one-out 基准]' if (baseline == 'xghg' and loo) else ''}"
-          f"  输出后缀={dtag!r}")
+          f"  输出后缀={dtag!r}"
+          f"{'  阈值气候态=' + clim_tag if clim_tag != '2000-2021' else ''}")
+    # ★ _v9 标定扫描（第二十四批）/ _v11 按变量偏移 / _v12 只动 XGHG 世界陆地（第二十五批）
+    global THRESH_OFFSET, THRESH_OFFSET_T2M, THRESH_OFFSET_XGHG_T2M
+    THRESH_OFFSET = float(getattr(args, "thresh_offset", 0.0) or 0.0)
+    THRESH_OFFSET_T2M = float(getattr(args, "thresh_offset_t2m", 0.0) or 0.0)
+    THRESH_OFFSET_XGHG_T2M = float(getattr(args, "thresh_offset_xghg_t2m", 0.0) or 0.0)
+    if THRESH_OFFSET or THRESH_OFFSET_T2M:
+        print(f"== 阈值偏移 θ_sst={THRESH_OFFSET:+.2f} °C  θ_t2m="
+              f"{THRESH_OFFSET + THRESH_OFFSET_T2M:+.2f} °C（两个世界共用同一偏移）==")
+    if THRESH_OFFSET_XGHG_T2M:
+        print(f"== 仅反事实世界陆地阈值偏移 w·δ = {THRESH_OFFSET_XGHG_T2M:+.2f} °C"
+              f"（混合权重 w≈{THRESH_OFFSET_XGHG_T2M / 1.129:+.2f}，δ_t2m=1.129）==")
+
+    if baseline == "self":
+        # ★ 2026-11-08：`--baseline self` = 每个实验用自己的气候态算阈值。
+        #   动机：`--baseline xghg` 让 ALL 也套 XGHG 的冷基准 90 分位，ALL 世界
+        #   （暖 ~1.5 °C）常年超阈 ⇒ marine 暴露 254 天/年、序列饱和，图4 的
+        #   "百年一遇"水平退化成 1–2 年一遇（见 `_v5` 结果）。自算基准下两个世界
+        #   的超阈比例都 ~10%，重现期位移才可解释。
+        print(f"== v6: 各实验自算基准（阈值池 = 本实验成员"
+              f"{'，LOO 剔除自身' if loo else '，含自身'}；气候态 {clim_tag}）==")
+        for exp in ("ALL", "XGHG"):
+            for m in members:
+                pool = [x for x in members if x != m] if loo else list(members)
+                if not pool:
+                    print(f"!! {exp} {m}: 池为空，跳过")
+                    continue
+                try:
+                    thr_sst, _ = _pooled_threshold_sst(pairs_df, pool, clim_tag=clim_tag,
+                                                       pool_exp=exp)
+                    thr_t2m = _pooled_threshold_t2m(pairs_df, pool, clim_tag=clim_tag,
+                                                    pool_exp=exp)
+                except Exception as e:
+                    print(f"!! 自算阈值失败 {exp} {m}: {e}")
+                    continue
+                try:
+                    _detect_thw_member_ext(exp, m, pairs_df, thr_t2m, suffix=dtag)
+                except Exception as e:
+                    print(f"!! THW(x) 失败 {exp} {m}: {e}")
+                try:
+                    _detect_mhw_member(exp, m, pairs_df, thresh_ext=thr_sst, suffix=dtag)
+                except Exception as e:
+                    print(f"!! MHW(x) 失败 {exp} {m}: {e}")
+        return
+
+    if baseline == "all":
+        # ★ 2026-11-08 第二十四批：`--baseline all` = 阈值池取 **ALL 实验** 的 1983–2012
+        #   气候态，两个实验共用（`--loo` 时剔除当前成员）。
+        #   动机：论文 Methods 写的是 "the 90th percentile of the 1983–2012 climatological
+        #   distribution"——单数、唯一的分布。对 FixGHG 控制跑来说"1983–2012"只是任意
+        #   30 年窗口，对 ALL 跑来说它就是观测期气候态 ⇒ 最字面的读法是**一份历史气候态、
+        #   两个世界共用**。已试的两个极端都不是它：`_v5` 共用 XGHG 冷基准（ALL 侧过冲、
+        #   marine 饱和），`_v7` 各用各的（自适应阈值把 1.2 °C 强迫整体抵消，XGHG 侧
+        #   相对阈值只剩 +0.08 °C ⇒ FixGHG 百年暴露水平虚高，见 `_cmp_gev_tags.log`）。
+        #   定量：ALL 的 1983–2012 比 XGHG 暖 ≈1.05 °C ⇒ XGHG 世界相对阈值 −0.82 °C。
+        #   ★ 免费对照：ALL 侧阈值与 `--baseline self` 逐位相同（ALL 用自己 1983–2012 的
+        #   合并 q90、LOO 池也一样）⇒ `_v8` 的 ALL 侧年暴露序列必须与 `_v7` 完全相同。
+        print(f"== v8: 两实验共用 ALL 实验基准（阈值池 = ALL 成员"
+              f"{'，LOO 剔除自身' if loo else '，含自身'}；气候态 {clim_tag}）==")
+        for exp in ("ALL", "XGHG"):
+            for m in members:
+                pool = [x for x in members if x != m] if loo else list(members)
+                if not pool:
+                    print(f"!! {exp} {m}: 池为空，跳过")
+                    continue
+                try:
+                    thr_sst, _ = _pooled_threshold_sst(pairs_df, pool, clim_tag=clim_tag,
+                                                       pool_exp="ALL")
+                    thr_t2m = _pooled_threshold_t2m(pairs_df, pool, clim_tag=clim_tag,
+                                                    pool_exp="ALL")
+                except Exception as e:
+                    print(f"!! 共用 ALL 阈值失败 {exp} {m}: {e}")
+                    continue
+                try:
+                    _detect_thw_member_ext(exp, m, pairs_df, thr_t2m, suffix=dtag)
+                except Exception as e:
+                    print(f"!! THW(x) 失败 {exp} {m}: {e}")
+                try:
+                    _detect_mhw_member(exp, m, pairs_df, thresh_ext=thr_sst, suffix=dtag)
+                except Exception as e:
+                    print(f"!! MHW(x) 失败 {exp} {m}: {e}")
+        return
 
     if baseline == "xghg":
         print("== v2: XGHG 合并反事实基准 ==")
@@ -732,8 +1003,8 @@ def cmd_detect(args):
                         print(f"!! {exp} {m}: LOO 池为空，跳过")
                         continue
                     try:
-                        thr_sst, _ = _pooled_threshold_sst(pairs_df, pool)
-                        thr_t2m = _pooled_threshold_t2m(pairs_df, pool)
+                        thr_sst, _ = _pooled_threshold_sst(pairs_df, pool, clim_tag=clim_tag)
+                        thr_t2m = _pooled_threshold_t2m(pairs_df, pool, clim_tag=clim_tag)
                     except Exception as e:
                         print(f"!! LOO 阈值失败 {exp} {m}: {e}")
                         continue
@@ -748,8 +1019,8 @@ def cmd_detect(args):
                     except Exception as e:
                         print(f"!! MHW(x) 失败 {exp} {m}: {e}")
             return
-        thr_sst, _ = _pooled_threshold_sst(pairs_df, members)
-        thr_t2m = _pooled_threshold_t2m(pairs_df, members)
+        thr_sst, _ = _pooled_threshold_sst(pairs_df, members, clim_tag=clim_tag)
+        thr_t2m = _pooled_threshold_t2m(pairs_df, members, clim_tag=clim_tag)
         print(f"  in-sample 说明：XGHG 组成员在池中含自身；ALL 组成员不含自身")
         for exp in ("ALL", "XGHG"):
             for m in members:
@@ -925,6 +1196,7 @@ def _member_exposure_series(exp: str, member: str, tag: str, pairs_df: pd.DataFr
       marine      —— 区域内**唯一海洋点**的 MHW 年天数（点均值）
       terrestrial —— 区域内**配对陆点**的 THW 年天数（点均值）
       compound    —— 复用 `annual{tag}_{exp}_{member}.csv` 的 `med_mean` 列
+                     （图4 三类统一用区域均值；图3/Table 1 另用格点 p90，见 config.MAIN_AGG）
     """
     t2m_path = os.path.join(CESM_INT, f"{exp}_{member}_T2m.nc")
     if not os.path.exists(t2m_path):
@@ -957,6 +1229,7 @@ def _member_exposure_series(exp: str, member: str, tag: str, pairs_df: pd.DataFr
     comp_path = os.path.join(CESM_INT, f"annual{tag}_{exp}_{member}.csv")
     if os.path.exists(comp_path):
         ca = pd.read_csv(comp_path)
+        # 图4 三类序列统一用**区域均值**（区域年暴露；p90 会让 marine 常年顶到 365 天上限）
         comp = ca.set_index("year")["med_mean"].reindex(uyears).values
     else:
         raise FileNotFoundError(
@@ -987,7 +1260,8 @@ def cmd_gev(args):
         results/tables/phase6_gev{tag}.json
     """
     import json
-    from gev_return_period import analyse_return_periods
+    from gev_return_period import analyse_return_periods, analyse_return_periods_emp
+    mapping = getattr(args, "mapping", "gev")
 
     tag = getattr(args, "tag", "")
     members = select_members(getattr(args, "members", C.CESM_P0_MEMBERS))
@@ -1015,6 +1289,7 @@ def cmd_gev(args):
                      "agg": "med_mean (regional mean over coastal pairs)",
                      "region": "lat 30-47 / lon 5-42 (Mediterranean & Black Sea)",
                      "n_boot": n_boot, "ci": list(C.GEV_CI),
+                     "mapping": mapping,
                      "compound_def": getattr(args, "compound_def", COMPOUND_DEF),
                      "source": "CESM1-LE ALL vs FixGHG"}}
     for k, d in series.items():
@@ -1026,8 +1301,11 @@ def cmd_gev(args):
             print("  [skip] 样本不足 8，跳过 GEV 拟合（P0 3 成员时属正常）")
             out[k] = None
             continue
-        res = analyse_return_periods(a, f, n_bootstrap=n_boot,
-                                     rps=C.GEV_RETURN_PERIODS, ci=C.GEV_CI)
+        res = analyse_return_periods_emp(a, f, n_bootstrap=n_boot,
+                                        rps=C.GEV_RETURN_PERIODS,
+                                        ci=C.GEV_CI) if mapping == "emp" else \
+            analyse_return_periods(a, f, n_bootstrap=n_boot,
+                                   rps=C.GEV_RETURN_PERIODS, ci=C.GEV_CI)
         block = {"fixghg": {f"{rp:g}": res["fixghg"]["rp"][float(rp)]
                             for rp in C.GEV_RETURN_PERIODS},
                  "all": {f"{rp:g}": res["all"][float(rp)]
@@ -1390,13 +1668,34 @@ def main():
     for name in ("prepare", "pairs", "detect", "compound", "attrib", "gev"):
         q = sp.add_parser(name)
         if name == "detect":
-            q.add_argument("--baseline", choices=["own", "xghg"], default="own",
-                           help="own=成员自身气候态(v1); xghg=XGHG 合并反事实基准(v2)")
+            q.add_argument("--baseline", choices=["own", "xghg", "self", "all"],
+                           default="own",
+                           help="own=成员自身气候态(v1); xghg=XGHG 合并反事实基准(v2，ALL 也套 XGHG);"
+                                " self=各实验用自身气候态(v6 诊断，ALL 用 ALL);"
+                                " all=两实验共用 **ALL 实验** 的 1983–2012 气候态(v8，"
+                                "论文 Methods 的字面读法)")
+            q.add_argument("--thresh-offset", type=float, default=0.0,
+                           help="阈值整体加常数 °C（_v9 标定扫描）。θ=0 与 _v5/_v7 的 XGHG 侧"
+                                "等价；θ=δ(≈1.13 T2m / 0.80 SST)=_v8 的共用 ALL 基准。")
+            q.add_argument("--thresh-offset-t2m", type=float, default=0.0,
+                           dest="thresh_offset_t2m",
+                           help="**只加在陆地 T2m 阈值上**的附加偏移 °C（_v11；叠加在 "
+                                "--thresh-offset 之上）。动机：实测模式暖偏差 β_t2m(地中海框)"
+                                "=+1.17 °C 而 β_sst=+0.07 °C ⇒ 『观测阈值』读法要求陆地单独抬高。")
+            q.add_argument("--thresh-offset-xghg-t2m", type=float, default=0.0,
+                           dest="thresh_offset_xghg_t2m",
+                           help="**只加在反事实世界（XGHG 池）陆地阈值**上的偏移 °C（_v12）。"
+                                "等价于把参考气候态按权重 w 混合：w=0 各用各的(= _v7/_v10)，"
+                                "w=1 完全共用(= _v8 的陆地侧)。需配 --baseline self。")
             q.add_argument("--tag", default="_x2",
                            help="输出事件表后缀（默认 _x2，不覆盖旧 P0 的 _x 产物）")
             q.add_argument("--loo", action="store_true",
                            help="leave-one-out：检测成员 m 时从 XGHG 池中剔除 m 自身"
                                 "（仅 --baseline xghg 有效；TECHNICAL_SPEC_PHASE_B 步骤 2b 主口径）")
+            q.add_argument("--clim-period", default="", dest="clim_period",
+                           help="阈值气候态时段（如 1983-2012 = 论文口径）；留空 = 与事件分析期"
+                                "同一 22 年（旧口径 D7.4）。事件仍在 2000-2021 上检测。"
+                                "需先用 download_cesm1le.py gdex --years 1983-2012 下好切片。")
         if name != "pairs":
             q.add_argument("--members", type=int, default=C.CESM_P0_MEMBERS,
                            help="成员数（作用于全量 20 人名单，不再被 CESM_P0_MEMBERS 截断）")
@@ -1413,6 +1712,11 @@ def main():
                                 "block=成员内分层+块(附录稳健性)")
             q.add_argument("--n-boot", type=int, default=N_BOOTSTRAP)
             q.add_argument("--quiet", action="store_true")
+        if name == "gev":
+            q.add_argument("--mapping", choices=["gev", "emp"], default="gev",
+                           help="重现期映射内核: gev=GEV MLE + bootstrap（论文 Methods 口径，"
+                                "默认）; emp=固定分位经验映射（非参数，_v10 诊断 —— 440 个年值上"
+                                "GEV 形状参数会对零膨胀序列跑飞，见 results/复现报告.md §5.2）")
         if name == "attrib":
             q.add_argument("--agg", nargs="+", default=list(AGG_COLS),
                            help=f"聚合口径列，默认 {list(AGG_COLS)}")
@@ -1423,5 +1727,15 @@ def main():
     args.func(args)
 
 
+def _force_utf8_stdout():
+    """GBK 控制台下打印 `⚠`/`✓` 会抛 UnicodeEncodeError；直接跑时先切成 UTF-8。"""
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
+    _force_utf8_stdout()
     main()

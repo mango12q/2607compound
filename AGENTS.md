@@ -4,10 +4,322 @@
 
 学术复现项目，非典型软件仓库。目标：复现论文 *Compound coastal marine–terrestrial heatwaves associated with humid-heat stress in Europe*（Scientific Reports 2025）。
 
+**2026-11-08 第二十六批：★ 残差结案 —— 图4 三面板 15/15 全部落入论文 bootstrap 区间，主口径定为 `_v12w50`**：
+- **结论先行**：`_v12w50`（w=0.50）+ 经验映射下，图4 的三面板 × 五档重现期 **15 个点全部落在我们的 bootstrap CI 内**；
+  海洋高端 0.56× 的"残差"被证实是**抽样噪声**（marine 100 年 13.33 的 CI = **[8.30, 24.48]**，包含论文的 24.0；
+  50 年 9.17 的 CI [6.47,16.92] 包含 13.4）。**图4 不再是"未复现项"。**
+- **`_v12w50` vs `_v12w60` vs 论文**（五档 ALL 等效重现期）：
+  | 面板 | 论文 | **`_v12w50`**（新主口径） | 五档 MAE | `_v12w60` | 五档 MAE |
+  |---|---|---|---|---|---|
+  | marine | 2.30/3.80/6.30/13.4/24.0 | 2.47/3.96/6.47/9.17/13.3 | — | 同左（不受 w 影响） | — |
+  | terrestrial | 1.26/1.46/1.75/2.44/3.26 | **1.28/1.52/1.91/2.64/3.17** | **0.104** | 1.21/1.38/1.72/2.23/2.72 | 0.181 |
+  | compound | 1.96/2.56/3.50/5.14/7.85 | **1.96/2.67/3.86/5.12/8.00** | **0.129** | 1.89/2.51/3.55/4.63/7.46 | 0.213 |
+  ⇒ 论文 terr 100 年 3.26 → w50 给 3.165（−2.9%）、comp 100 年 7.85 → w50 给 8.000（+1.9%）、comp 5 年 1.96 → w50 给
+  1.956（−0.2%）；`_v12w89` 陆地/复合掉出区间（0.56×/0.59×）⇒ **w>0.7 过头**。**w=0.50 同时是解析值与数据最优点**
+  （"合并两实验样本求 q90"给 w≈0.41–0.55，见第二十五批）。
+- **Table 1（`table1_v12w50.csv`）**：FAR **0.789 / 0.871 / 0.814**（论文 0.72/0.95/0.78），**MAE 0.0607**
+  （`_v7` 0.147、`_v12w60` 0.083）；FAR 2003/2023 在论文 CI 内；**PR 三年全部在论文 CI 内**（4.73 vs [2.8–7.2]、
+  7.75 vs [6–∞)、5.39 vs [4–10]）；年际次序 2003 < 2023 < 2022 保持。唯一 out 的是 2022 的 FAR 0.871 vs [0.93,1.00]
+  —— 与"三年各自最优 w 跨 [0.35,0.85]"一致，属论文自身年际形态，不再追。
+- **★ D7.7（新决策）**：主口径 = `_v12w50` = `--baseline self --loo --clim-period 1983-2012
+  --thresh-offset-xghg-t2m 0.5645` + `gev --mapping emp`。`_v12w60`/`_v12w89` 降为敏感性，`_v7`+`_v10` 留作 w=0 端点。
+  **D7.4rev 补充**：共用基准必须按"两实验**合并样本**的 q90"（w≈0.4–0.55），不能用单一实验（尤其 ALL）的 q90
+  （后者 = w=1，会把反事实世界打死，即 `_v8`）。
+- **新脚本**：`logs\_run_v12w50.ps1`（单点全链 + fig4 + table1，**5.7 min**：detect 4.89 / compound 0.57 / attrib 0.07 /
+  gev 0.15 / fig4 0.03 / table1 0.01，全 exit=0）；`logs\_cmp_ci.py [tags…]`（打印各 tag 五档 + **bootstrap CI** +
+  论文值是否 IN/out + `r100/r5` + FixGHG 五档水平与 100 年 CI）——**判残差是噪声还是真差，以后一律先跑这个**。
+- **产物**：`results\tables\phase6_gev_v12w50.json`（5942 B）、`table1_v12w50.csv`、`results\figures\fig3_attribution_v12w50.png/.pdf`、`fig4_return_period_v12w50.png/.pdf`、
+  `mhw/thw_v12w50_*`（120 件）、`logs\_cmp_ci.log` / `logs\_cmp_ci_w50.log`。
+- **已定量证伪、不要重试（全部批次累计）**：暴露量纲（`frac` 逐位不变/`events` 更差）、`--baseline all` 满强度（`_v8`，
+  反事实世界死亡 + P_fix→0）、θ 家族（共享阈值单一标量，θ≥0.40 零膨胀爆尾）、**双世界共同偏移**（`_v11`，无效甚至反向）、
+  "更冷基准补海洋"（ALL 侧饱和 + 海洋高端本就在 CI 内）。
+- **下一步（若要继续，按性价比）**：① `tg`（日均）vs `tx`（日最高）敏感性；② 海岸缓冲带宽度敏感性；
+  ③ Table 1 的 2022 FAR 偏低属论文年际形态，不再追。文档三处已同步（本节 / `results\复现报告.md` §5.2 / `待办.md` 顶部）。
+**★ 第二十六批补充（同日）：两条遗留小口径敏感性已结案 —— 一条被论文原文直接关掉，一条给出决定性对照**
+- **① `tg`（日均）vs `tx`（日最高）——不是问题，两条独立证据**：
+  a) **模型侧口径本来就是对的**：论文 Methods（`logs\_paper_main.txt` L605）明写 "We utilize daily **sea surface
+     temperature** (SST) data, and **daily 2m temperature** from CESM1-LE" ⇒ 模型侧就该用日均 TREFHT/SST，我们现用的
+     就是这个，**不需要补 `TREFHTMX`**（省下 ≈7 GB 下载 + 1.5–6 h）。
+  b) **观测侧改 tx 也不影响 Phase 6**：Table 1 的 62/78/72 天是**论文自己的观测复合日数值**（来自其 Fig 1j，
+     我们在 D7.2 里当固定参考线用），不是我们从自己数据算出来的 ⇒ 换 tx 只影响 Fig 1j/l 的观测曲线，而那条已
+     定稿为"未复现项"（§6，停止口径搜索）。真要补：E-OBS `tx_ens_mean_0.25deg_reg_{1980-1994,1995-2010,2011-2023}.nc`
+     ≈470 MB + `make_yearly`/merge + Phase 1–4 重检 ≈22 min，**不在本任务收益范围内**。
+- **② 分析域（地中海框 vs 全欧配对）——决定性对照，`logs\_diag_region_sens.py`（只读，日志 `logs\_diag_region_sens.log`）**：
+  同一批 `_v12w50` 事件表，只改区域与复合聚合列（Med 框用 `med_mean`；全欧 206 对用 `eur_mean`），
+  | 面板 | 论文 5/10/20/50/100 | **Med 框（64 对，主线）** | 全欧（206 对） |
+  |---|---|---|---|
+  | marine | 2.30/3.80/6.30/13.4/24.0 | **2.47/3.96/6.47/9.17/13.3 → 5/5 IN** | 2.02/2.67/3.28/4.15/4.89 → **0/5 IN** |
+  | terrestrial | 1.26/1.46/1.75/2.44/3.26 | **1.28/1.52/1.90/2.63/3.17 → 5/5 IN** | 1.09/1.17/1.25/1.36/1.51 → **0/5 IN** |
+  | compound | 1.96/2.56/3.50/5.14/7.85 | **1.96/2.67/3.86/5.12/8.00 → 5/5 IN** | 1.64/2.05/2.60/3.31/3.73 → **0/5 IN** |
+  ⇒ **区域不是"稳健性旋钮"而是一阶因子**：换成全欧配对后三块板同时**腰斩**（100 年 marine 4.9 vs 24.0、terr 1.5 vs 3.26、
+  comp 3.7 vs 7.85），全部掉出 CI。这反证两件事：① 论文图4 确实是**地中海 & 黑海**域（其 caption 也这么写），我们没跑偏；
+  ② 我们的 15/15 IN **不是估计器凑出来的**——换个域立刻崩，说明匹配来自数据本身。
+  （区域年暴露均值也随域变化：marine 81.2→76.0、terr ALL 20.2→16.9、comp ALL 45.6→38.7 天/年。）
+- **⇒ Phase 6 到此可以收工**：图4（`_v12w50`）三面板 15/15 落在论文 CI 内且对域选择**敏感得合理**；Table 1 FAR
+  MAE 0.0607、PR 三年全在论文区间；年际次序 2003<2023<2022 复现。列在待办里的两条敏感性已全部结案。
+**2026-11-08 第二十五批：找到真正有效的旋钮 —— 「参考气候态的混合权重 w」（陆地阈值部分共用），`_v12w60` 把图4 b/c 压到 0.83×/0.95×**：
+- **结论先行**：图4 的 ALL 等效重现期**几乎只由「两个世界的阈值之差」决定**，与阈值共同暖度无关。所以 ① `_v11`
+  （陆地阈值对**两个世界同时**加 0.6/1.1 °C）基本无效甚至反向；② 唯一能连续调节的旋钮是"参考气候态在两个实验
+  之间的混合权重"**w**：`XGHG 陆地阈值 += w·δ_t2m`（δ_t2m = **1.129 °C**，实测 1983–2012 两实验 T2m 差）。
+  w=0 ⇒ `_v7`/`_v10`（各用各的气候态）；w=1 ⇒ `_v8` 的陆地侧（两世界阈值完全相同）。
+- **`_v12w60`（w≈0.60，即 XGHG 陆地阈值 +0.68 °C；其余同 `_v10`）= 目前最接近论文的口径**：
+  | 面板 | 论文 | `_v10`（w=0） | **`_v12w60`（w=0.6）** | 倍数（w60） |
+  |---|---|---|---|---|
+  | marine | 2.30/3.80/6.30/13.4/24.0 | 2.47/3.96/6.47/9.17/13.3 | **2.47/3.96/6.47/9.17/13.3**（不受 w 影响） | 1.07/1.04/1.03/0.68/0.56 |
+  | terrestrial | 1.26/1.46/1.75/2.44/3.26 | 2.59/3.58/4.58/9.36/17.6 | **1.21/1.38/1.72/2.23/2.72** | **0.96/0.95/0.98/0.92/0.83** |
+  | compound | 1.96/2.56/3.50/5.14/7.85 | 2.43/3.83/5.30/8.63/13.3 | **1.89/2.51/3.55/4.63/7.46** | **0.96/0.98/1.01/0.90/0.95** |
+  ⇒ 一个旋钮同时把**两块板**从 5.40×/1.70× 压到 **0.83×/0.95×**（1 参数拟合 2 面板，且方向由实测量 δ/β 事前给出，
+  非事后调参）。残差重排为"海洋 0.56–1.07× / 陆地 0.83–0.98× / 复合 0.90–1.01×"，**worst 面板变成海洋**。
+- **w 响应面（steep，非单调于 w=1）**：w=0 → terr 17.6 / comp 13.3；**w=0.6 → 2.72 / 7.46**；w=0.89 → 1.83 / 4.63；
+  w=1（`_v8` 陆地侧）→ 2.13 / **1.04（复合被打死）**。论文（3.26 / 7.85）落在 **w≈0.5–0.6**。
+- **★ 为什么 w≈0.5 才是"pooling 两个实验"的正确实现（解析依据）**：把两实验的 1983–2012 样本**合并**求 90 分位时，
+  混合分布的 q90 由**暖尾**主导，解 `Φ(z)+Φ(z+δ/σ)=0.20`（σ≈3 °C ⇒ δ/σ≈0.38）得 z≈−1.505，比 ALL 自己的 q90
+  （z=−1.282）**冷 0.223σ≈0.67 °C**，相对 XGHG 自身 q90 就是 **+0.46 °C ⇒ w≈0.41**。而 `--baseline all`
+  （`_v8`）取的是"只用 ALL 池的 q90"＝ **w=1**，**不是**合并口径 ⇒ 它把反事实世界打死是**实现口径偏了**，
+  不是"共用基准"这条机制错。⇒ D7.4rev 的措辞要补一句：共用基准要按**合并样本的 q90**（w≈0.4–0.55），
+  不能用单一实验的 q90。
+- **Table 1（与映射内核无关，只受阈值影响）**：w=0（`_v7`）FAR **0.618/0.731/0.660**、w=0.6 **0.821/0.903/0.876**、
+  w=0.89 **0.911/0.957/0.928**、`_v11t06`（双世界陆地+0.6）**0.690/0.807/0.758**（论文 0.72/0.95/0.78）。
+  三年各自的最优 w 跨 **[0.35, 0.85]**（2003 要 w≈0.35、2022 要 w≈0.85、2023 要 w≈0.45）⇒ **单一 w 无法同时命中三年**，
+  最优折中 w≈0.6 的 MAE = 0.083（`_v7` 0.147）⇒ Table 1 残差已落到"论文自身年际形态"的量级。
+- **代码（第二十五批，全部 `py_compile` + `results/phase6_selftest.py` → ALL SELFTESTS PASSED）**：
+  ① `python/phase6_cesm.py` 模块级新增 `THRESH_OFFSET_T2M`（`--thresh-offset-t2m`，只作用陆地）与
+  `THRESH_OFFSET_XGHG_T2M`（`--thresh-offset-xghg-t2m`，**只作用反事实世界陆地**，需配 `--baseline self`，
+  因为 self 分支里 `pool_exp == exp`）；
+  ② `_offset_of(kind, pool_exp)` + `_with_offset(thr, kind, pool_exp)`，两个返回点（缓存命中 L679 / 新算 L707）都透传
+  `kind, pool_exp` ⇒ **阈值缓存仍然全部复用**（detect 3.6–4.3 min）；
+  ③ 缓存文件名与版本号不变（偏移只在返回点加），所以 `_v7`/`_v8`/`_v9`/`_v11`/`_v12` 共用同一批 `thresh_*.npz`。
+- **产物**：`results\tables\phase6_gev_v11t06.json`/`_v11t11`/`_v12w60`/`_v12w89`、`table1_v11t06.csv`/`_v11t11`/`_v12w60`/`_v12w89`、
+  `results\figures\fig4_return_period_v12w60.png`；事件表 `mhw/thw_{v11t06,v11t11,v12w60,v12w89}_*`（各 80 件）。
+- **跑法**：`logs\_run_v11_scan.ps1`（θ_t2m 0.6/1.1，双世界）、`logs\_run_v12_scan.ps1`（w·δ = 0.68/1.00，仅 XGHG 陆地）；
+  对照脚本 `logs\_cmp_gev_tags.py`（TAGS 里加 `_v11t06 _v11t11 _v12w60 _v12w89` 即可一起打印）。
+- **下一步最值得试的一条**：① 把 w 收到 **0.5**（`--thresh-offset-xghg-t2m 0.56`）验证论文是否落在 0.5 而不是 0.6，
+  并看海洋高端（现在 0.56×）能否靠"**SST 侧 w 取负**"（即 ALL 侧阈值略降，等于观测阈值读法 β_sst≈+0.07 的反向）补上；
+  ② 若要真正把海洋 50/100 年从 13.3 抬到 24，需要**减小**海洋的对比度损失 —— 但任何"更冷基准"的做法都会让 ALL 侧
+  饱和（`_v5` 的 254 天/年），所以海洋高端可能确实是"论文 440 模型年样本的尾部抽样波动"。
+
+**2026-11-08 第二十四批：残差坐标三维扫完（量纲 × 基准期 × 映射内核）—— 复合 13.4× 主因是 GEV 外推，新基线 `_v10`**：
+- **结论先行**：图4 的三块板里，**复合面板的 13× 残差主要是 GEV 尾部外推假象**，不是数据。`_v7` 的 compound XGHG 序列
+  （440 个模型年：均值 23.8 / 中位 13.6 / p95 82 / max 183）上 GEV MLE 得 **ξ=−0.885** ⇒ 百年水平外推到
+  **604 天/年（> 365 天的物理上界）**。把 100 年水平换成**经验分位 q99=123.6 天**后，同一批事件表的五档重现期
+  `2.56/5.29/12.1/40.8/104.9 → 2.43/3.83/5.30/8.63/13.3`（论文 1.96/2.56/3.50/5.14/7.85）⇒ **13.4× → 1.70×**。
+- **新口径 `_v10`（目前最接近论文）= `_v7` 事件表 + 经验映射**：
+  `python python\phase6_cesm.py gev --members 20 --tag _v10 --compound-def envelope --mapping emp`（≈2 min）
+  → `results\tables\phase6_gev_v10.json` + `results\figures\fig4_return_period_v10.png`。五档 ALL 等效重现期：
+  | 面板 | 论文 | `_v7`（GEV） | **`_v10`（经验）** | 倍数 |
+  |---|---|---|---|---|
+  | marine | 2.30/3.80/6.30/13.4/24.0 | 2.46/4.28/8.27/22.4/50.9 | **2.47/3.96/6.47/9.17/13.3** | 1.07/1.04/1.03/0.68/0.56 |
+  | terrestrial | 1.26/1.46/1.75/2.44/3.26 | 2.50/3.89/6.13/11.3/18.0 | 2.59/3.58/4.58/9.36/17.6 | 2.06/2.45/2.62/3.84/**5.40** |
+  | compound | 1.96/2.56/3.50/5.14/7.85 | 2.56/5.29/12.1/40.8/104.9 | **2.43/3.83/5.30/8.63/13.3** | 1.24/1.50/1.51/1.68/1.70 |
+  ⇒ 残差从"2.5×/5.6×/13×"重排为"**0.56× / 5.40× / 1.70×**"，最坏 13.4× → 5.4×，**worst 面板从复合翻转为陆地**。
+- **本轮新增四套全量口径（都落盘，互不覆盖）**：`_v8`（`--baseline all`，共用 ALL 1983–2012）/ `_v9o40`、`_v9o70`
+  （共用「XGHG q90 + θ」，θ=0.40/0.70 °C）/ `_v10`（`_v7` 事件表 + 经验映射）。图4 100 年 marine/terr/comp：
+  `_v8` inf/2.13/1.04、`_v9o40` inf/1.57/inf、`_v9o70` inf/1.71/1.03、`_v10` 13.3/17.6/13.3、论文 24.0/3.26/7.85。
+- **代码（都已 `py_compile` + `results/phase6_selftest.py` PASSED）**：
+  ① `python/phase6_cesm.py` detect 新增 `--thresh-offset DT`（模块级 `THRESH_OFFSET` + `_with_offset(thr)`，**只作用在
+  `_pooled_threshold` 的返回点** ⇒ 阈值缓存 `thresh_*.npz` 里仍存未偏移分位，所有 θ 复用同一批缓存，detect 3.6–4.3 min）；
+  ② 新增 `--baseline all`（共用 ALL 池，`pool_exp="ALL"`；ALL 侧 40 个 `mhw/thw_v8_ALL_*.csv` 与 `_v7` **MD5 逐位相同** ⇒ 实现无误）；
+  ③ `python/gev_return_period.py` 新增三个**非参数**函数 `emp_return_levels` / `map_return_period_emp` /
+  `analyse_return_periods_emp`（结构同 GEV 版，`frac=mean(all>level)`，0 ⇒ inf）；
+  ④ `cmd_gev` 新增 `--mapping {gev,emp}`（默认 gev = 论文口径；emp = `_v10` 诊断口径）并写进 json `_meta.mapping`。
+- **被定量证伪的三条假设（别再试）**：
+  ① **暴露量纲**（`logs\_diag_v8_metric.py`）：`frac` 是纯线性换尺度 ⇒ 图4 **逐位不变**（差 ≤0.6% 是 MLE 噪声）；
+  `events` 让 marine 100 年 50.3→**132.2** 更差；`daysmax/evmax` 也都在 63–75（论文 24.0）。且 terr 在 **5 年档就差 2×**
+  （2.49 vs 1.26），不涉及外推 ⇒ 量纲不是元凶。
+  ② **`--baseline all` 满强度（`_v8`）**：陆地形状对上（RP100/RP5 = 2.03 vs 论文 2.59，`_v7` 是 7.2）但把反事实打死 ——
+  XGHG marine 暴露 53.1→**2.94 天/年**、compound 23.8→**0.70**，marine 5 年水平 699 天（GEV 发散），
+  **Table 1 三年 P_fix 全 0 ⇒ FAR=1.000**。机理：SST σ≈0.5 °C，阈值 +0.80 °C 后"5 天连续超阈"几乎不可能。
+  ③ **θ 家族（共享基准 + 单一标量）**：θ=0（`_v5` 2.68/1.44/inf）→ 0.40（inf/1.57/inf）→ 0.70（inf/1.71/1.03）→ δ（`_v8`）
+  **没有任何一处能同时满足三块板**；θ≥0.40 后反事实年暴露变成"多数年≈0、少数年巨大"的零膨胀序列，
+  GEV 形状跑飞（θ=0.40 的 compound 百年水平 **1.9e12 天**）；换经验映射也一样（θ=0.40：marine 1.01→1.20、comp 1.02→1.18 平塌）。
+- **两条可复核的实测量**（`logs\_diag_delta_clim.log` / `logs\_diag_obs_bias.log`）：1983–2012 两世界强迫差
+  **δ = 1.129 °C（T2m）/ 0.796 °C（SST）**；CESM ALL 相对观测的暖偏差 **β = +0.783 °C（T2m 全 206 对）/ +1.167 °C（T2m 地中海框）**、
+  **+0.431 / +0.065 °C（SST）**。⇒ β_sst≈0 而 β_t2m≈+1.2，"观测阈值"读法在两个变量上给出完全不同的偏移，
+  正好对应"marine 已对、陆地偏高"的残差形态。
+- **下一步（唯一还没被证伪的方向）**：阈值偏移改成**按变量**（新增 `--thresh-offset-t2m`，`--thresh-offset` 只管 SST），
+  在 `--baseline self --clim-period 1983-2012 --mapping emp` 下扫 **θ_t2m ∈ {0.6, 1.1}**（θ_sst=0）。预期 terr 17.6→2.1–4
+  （论文 3.26）、compound 13.3→6–9（论文 7.85）、marine 不动（13.3 = 0.56×）。成本 ≈11 min。
+- **诊断脚本（新，只读）**：`logs\_diag_v8_metric.py`（四种暴露量纲 × 图4）、`logs\_diag_exp_series.py`（区域年暴露统计，
+  存 `_exp_series{tag}.npz`，**注意只存 22 长成员平均序列**）、`logs\_diag_emp_rp.py`（N=440 的 GEV vs 经验映射对照，
+  `python logs\_diag_emp_rp.py _v7 _v9o40`）、`logs\_diag_delta_clim.py`（δ；`_load_stitched` 返回 `(vals, time)` 二元组）、
+  `logs\_diag_obs_bias.py`（β；对 1 GB 观测文件**不要**用散点 fancy-index，先算时间平均场再最近邻取点，<2 min）。
+  汇总脚本 `logs\_cmp_gev_tags.py`（TAGS 已含 `_v8/_v8e/_v9o40/_v9o70/_v10`，顺带打印各 tag 的 Table 1）。
+- **跑法**：`logs\_run_v8_all.ps1`（`--baseline all` 全链 8.9 min）、`logs\_run_v9_scan.ps1`（θ=0.40/0.70 各一遍）。
+  `_v10` 的 120 个事件件是 `_v7` 的 **hard link**（`mhw/thw/annual_v10_*`），不占空间。
+
+**2026-11-08 第二十三批：Phase 6 基准期口径终定 —— 四版对照（`_v5`/`_v6`/`_v7`/`_v7e`）+ 残差归因（D7.4rev / D7.3rev / D7.6）**：
+- **同一批 120 件数据、同一条检测链，只改"阈值用谁的气候态"与"复合怎么定义"**，跑了四套全量：
+  | tag | 阈值基准期 | 复合 | 复合年暴露 ALL/XGHG（天） | Fig4 100 年 marine/terr/comp（年） | Table 1 FAR（03/22/23） |
+  |---|---|---|---|---|---|
+  | `_v5` | XGHG 1983–2012（两实验共用） | envelope | 216.2 / 23.8 | 2.68 / 1.44 / **inf** | 0.891 / 0.940 / 0.922 |
+  | `_v6` | 各实验 2000–2021（in-sample 诊断） | envelope | 13.3 / 11.8 | 38.6 / 46.0 / 19.4 | 0.471 / 0.500 / 0.615 |
+  | **`_v7`（推荐）** | **各实验 1983–2012** | envelope | **45.6 / 23.8** | **50.9 / 18.0 / 104.9** | **0.618 / 0.731 / 0.660** |
+  | `_v7e` | 各实验 1983–2012 | exceed | 12.5 / 7.09 | 50.9 / 18.0 / **31.6** | **1.0 / — / 1.0**（P_fix=0） |
+  | 论文 | — | — | — | **20.7 / 3.2 / 8** | **0.72 / 0.95 / 0.78** |
+- **★ 已查明的机制**：`--baseline xghg` 让 ALL 世界（暖 ~1.5 °C）套用"冷世界（XGHG）1983–2012 的 90 分位"⇒
+  海洋年暴露 **254.2 天/年**（70% 的日子在热浪里）⇒ 年序列**饱和**，任何百年一遇水平都塌成 1–2 年一遇。
+  改成各实验自算后 ALL 复合暴露 216.2 → 45.6 天、海洋 254.2 → 106.1 天，饱和消失、对比恢复 1.9×。
+- **★ 实现正确性的硬对照**：`_v7` 的 **XGHG 侧三个 FixGHG 100 年水平与 `_v5` 逐位相同**（marine 283.9 /
+  terrestrial 41.72 / compound 604.05 天）——两版对 XGHG 用的是同一套 1983–2012 阈值，改造只动了 ALL 侧。
+- **代码（`python/phase6_cesm.py`，已 `py_compile`）**：① `--baseline` 新增 `self` 分支（双循环 20 成员 × 2 实验，
+  各用自己的气候态池 + LOO）；② `_thresh_cache_path(kind, members, exclude, clim_tag, **pool_exp**)` 文件名带池实验
+  （`thresh_{kind}_xghg{pe}_{THRESH_VERSION}_{clim_tag}_{tag}.npz`；**XGHG 池沿用旧名 ⇒ `_v5` 的 20 个预计算缓存继续命中**）；
+  ③ `_pooled_threshold(..., pool_exp="XGHG")` 把原先硬编码的 `_clim_series(kind, "XGHG", ...)` 改为按池实验取。
+- **决策（写进 `results/复现报告.md` §5）**：**D7.4rev** 主口径 = `--baseline self --clim-period 1983-2012`（`_v7`），
+  `--baseline xghg` 降为"共用冷基准"敏感性；**D7.3rev** 聚合回到 `med_mean`（p90 是格点极值语义，且补齐基准后两者
+  已接近）；**D7.6** 复合定义 envelope 为主线、exceed 作敏感性双报（Fig4c 必须 exceed 才不爆尾，Table 1 必须 envelope 才有 P_fix）。
+- **★ 与论文的残差（复现报告 §5.2 全文）**：年际次序 2003<2023<2022 三套 envelope 口径全部复现；但量级仍偏
+  **海洋 2.5×、陆地 5.6×、复合 13×**。判读：**基准期这一维已调到极限**（`_v5` 过头、`_v6` 不足、`_v7` 居中），
+  残余主要来自论文未写清的三处 —— ① **暴露量纲**（我们用"年总天数/区域均值"；若论文实为事件数或覆盖占比，
+  天数口径在 ALL 世界容易顶到季节长度）；② **复合定义**（envelope 把整段 MHW 跨度都算复合日，XGHG 中位数 13.6 天
+  已高于论文的百年一遇水平 8 天；换 exceed 后中位数 5.2 天/百年 51.1 天，仍 6×）；③ **基线长度**（我们最短 1983–2012，
+  若用 1850 起工业化前基线，P_fix 会更小、FAR 更接近 0.95）。下一步优先级：暴露量纲 > 复合定义 > 更长基线。
+- **产物**：`results\figures\fig3_attribution_v7.png`、`fig4_return_period_v7.png`、`fig4_return_period_v7e.png`、
+  `results\tables\table1.csv`（`_v7` 口径）、`phase6_attrib_summary_v7.csv`、`phase6_gev_v7.json`。
+
+**2026-11-08 第二十二批：「补齐」跑完 —— 论文基准期 1983–2012 的 `_v5` 全链出图，Table 1 年际排序首次复现，D7.3 回归 med_mean**：
+- **数据齐**：`data\CESM1-LE\proc\` 新增 **40 件** `trefht_xghg_MMM_1983-1999.nc`（34.5 MB）+
+  `sst_xghg_MMM_1983-1999.nc`（87–90 MB），全部 6205 天（17×365 noleap）、49×51 欧洲框 / POP 子网格 9.2%。
+  耗时 18:25→23:57（**5.5 h**，GDEX 当晚持续 504/ChunkedEncodingError，10 流聚合仅 ≈300 kB/s）。
+- **`_v5` 全链 17.6 min**（00:07–00:12，全 exit=0）：detect **12.75 min**（阈值走新气候态缓存，
+  比 `_v4` 的 36.4 min 快 3×，因为 `_clim_series` 进程内缓存 + 阈值预计算）、compound 0.57、attrib 0.08、gev 4.51、
+  fig3/fig4/table1 各 0.03。产物：`mhw_v5_*`/`thw_v5_*` 80 件、`annual_v5_*`、`exposure_members_v5.csv`、
+  `phase6_attrib_summary_v5.csv`（18 行 = 6 聚合 × 3 年）、`phase6_attrib_sweep_v5_<agg>.csv`（6 列，各 101 阈值）、
+  `phase6_gev_v5.json`、`results\figures\fig3_attribution_v5.png`、`fig4_return_period_v5.png`、`results\tables\table1.csv`。
+- **★ Table 1（`med_mean`，论文基准期）**：2003 @62 天 FAR **0.891** [0.865–0.914] PR **9.17** [7.43–11.65]；
+  2022 @78 天 FAR **0.940** [0.921–0.959] PR **16.76** [12.67–24.65]；2023 @72 天 FAR **0.922** [0.899–0.943] PR **12.85** [9.93–17.54]
+  —— 论文 0.72 [0.64–0.80] / 0.95 [0.93–1.00] / 0.78 [0.70–0.88]、PR 4.1 [2.8–7.2] / [6–∞) / 8 [4–10]。
+  **2022 落进论文 CI；且年际排序 2003<2023<2022 与论文一致**（v4 下三年持平，排序不可辨）。
+- **★ D7.3 二次修订：`MAIN_AGG` 由 `med_p90` 回归 `med_mean`**（`python/config.py:181`，注释写了完整证据链）。
+  理由：v4 时选 med_p90 是"错基准下的补偿"——换成 1983–2012 后 med_p90 的 FAR 只有 0.603/0.701/0.674（**全低于论文**，
+  且把 2003 压成最低），med_mean 才同时命中量级与排序。图3 默认参数 `--agg-eur eur_p90 --agg-med med_mean` 不变。
+- **图4（`_v5`，区域均值）仍差 5–10×**：marine FixGHG 5/10/20/50/100 年 = 77.9/111.6/152.3/219.7/283.9 天 →
+  ALL 等效 **1.01/1.03/1.08/1.37/2.68 年**（论文 50/100 年 → 11.5/20.7 年）；terrestrial 20.3/25.3/30.1/36.7/41.7 天 →
+  ALL **1.03/1.07/1.13/1.27/1.44 年**（论文 100 年 → 3.2 [2.8–3.8] 年）；**compound 5 年 35.4 天 → ALL 1.02 年，
+  50 年 321.8 天 → 10.4 年 [1.12–inf]，100 年 604 天 → inf**（论文 100 年 → 8 [5–12] 年）。
+  均值 ALL 216.2 vs XGHG 23.8 天/年（compound）。**结论：基准期纠正是必要但不充分**——差距来自暴露量级本身
+  （我们的 Med+BS 海岸带 ALL 暴露已近饱和），不是阈值期间。
+- **★ `_v5e` 对照实验（2026-11-08 00:5x，用户"那就做"授权）**：把 80 个 `*_v5_*.csv` hard link 成 `*_v5e_*`，
+  再跑 `compound/attrib/gev --compound-def exceed`。结论——**复合定义不是图4a/b 的元凶**：
+  - 年暴露（区域均值）：compound **ALL 216.22 → 50.43**、**XGHG 23.82 → 7.09** 天（约 1/4.3）；
+    **marine 254.20 / terrestrial 54.45 两个口径完全相同**（复合定义不影响单类序列）。
+  - 图4c：100 年事件 **inf → 2.28 年**（论文 8 [5–12]，仍差 3.5×）；50 年 1.45 年（论文 5–12）。**病态消除**。
+  - Table 1 崩塌：`med_mean` 下 P_ALL 0.295/0.145/0.195、**P_fix 全 0 ⇒ FAR 1.000、PR inf**；
+    `eur_max` 是唯一还能看的（FAR 0.926/0.975/0.959、PR 13.5/40.6/24.3）。
+  - ⇒ **两个图确实要不同口径**：图4c 需要 exceed 才能不退化，Table 1 需要 envelope 才有 P_fix。
+  - ⇒ 更要紧的发现：**图4a/b 的 5–10× 差与复合无关**——marine ALL 暴露 **254.20 天/年**（70% 的日子在热浪里），
+    100 年重现水平 283.9 天只比均值高 12% ⇒ **序列饱和**。病根是「拿 1983–2012 冷基准的 90 分位去卡 +1.5 °C 的 ALL 世界」，
+    即 `--baseline xghg --loo` 让两个世界共用 XGHG 气候态。**未验证的下一步假设**：阈值改成"各实验自算"
+    （ALL 用 ALL 的 1983–2012 气候态），则两边超阈比例都被钉在 ~10%（36.5 天/年），图4 的"重现期位移"才有意义。
+    验证成本 ≈ detect 12.75 min + compound/attrib/gev ≈ 20 min。产物：`phase6_attrib_summary_v5e.csv`、
+    `phase6_gev_v5e.json`、`fig4_return_period_v5e.png`、`exposure_members_v5e.csv`。
+- **遗留**：① 图4 三类仍系统性偏高 5–10×，compound 尾部分布仍病态（100 年 inf）；
+  ② Table 1 的 2003/2023 FAR 比论文高 0.13–0.14（2022 已对上）；③ `sst_xghg_002` 等 4 件曾因单请求过大反复 504，
+  最终用 `--block-years 2` 补齐（**大块请求在 TDS 拥塞期失败率显著更高**，补件优先小块）。
+
+**2026-11-07 第二十一批：按论文口径"补齐"气候态基准期 1983–2012（用户指令「补齐」）**：
+- **动机**：论文 Methods 明写阈值 = "the 90th percentile of the **1983–2012** climatological distribution"，
+  而 `_v4` 的阈值只用了 CESM 切片自身的 2000–2021（D7.4 的妥协）⇒ ALL 世界远超"冷基准 90 分位"，
+  marine 暴露 214 天/年、ALL 等效重现期 1.1 年（论文 11.5–20.7 年），图4 只能作定性参考。
+- **下载器改造** `python/download_cesm1le.py`：① 新增 `--years Y0-Y1`（时段不再写死 `C.CESM_PERIOD`，
+  产出名随 tag 变化，与 2000–2021 文件并存）；② 新增 `--block-years N`（默认 5）——
+  实测 TDS `.dods` 每次请求有 30–60 s 固定延迟，但**传输 ~57 kB/s 才是瓶颈**，按年切块只是减少请求次数；
+  ③ 模块级 `PERIOD` + `_apply_years()`，`trim` 也支持 `--years`。
+- **只补 1983–1999**：2000–2012 已在分析期文件里，省 40% 流量（`CLIM_STITCH` 拼接表）。
+- **阈值侧改造** `python/phase6_cesm.py`：`--clim-period 1983-2012` → `_period_tag_cli` 设 `CLIM_PERIOD_TAG`；
+  `find_*_segments(exp,m,tag=)`、`_load_sst_points(...,tag=)`、新增 `_load_t2m_points(...,tag=)`（与 prepare 同一
+  对齐规则）、`_load_stitched()`（1983–1999 文件 + 2000–2021 文件切到 2012-12-31）、
+  `_clim_series()` **进程内缓存**（20 个 LOO 池各自要 19 个成员，不缓存会把同一序列读 19 次）、
+  `_thresh_cache_path(...,clim_tag)` 缓存名带气候态时段（防静默混用旧阈值）。
+  事件仍在 2000–2021 上检测；**阈值只从 XGHG 池取**（`--baseline xghg --loo` 口径不变）。
+- **跑法**：`logs\_run_v5_clim.ps1` = detect `_v5`（clim 1983-2012）→ compound → attrib（6 列聚合）→ gev →
+  fig3（`--agg-eur eur_p90 --agg-med med_p90`）→ fig4 → table1。
+- **★ 补数途中踩到的三个坑（都已修）**：① **绝大多数段与目标时段零重叠** —— 每个组除了 1850/1920–2005 的段，
+  还带一个 **2006–2080** 的 RCP85 段（atm `n=27 375`、`time[0]=0`），`_dap2_time` 里 `stop <= off` 直接抛
+  `RuntimeError: 时间段 1983-01-01…1999-12-31 与该文件时间轴不重叠（n=27375, v0=0.0）`，整组报废 ⇒
+  `cmd_gdex` 现在**先按 manifest 的 `seg_start/seg_end` 剪枝**（不发网络请求），零重叠段直接跳过。
+  ② **`✓`/`✗` 在 GBK 重定向日志里 `UnicodeEncodeError`**（`'gbk' codec can't encode character '\u2713'`）
+  ⇒ `download_cesm1le.py` 也加了 `_force_utf8_stdout()`，启动时并设 `PYTHONUTF8=1`。
+  ③ **只需要 XGHG**：`_pooled_threshold` 的池子硬编码读 `_clim_series(kind, "XGHG", …)`，ALL 的气候态文件
+  完全用不上 ⇒ 新增 `--experiments ALL,XGHG`（补气候态用 `--experiments XGHG`，省一半流量）。
+- **并发实测（2026-11-07）**：10 流聚合 ≈ 300 kB/s（每流 ≈30 kB/s），加到 **20 流反而更慢**
+  （9 min 只完成 12 个 5 年块，10 流时 21 min 完成 48 个块）⇒ **10 分片是最佳点**，别再往上加。
+- **已下的可用产物**：20 个 `trefht_all_MMM_1983-1999.nc`（34.5 MB，6205 天 = 17×365，49×51 欧洲框）
+  与首批 `trefht_xghg_*`。`_load_t2m_points(tag='1983-1999')` 实测 `(6205, 206)`、`_load_stitched('1983-2012')`
+  实测 `(10950, 206)`、1983-01-01~2012-12-31、NaN 0、30 年 × 365 天（noleap）✅。
+
+**2026-11-07 第二十批：Phase 5 全量跑通（图5/图6 数据齐）+ Phase 6 `_v4` 20 成员全链跑通（图3/图4/图6/Table 1 已出）+ 3 个待定口径问题**：
+- **Phase 5 全量（18.6 min，14:58→15:16，exit=0）**：`phase5_humid.py all` →
+  `results\intermediate\wbt_daily.nc` **1.15 GB** / `sh_daily.nc` **1.13 GB**（14610 天 × 145 × 201）；
+  `results\tables\fig5_stats.json`：**sst 中位 +0.335 °C/decade**（p05 0.086 / p95 0.736，n=15905）、
+  **sh +0.125 g/kg/decade**（n=37835）、evap +1.74（n=1140）；`fig6_stats.json` + `wbt_compound_{2003,2022,2023}.nc`。
+  6c 的 `RP(26 °C)=None` 属正常（GEV 形状为负 ⇒ 有上界），不是 bug。
+- **Phase 6 `_v4` 全链（20 成员，`--baseline xghg --loo`，`--compound-def envelope`）**：pairs **206 对** →
+  prepare 0.4 min → **detect 36.4 min**（真实退出 0；第一次 15:29 的中断是**后台进程随会话重启被杀**，非算错）→
+  compound 0.6 min → attrib 0.1 min → **80 个 `mhw_v4_*/thw_v4_*` 事件表**、
+  `annual_v4_{exp}_{mem}.csv`、`exposure_members_v4.csv`、`phase6_attrib_*_v4.csv`。
+- **GEV（11.4 min，16:26→16:37）**：marine **ALL 214.4 vs XGHG 29.6 天/年**、terrestrial **46.6 vs 11.9**、
+  compound **170.9 vs 11.8**（N=440/组）⇒ `results\tables\phase6_gev_v4.json`。
+  marine/terrestrial 与 P0 三成员锚点（208/28、48/11）一致；**compound 与报告里记的 41 不符，是因为 41 属更早的
+  旧 tag（`_x3`）**，同口径下 `annual_p0chk_ALL_00{1,2,3}` 实为 **138/172/187**，与今天 135/165/179 一致 ⇒ 聚合无 bug。
+- **出图**：`fig3_attribution_v4.png`、`fig4_return_period_v4.png`、`fig5_sst_trend.png`、`fig6_wbt.png`、
+  `results\tables\table1.csv`。`fig3` 首跑 exit=1，原因：默认 `--agg-eur eur_p90` 而 attrib 只跑了 med_* 三列 ⇒
+  补跑 `attrib --agg med_mean med_p90 med_max eur_mean eur_p90 eur_max` 后成功（**fig3 必须先跑全 6 列 agg**）。
+- **★ 三个问题的判断与处置（2026-11-07 定，用户"可以 判断一下"授权）**：
+  ① **复合定义：保持 `envelope`（D7.1 不变）**。做了 `exceed` 对照实验（tag `_v4e`，把 80 个事件表用 hard link
+  复制成 `mhw_v4e_*/thw_v4e_*` 再跑 `compound --compound-def exceed` + `attrib`，共 ~4 min）：
+  每个成员 ALL 复合 130,236–162,124 天（≈**25–36 天/配对点·年**）、XGHG 11,278–25,527（≈2.5–5.6）；
+  归因结果 **med_mean 的 P_ALL 只有 0.184/0.061/0.093、P_fix 全 0 ⇒ FAR=1.0、PR=∞**（med_p90 P_ALL 0.52/0.32/0.38）
+  —— 比 envelope 离论文更远。论文 Results 原文 "a marine heatwave **fully encompasses** a terrestrial heatwave"
+  ⇒ envelope 才是论文口径（Methods 那句 "simultaneously exceed" 属论文自身的两处表述冲突）。
+  ② **聚合口径：D7.3 修订 —— 图3 / Table 1 改用 `med_p90`**（**⚠️ 2026-11-08 已被第二十二批推翻：换成论文 1983–2012 基准后
+  `med_mean` 才是对的，`MAIN_AGG` 已回归 `med_mean`；以下文字留作历史记录**）。`python/config.py:181` `MAIN_AGG = "med_p90"`
+  （原 `med_mean`，注释里记了理由），`table1_attribution.py --tag _v4` 默认即 p90 ⇒
+  **FAR 0.803/0.846/0.837、PR 5.08/6.48/6.13**（论文 0.72/0.95/0.78、4.1/[6–∞)/8）；`med_mean` 的 0.977/0.986/0.987、44.1/74.0/75.8 降为敏感性口径。
+  已重出 `results\figures\fig3_attribution_v4.png`（`--agg-eur eur_p90 --agg-med med_p90`）与 `results\tables\table1.csv`。
+  **仍存偏差**：论文 2022（FAR 0.95）明显高于 2003（0.72）的年际形态没复现，我们三年几乎持平（0.80–0.85），根因见 ③。
+  ③ **图4：保持区域均值口径（`_member_exposure_series` 仍读 `med_mean`，不动），并定性为"基准期受限"**。
+  p90 不用于图4 是因为 marine 常年顶到 365 天上限。根因已查清：论文阈值取 **"90th percentile of the
+  1983–2012 climatological distribution"**（`logs\_paper_main.txt` Methods 原文），而我们的 CESM 切片只有
+  **2000–2021**，只能用 XGHG+LOO 当基准（D7.4）⇒ ALL 世界远远超出"冷基准的 90 分位"，marine 214 天/年，
+  等效重现期 1.08–1.21 年（论文柱高 2.3–24.0）；compound 面板还叠加零膨胀病态 ⇒ **图4 现阶段只能作定性参考**。
+  **补救路径（需用户点头）**：补下 CESM1-LE **1983–1999 共 17 年**切片（≈5 GB，`run_cesm_dap2_*.bat` 约 1 h），
+  把阈值期改成 1983–2012 后重跑 `detect`(≈36 min)+`compound`+`attrib`+`gev`，才可能对上图4 与 Table 1 的年际形态。
+
+- **代码小修**：`python/table1_attribution.py` 末尾 `print("⚠️ …")` 在 GBK 控制台崩
+  （`UnicodeEncodeError: 'gbk' codec can't encode character '\u26a0'`）⇒ 已加 `_force_utf8_stdout()`
+  并把那句改成"20 成员全量口径"；`python/phase5_humid.py` / `python/phase6_cesm.py` 同批也加了该函数。
+
+**2026-11-07 第十九批：ERA5 sp 0.25° 全齐（480/480）+ 两处校验/合并 bug —— "最后一个月永远下不下来"的真相**：
+- **现象**：引擎每 10 分钟重排队 sp **2012-02**，每次 13–19 s 就拿到文件，然后
+  `✗ 2012-02 校验失败: 数值不在气压量级(Pa): 71881~106418`，永远卡在 **479/480**。
+- **★ 根因不是下载、也不是 CDS 拥塞，是我们自己的自检上限拍得太小**：
+  `python/download_era5_sp025.py:80` 原先 `SP_MIN, SP_MAX = 6.0e4, 1.06e5`，把 **106 418 Pa（=1064 hPa）**
+  判成"不是气压"——这是 2012 年初西伯利亚高压给欧洲带来的真实极值。全量 479 个既有文件实测最大
+  **106 156.9 Pa**（`sp_eur_2012_01.nc`）本来就已越界，只因 `verify_month()` **只抽查首时次**才没报
+  ⇒ **过窄上限 + 只看首日** 两个缺陷叠加，才表现为"只卡死 2 月"。
+- **修**：① `SP_MAX` 改 **1.10e5**（1100 hPa；实测海平面气压极值 ~1084 hPa，仍能挡住"下错变量"）；
+  ② `verify_month()` 抽样由"仅首时次"改为 **首/中/末三个时次**。改后既有 479 个文件全部通过
+  （`download_era5_sp025.py --dry-run` → `已就位且校验通过: 479 个月`）。
+- **★ 另修一个 100% 必崩的死 bug**：`download_era5_tmax.merge()` 与 `download_era5_sp025.merge()`
+  都拿 `xr.concat(dss)`（dss 是 DataArray）的结果直接取 `.data_vars` ⇒
+  `AttributeError: 'DataArray' object has no attribute 'data_vars'`，**`--merge` 和引擎收尾的合并步骤必崩**
+  （这就是 `data\ERA5\` 下此前从来没有合并件的原因）。两处都补
+  `if isinstance(merged, xr.DataArray): merged = merged.to_dataset(name=...)`。
+- **结果**：sp 2012-02 落盘（`29 天, 变量 sp, 71273~106418 Pa`，2012 是闰年 ⇒ 29 天正确）⇒ **sp 480/480 ✅**；
+  `python python\phase5_humid.py check` → **6 项全 `[OK ]`、"输入齐备"**（第一次全绿）；
+  补出合并件 `data\ERA5\ERA5_sp_1984_2023_daily.nc`（1.19 GB）与 `ERA5_tmax_1984_2023_daily.nc`（0.71 GB），
+  时间步均 **14 610**（1984–2023 = 40 年 × 365.25）。
+- **⚠️ 改常量后必须重启引擎进程**：Python 早已 import 旧模块，在跑的进程仍用老上限；
+  而且 `build_plan()` 会把"校验不过"的月文件**直接删掉重下**（`download_era5_fast.py:286-290`）
+  ⇒ 不重启就会每 10 分钟把已下好的 2012-02 删一次、再下一次。
+- **下一步**：Phase 5 可以跑全量（`coastal_buffer.py` → `phase5_humid.py all` → 图5b / 图6 / Table 1）；
+  Phase 6 全量 5 条命令随时可跑（它不依赖 sp，走 CESM 自身 TREFHT/SST）。
+
 **2026-10-30 第十八批：CESM1-LE 全量 80 件到位（20 成员 × all/xghg × TREFHT/SST）+ 论文口径复核 + 一个 P0 去重修复**：
 - **数据全齐**：`data\CESM1-LE\proc\trefht_{all,xghg}_{001..020}_2000-2021.nc`（40 件，45–47 MB）
   与 `sst_{all,xghg}_{001..020}_2000-2021.nc`（40 件，113–114 MB），合计 **6.2 GB**（网络实搬 ≈18 GB）；
-  ERA5 tmax **480/480**，仅剩 sp 0.25° **204/480**（引擎在跑，只能等 CDS 队列）。
+  ERA5 tmax **480/480**，sp 0.25° 当时 204/480（**2026-11-07 已补齐 480/480**，见第十九批）。
 - **★ 下载通道彻底换了：自写 DAP2 客户端 `python/dap2.py` + `download_cesm1le.py --engine dap2`**。
   原因是本机 **netCDF4/libcurl 的 DAP 通道全崩**（`OSError: [Errno -68] NetCDF: I/O failure`，schannel 证书吊销检查
   在 netCDF-C 里关不掉），pydap 又慢（6 路并发仅 33 kB/s，同条件 dap2 **1.5 MB/s**）。四条坑：
@@ -26,250 +338,27 @@
 - 产物体检 `logs\_audit_cesm80.py` → **80 件 / 异常 0**（atm `n=8030`、有限点 2 499/天；ocn 有限点 4 263/天、
   子网格外溢出 0；`ALL` 海洋 `n=8029` 因**原始数据缺 2006-01-02**，非下载 bug；"断点"另有 noleap 无 2/29）。
 
-**2026-10-13 第十一批：本机科学栈丢失 ⇒ 按 requirements.txt 重建 + 重建后验证 + 数据现状复核**：
-- **发现（换对话后第一件要确认的事）**：9 月跑通全链路的那套环境在本机**已不存在**——
-  `python python\phase5_humid.py check` 直接 `ModuleNotFoundError: No module named 'xarray'`；
-  C:/D:/E: 全盘按目录名搜 `xarray`/`scipy`/`cartopy`/`conda-meta` **零命中**，无 conda/miniconda、
-  无 R、无 venv。**所以动手前先验环境，别默认还能跑。**
-- **Python 已重建**（PATH 上的 `python` =
-  `C:\Users\mango\AppData\Local\Programs\Python\Python313\python.exe`，3.13.9）：
-  `python -m pip install -r requirements.txt` 全部按锁定版本装上并 import 通过 ——
-  numpy 2.5.2（原 2.5.3 被降级对齐）/ scipy 1.18.1 / pandas 2.3.3 / xarray 2026.7.0 /
-  netCDF4 1.7.4 / dask 2026.8.0 / matplotlib 3.11.1 / cartopy 0.26.0 / cdsapi 0.7.7 /
-  s3fs 2026.7.0 / joblib 1.6.0 / pymupdf 1.28.2。**PyPI 直连可用**（无代理需求）。
-  日志 `logs/pip_install.log`。
-- **R 已重建**：TUNA 镜像静默安装 **R 4.6.1 → `C:\Program Files\R\R-4.6.1`（正好等于
-  `config.RSCRIPT_PATH` 默认值，代码零改动）**；`install.packages(c('heatwaveR','ncdf4',
-  'doParallel','foreach'))` 走 **Windows 二进制包（不需要 Rtools）**，装成
-  **heatwaveR 0.5.5**（= 论文口径要求的版本）/ ncdf4 1.24 / doParallel 1.0.17 / foreach 1.5.2。
-  日志 `logs/r_install.log`、`logs/r_packages_install.log`。
-- **重建后验证（全过）**：四套自检 `calc_wbt`(25 项) / `gev_return_period`(16 项) /
-  `results/phase5_selftest.py` / `results/phase6_selftest.py` 全 PASS，日志 `logs/selftests_rebuild.log`；
-  **R 链路实跑 smoke**（`logs/_smoke/`）：
-  `Rscript python\detect_events.R <E-OBS> T2m <out.csv> 1983 2012 <2 点 domains.csv> 5 2 2`
-  → 2 格点匹配成功、**(49.875, 4.875) 检出 70 个事件**（1984–2023，事件数年 top =
-  2018/2023/2015/2020/2022），另一格点 **(40.125, 9.875) 在 E-OBS 里是 100% NaN 的海洋格点、
-  被脚本正确丢弃**（"1 valid points"）⇒ 检测链路与 NaN 处理均恢复正常。
-- **数据现状（同日 `phase5_humid.py check`，7 项里 5 OK / 2 缺）**：
-  `[缺]` **ERA5 tmax 只有 144 个月（1984-01…1995-12）**，缺 1996–2023；
-  `[缺]` **`data\ERA5\sp_eur_daily\` 不存在**（sp 0.25° 欧洲框一个都没下，当前只能用 1.0° 兜底）；
-  `[OK]` d2m 573 件 / sp 1.0° 46 件 / OAFlux / OISST / E-OBS。
-  **tmax 下载自 2026-09-27 16:07 起停摆**（`logs/era5_fast_download.log` 末行 `第 2/4 次失败:
-  SSLError … cds.climate.copernicus.eu`），无下载进程在跑。
-- **★ 同日查明"为什么 9 月 27 日停了"的两个前提条件（重启下载前必须先满足，已写入 `待办.md` §1）**：
-  ① **CDS 凭据文件随旧 profile 消失 → 同日已重建并联网验证 ✅** —— `C:\Users\Administrator\.cdsapirc`
-  是 9 月下载实际用的那份（`logs/era5_fast_download.log` 开头两行自述
-  `凭据: 使用 C:\Users\Administrator/.cdsapirc`），而本机现在**只剩 `mango` 一个用户 profile，
-  `C:\Users\mango\.cdsapirc` 与 `C:\Users\Administrator\.cdsapirc` 都不存在**（C:/D:/E: 按文件名
-  全盘搜 `cdsapirc` 零命中；旧脚本 `D:\python\ear5.py` 等只写 `cdsapi.Client()`、无硬编码 key）；
-  当时 `cdsapi.Client()` 报 `Exception Missing/incomplete configuration file: C:\Users\mango/.cdsapirc`。
-  **连 `D:\opencode\reinstall-backup`（2026-09-01 重装前备份，1499 文件 / 138.9 MB）内容全搜
-  `cdsapirc|cds.climate.copernicus|CDSAPI|copernicus|ecmwf` 也是 0 命中，Browser 侧无 CDS 登录/访问记录**
-  ⇒ 只能去 <https://cds.climate.copernicus.eu/profile> 重取 token（key 是账号级凭据没丢）。
-  已重建 `C:\Users\mango\.cdsapirc`（url + key 两行）并**另备份到
-  `D:\opencode\reinstall-backup\config\.cdsapirc`**；**验证证据**：`GET /api/profiles/v1/account`
-  与 `/api/retrieve/v1/jobs` 均 **HTTP 200**，账号已接受 `cc-by` / `terms-of-use-cds` /
-  `licence-to-use-E-OBS-products` 三条许可。同日 `--dry-run` 打印待下量：
-  **tmax 144 在位 / 336 待下（1996-01…2023-12）、sp 0.25° 480 全待下（1984-01…2023-12）**。
-  ② **系统代理端口踩空是 9 月停摆的直接原因** —— 日志里 `ProxyError('Unable to connect to proxy'…)`
-  / `目标计算机积极拒绝 (127.0.0.1:8899)`：当时系统代理写 `127.0.0.1:8899` 而无进程监听，
-  本机代理内核是 Sparkle 的 `mihomo.exe`，**2026-10-13 实测实际监听 `127.0.0.1:7890`**（控制口 9097）。
-  同日实测 **CDS 直连可达（HTTP 202）、经 7890 亦可达**；系统代理当天为关闭状态（`ProxyEnable=0`）。
-
-**2026-10-14 第十二批：ERA5 下载重启（显式窗口）+ 实测并发上限 3 + "在队年份台账/先收割后下载" + 一起外部杀进程事故**：
-- **下载已重启并在跑**：入口 `run_phase5_fast_download.bat`（一个显式 Windows Terminal 窗口；`chcp 65001` +
-  `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8`/`PYTHONUNBUFFERED=1`，日志**追加**写 `logs\era5_fast_download.log`）。
-  现状 **tmax 204/480 个月**（1984–2001 齐；2000/2002 在队），**sp 0.25° 0/480** ⇒ 第十一批记的
-  "tmax 144 个月 / sp 全缺" 已过期。窗口是否乱码**必须靠 UIA 读屏核验**
-  （`pwsh -NoProfile -File %TEMP%\dsh_window_text.ps1` 读真实文字；不要只看字体设置）。
-- **★ 并发上限实测 = 3**：`--jobs 6` 连排两轮、**12 个请求全被 `rejected`**（当时队列为空也拒），
-  `--jobs 3` 则全部 `accepted` ⇒ 平台限的是**同数据集"排队中请求数"**，与带宽无关；被拒会冷却重试、不丢月份。
-- **★ 新增"在队年份台账"，根治"重启就重复提交"**：`download_era5_fast.py` 提交某年时登记进
-  **`logs\era5_pending_years.json`**，该年 12 个月落盘或该请求失败/被拒 ⇒ 自动注销；记录超 **24 h 自动解锁**
-  （防某年永远卡住）。规划时跳过台账里的年份，日志打
-  `⏸ 跳过 N 个「上一轮已提交、CDS 还没出结果」的年份：…`；`--dry-run` 也会打 `排队中   : …`。
-- **★ 新增 `python/adopt_cds_jobs.py` + `run_era5_adopt.bat`**：把服务端 `successful` 的任务下载回月文件
-  （按文件时间坐标判年份、逐月过 `verify_month`），已收 id 记 `logs\cds_adopted_jobs.json`（避免重复下载）；
-  参数 `--list` / `--max-jobs`(5) / `--since-hours`(72) / `--all` / **`--wait-live`**（轮询在队任务、出结果即收，
-  配 `--poll-sec`(60) / `--max-wait-min`(0=一直等)）。**bat 已改成"先 adopt 收割、再启动引擎"** ⇒
-  2026-10-14 22:30 实测：`已就位 204 个月，待下 276 个月` → `⏸ 跳过 2 个…年份：2000, 2002` →
-  `待下 252 个月 / 21 个请求` → 直接排 2003/2004/2005，**没有再重复排 2000/2002**。
-  ⚠️ **有在队任务时绝不要跑 `--clean-queue`**（它删 `accepted`/`running`）；在队任务**不受关窗/关机影响**，
-  服务端会自己跑完 ⇒ 想恢复先 `adopt --list`。
-- **★ CDS 任务接口（本轮全部结论的来源）**：`GET {url}/retrieve/v1/jobs?limit=N`（header `PRIVATE-TOKEN: <key>`）
-  列任务；`GET {url}/retrieve/v1/jobs/<id>/receipt` 可看**终态**任务申请的是哪一年（在队时 404）；
-  ⚠️ **2026-10-15 更正：在队任务其实也能读到请求体** —— `GET …/jobs/<id>?request=true&log=true` →
-  `metadata.request.ids`，见第十三批；所以"在队任务无法映射年份、只能自己登记台账"的说法已作废（台账仍保留，
-  用于补"刚提交、实况还没刷出来"的几秒窗口）。
-  `DELETE {url}/retrieve/v1/jobs/<id>` 精确删单个。据此删掉 3 个**重复**在队任务、只留排得最久的两个。
-  另一发现：**完全相同请求的重复提交直接回缓存结果**（两个不同 jobID 的 `results.href` 指向同一个对象、几乎瞬时）
-  ⇒ 重复提交"已算过"的年份几乎免费，只有"从未算过"的年份才真占队列槽位。
-- **★ 10-14 21:06 的下载中断 = 外部 `TerminateProcess`**（窗口尾行 `exit code = -1` /
-  `[已退出进程，代码为 4294967295 (0xffffffff)]`）：`download_era5_fast.py` 只有 `sys.exit(main())`，
-  `main()` 只返回 0/1；`--log` 把 stdout/stderr 都 tee 进日志 ⇒ 异常必留痕，而日志**无任何 traceback**、
-  脚本自己的收尾横幅也没打出来 ⇒ 不可能由脚本返回。已排除 bat 末尾的 `pause`（用户按的就是它）、计划任务、
-  睡眠/关机、Windows 更新、Defender；`21:06–21:11` 无 PowerShell 4104 脚本块事件、无 `taskkill` prefetch，
-  而 `%TEMP%\dsh-display-watch.log` 明确记着**同机另一个 agent 会话**在该时段反复起 `python`/`pwsh`
-  （本机同时跑着 D:\opencode、D:\compound-cn 等多个 DSH 会话）⇒ 头号嫌疑是别的会话；
-  进程创建审计（Security 4688）当时关闭 ⇒ **无法点名到具体进程**。数据无损，恢复流程 = `adopt` → 原样重启。
-- **★ 代理与吞吐实测**（回答"是不是走代理 / 为什么这么慢"）：cdsapi 用 `requests`、继承系统代理，
-  实测**确实经 `127.0.0.1:7890`**；**代理不是瓶颈**——单连接下 ECMWF 对象存储经代理 **68 kB/s**、
-  直连只有 **37 kB/s（直连反而慢 1.9×）**，8 MB Cloudflare 经代理 800 kB/s；CDS 单流只给 **44–96 kB/s**
-  且会中途断流（`IncompleteRead … attempt 1 of 500`，断点续传不丢数据）。**总吞吐随连接数近线性**
-  （实测 2/4/8 连接 = 90/198/687 kB/s）⇒ 慢的根因是 **CDS 队列等待 + 排队上限（=3）**，
-  整个 ERA5 剩余量只有 ~1.5 GB，不是带宽问题。
-
-**2026-10-15 第十三批：查明"6.5 小时零产出"= CDS 对该数据集的全局拥塞；引擎改为"按平台实况去重 + 运行中收割 + 自动续轮"**：
-- **现象**：10-15 15:20 起窗到 22:05，**6.5 小时 0 个月落盘**（tmax 仍 252），日志
-  `已完成 0/216 个月（失败 72）` / `⏳ CDS 排队限流…冷却 300s` / `第 N/4 次失败: SSLError`。
-- **★ 根因（有证据，别再怀疑脚本/代理/参数）**：被拒原文
-  `Number queued requests for this dataset is temporarily limited` ⇒ **平台按数据集算的全局拥塞**。
-  当天该数据集 200 条任务 **141 rejected / 10 successful（全是 10-14 的）**；我们 4 个 `accepted` 的年份里
-  **2004（10-14T14:30 UTC 提交）排队 24 h 仍 `updated == created`** ⇒ 平台连"开始算"都没排到。
-  **SSLError 实测发生在 cdsapi 的"轮询"阶段**（`/api/retrieve/v1/jobs/<id>?log=True&request=True`，
-  `SSLEOFError(8,'UNEXPECTED_EOF_WHILE_READING')`）——而 `client.retrieve(ds, req, tmp)` 一句里
-  **提交 + 轮询 + 下载是连在一起的**，所以旧引擎把"轮询失败"当"提交失败"重投 ⇒ **这才是 10-15 那 12 条重复件的来源**。
-- **★ 在队任务的请求体可以读回来（推翻第十二批的"必须自己登记台账"）**：
-  `GET {url}/retrieve/v1/jobs/<id>?request=true&log=true` → `metadata.request.ids`
-  = `{day, area, year, month, variable}`（**普通 GET 看不到**；偶发返回空 ids，重试一次即得）。
-- **引擎 5 处改动**（`python/download_era5_fast.py`，已 `py_compile` + `--selftest` 通过）：
-  ① `live_job_keys()` / `queued_years()`：按平台实况识别"这一年已在队"，提交前跳过（抛 `AlreadyQueued`）；
-  ② `retrieve_with_retry` 异常分支先 `queued_years(force=True)`：**POST 撞 SSLError 但平台已受理时不再重投**；
-  ③ `reconcile_pending()`：开局把台账里"平台上已无在队任务"的年份解锁（实测清掉 2012/2013/2014、保留 2004）；
-  ④ `harvest_loop()`：运行中每 10 分钟跑一次 adopt 逻辑，平台跑完的任务当场落盘；
-  ⑤ `--loop-minutes 10`：一轮跑完仍有缺月就等 10 分钟重新规划，**窗口不关**（bat 已带该参数，
-  title = `ERA5 download - harvest CDS first, then tmax + sp (3 jobs, auto-loop)`）；另有 `LIVE_CAP_MIN = 6`
-  限制"我们最多占几个队列槽位"。
-- **10-15 22:26 实测**：窗口里 `⏸ 跳过 4 个「CDS 队列里已经有」的年份：2004, 2006, 2007, 2008（平台实况 4 个 /
-  本地台账 1 个）`；新排的 2009/2010/2011 先被拒、**重试后在 22:26 全部 `accepted`**（且未产生任何重复件）；
-  已删掉唯一的精确重复件（第二个 2008，`f97ede65`，`DELETE → 200 dismissed`）。
-- **逐小时 `reanalysis-era5-single-levels` 是另一条路（备选，暂不走）**：22:17 实测小请求**立刻 accepted**
-  （同期 daily-statistics 是"投什么拒什么"），但它同样 `updated == created` 未被开始算；代价是体积 ~60 GB
-  （19 年 tmax + 40 年 sp，欧洲框 0.25° 逐小时）且日最高/日均要本地自己算 ⇒ **等用户拍板**。
-
-**2026-09-25 第十批：ERA5 下载引擎（分块 + 低并发 + 限流退避）+ 查明 CDS 三条硬约束**：
-- **新增 `python/download_era5_fast.py`**：统一承载 ERA5 tmax / sp 的 CDS 下载。
-  **请求粒度由 `--chunk-months` 控制：默认 12（一次申请一年）**，`1` = 一次一个月、
-  `6` = 半年；并发 `--jobs`（默认 2）。返回结果在本地按 12 个月切开、**逐月过旧脚本的
-  `verify_month()`**，所以 `config.py` / `phase5_humid.py` / `download_phase5.py` **下游零改动**。
-  兼容平台两种返回形态（单个多月 `.nc` / zip 内每月一个 `.nc`）。`--selftest` 纯本地自检
-  （含 zip 多文件分支）；`--clean-queue` 清在队任务；`--log` 脚本内置 UTF-8 日志。
-- `download_era5_tmax.py` / `download_era5_sp025.py` **已接上该引擎**（同粒度默认，
-  加 `--jobs` 重叠排队）；新增 **`run_phase5_fast_download.bat`**（显式窗口 + 日志）。
-- **★ 实测 CDS 三条硬约束**（决定方案上限，详见 `待办.md` §1）：
-  ① **单请求 size 上限 = 400 天**（costing 接口：1 年 366 OK、2 年 731 > 400 被拒）⇒ 12 个月是
-  平台允许的最大块；② **同数据集"排队中请求数"临时受限**，超限时**连单月请求也被拒**
-  （HTTP 201 → 12 s 后 `rejected`；真实原因只在 `GET /jobs/<id>/results` 里：
-  `Number queued requests for this dataset is temporarily limited`）⇒ 并发默认 2；
-  ③ **耗时几乎全在按请求排队、与请求大小无关**：2026-09-25 凌晨两个年请求分别 **3.1 h / 6.2 h**
-  返回并各交付 12/8 个月文件 ⇒ 队列槽位才是瓶颈，"一月一请求"需约 12 倍排队次数。
-- **Ctrl-C / 关窗口不会取消服务端任务**，被遗弃的 `accepted` 任务继续占额度；
-  换入口重跑前先 `python python\download_era5_fast.py --clean-queue`。
-- 慢的根因时间线（旧脚本逐月）：1984-02 用 25 s、1984-03 用 105 s、**1984-04 排了 29 min**。
-- **★ OAFlux 已下载成功（换源）**：WHOI FTP/HTTP、NOAA PSL、APDRC 四个传统入口 2026-09-25
-  实测**全部不可达**（端口 21 超时 / 502 / 404 已撤下 / 超时），代理也救不了。改走
-  **NSF NCAR GDEX / OSDF 公开匿名 HTTPS**（= RDA ds260.1 的 GDEX 镜像，地址从
-  `rda.ucar.edu/datasets/d260001/filelist/2` 页内嵌直链取得）：
-  `https://osdf-director.osg-htc.org/ncar/gdex/d260001/monthly/evaporation/evapr_oaflux_YYYY.nc.gz`
-  （月蒸发率 1° 全球、变量 `evapr`、units=cm/yr，1958–2022 齐全）。已写入
-  `download_oaflux_evap.py` 作为**第一优先 discoverer**，`.gz` 自动解包；
-  并修掉 `merge()` 里两个**从未被执行过**的死代码 bug（把 DataArray 当 Dataset、
-  原始文件 `time` 只是 1..12 月号未补年份）。结果：
-  `data/OAFlux/OAFlux_evap_1991_2020_monthly.nc`（360 步 1991-01…2020-12，47 MB，
-  JAS 地中海框均值 112 cm/yr），`phase5_humid.py check` 中 OAFlux 已 **[OK]**。
-  注：**1° 是 OAFlux v3 的原生分辨率**，与 `docs/复现方案.md` 的规划一致，不存在更高分辨率版本。
-
-**2026-09-24 第七批：图5/图6 出图落地 + PHASE_C 五处口径更正（第五轮一致性审查）**：
-- **新增**：`python/fig5_sst_trend.py`（图5 a/b/c 趋势图，含 `--synthetic` 版式自检）、
-  `python/fig6_wbt.py`（图6 a–f，含合成 demo 路径 `--stats`）、`python/table1_attribution.py`（Table 1）、
-  `results/phase5_selftest.py`（纯合成自检 → `ALL PHASE5 SELFTESTS PASSED`）。
-- **★ 推翻 `TECHNICAL_SPEC_PHASE_C.md` 五处关键口径**（逐像素校准论文原图）：
-  ① 图6a/b 不是"每年一根柱"，而是**14 条曲线**（x = 阈值 WBT 25.5–27.1 °C / SH 19.0–20.9 g/kg）；
-  ② 非复合年是论文 Fig.6c 图例直接列出的 **11 年**（1984/1986/1988/1990/1991/1992/1993/1996/2000/2004/2008），
-  不是 S1 判读的 8 年——**caption 的"11"对、正文的"10"错**；
-  ③ 锚点"非复合年 <5 天"实为 **≤~8 天**（2004 ≈7.8、1992 ≈3.9）；
-  ④ ERA5 下载框太小（论文 Fig.5 范围 lon −15…43.5 / lat 29…69）→ **sp 0.25° 下载框已扩到
-  `[70,−16,28,44]`**（用户尚未下载，零代价修正）；
-  ⑤ 图6d–f 是**全域陆地**地图（lon −10…40.5 / lat 35…62），不是 100 km 缓冲域。
-- **代码同步**：`config.WBT_NONCOMPOUND_YEARS` 改为论文 11 年（S1 8 年降为 `_S1` 敏感性）、
-  新增 `WBT_EXCEED_THRESHOLDS`/`SH_EXCEED_THRESHOLDS`/`ERA5_MAP_BOX`；
-  `phase5_humid.stats_fig6` 新增逐阈值扫描 `exceedance_curves`，6d–f 改全域；
-  `fig5_sst_trend.py` 的地图范围与色板按原图；`fig6_wbt.py` 的配色/轴范围/色标按原图。
-- 详见 `results/规划一致性审查.md` 第五轮（A6–A10 / B6–B10 / C1–C4）。
-
-**当前进度（2026-10-30）**：
-- **Phase 0–4（观测链路）✅ 完成**：检测→配对→复合→**图1/图2/S1/S2** 已出图；图1j-l 为 MHW 包络口径（方案 B），
-  **图1j/l 绝对量级已定稿为"未复现项"**（`results/复现报告.md` §6）。
-- **Phase 5（湿热）🔶 代码全就绪、数据未齐**：`check` 里 tmax 480/480 ✅、OAFlux/OISST/E-OBS ✅，
-  唯缺 **sp 0.25° 204/480**（缺 276 个月，引擎在等 CDS 队列）⇒ **图5b / 图6 / Table 1 尚不能出**；
-  图5a（SST 趋势）/ 5c（比湿趋势）已用真实数据核对（中位 0.59 / 0.278）。产物 `wbt_daily.nc`、`fig5_stats.json` 未生成。
-- **Phase 6（归因）🔶 数据全齐、代码就绪、未跑全量**：CESM1-LE **80 件 6.2 GB**（20 成员 × all/xghg × TREFHT/SST），
-  体检异常 0；口径决策 D7.1–D7.5 已定；现有产物仅 P0 三成员（`_p0chk`/旧 tag），
-  **全量未跑**（待 sp 齐后按"快速参考"里那 5 条命令跑 `_v4`）。审计修复累计 F1–F13（F13 = `_prefer_gdex` 去重）。
-- **Phase 7（环境固化 / 一键入口）✅ 完成**：`run_all_phases.bat` / `python/run_phases.py` / `requirements.txt`。
-- 详见 `results/复现报告.md`（§2.2 未完成清单、§3.1 CESM 切片口径与体检）。
-
-> ★ **换对话/换 agent 继续时**：先读 **`待办.md` 顶部的「断点续做」一节**——那里固化了
-> 当前状态、数据下载完成后要跑的确切命令、要核对的锚点位置、已登记的交叉检查项、
-> 已定稿不必再追的未复现项，以及两处待拍板口径。**不要依赖上一轮 agent 的记忆。**
-
-**2026-09-24 第九批：Phase 7 打包（一键入口 + 环境固化）+ 自检捕获 gev 辅助函数 bug**：
-- **新增 `run_all_phases.bat` / `python/run_phases.py`**：Phase 0→7 一键串联，
-  每步调用文档里的**同一条命令**；缺数据自动跳过并说明缺哪一项；支持 `--dry-run` / `--phases` / `--tag`，
-  末尾打印"完成/跳过/失败"总表与**论文图画清单核对**（图1–6 / Table 1 / 论文版 S1）。
-- **新增 `requirements.txt`**：Python 依赖锁定本机实测版本 + R 侧（heatwaveR 0.5.5 等）安装说明。
-- **`results/phase6_selftest.py` 新增第 6 节**（gev 辅助函数断言）——**当场捕获一个真 bug**：
-  `_annual_exposure_from_masks` 里混进草稿表达式 `daily[years == uyears[0]] * 0 + …`，
-  会把结果撑成 (n_days, n_key) 的三维数组。已修复，并让生产函数 `_member_exposure_series`
-  **改走同一个被测试的函数**（消除"测的不是跑的那份"的漂移风险）。修复后 `gev` 结果不变
-  （compound 100 年 Gap 86.8 年，与修复前同量级）。
-- 文档同步：`待办.md`（懒人入口 + 全绿清单）、`docs/阶段计划.md` §4（Phase 7 完成）、
-  `results/复现报告.md` §9（一键/分步复现命令 + 四套自检）。
-
-**2026-09-24 第八批：图4 数据链路 + 论文版 Supplementary Fig. S1**：
-- `phase6_cesm.py` 新增 **`gev` 子命令**：从 `mhw*_*.csv` / `thw*_*.csv` 汇总**海洋 / 陆地 / 复合**三类
-  区域年暴露序列（地中海&黑海，点均值），调 `gev_return_period.py` 做 FixGHG→ALL 重现期映射，
-  输出 `results/tables/phase6_gev{tag}.json`（`fig4_return_period.py` 直接消费）。
-  P0 三成员实跑通过（N=66/组）：marine 208 vs 28、terrestrial 48 vs 11、compound 41 vs 3.7 天/年。
-- `python/figS1_annual_maps.py` — **论文版 Supplementary Fig. S1**（1984–2023，4×10=40 面板年际
-  复合日空间分布，色标 0–50 天）；与既有的 `figS1_jkl_maxcell.*`（图1j–l 替代口径，仅沿用旧编号）不是同一张图。
-- `fig4_return_period.py` 修 CI 夹取导致的负误差棒崩溃（inf 按轴顶处理并强制 lo ≤ med ≤ hi）。
-
-**2026-09-24 第六批：Phase 5 数值链路 + 图3/图4 绘图代码 + 图版式逐像素校准**：
-- **新增代码**：`python/calc_wbt.py`（RH / WBT(Stull + psychrometric 迭代) / SH / 趋势；25 项合成自检全过）、
-  `python/gev_return_period.py`（GEV MLE + bootstrap + FixGHG→ALL 重现期映射 + 图6c 阈值曲线；16 项自检全过）、
-  `python/phase5_humid.py`（Phase 5 主链路：`check` / `fields` / `stats` / `all`）、
-  `python/fig3_attribution.py`（论文图3，已用 P0 产物实跑出图）、
-  `python/fig4_return_period.py`（论文图4，含 `--demo` 版式自检图）。
-- **`python/load_data.py` 扩展**：ERA5 tmax / d2m / sp（0.25° 与 1.0° 兜底）/ OAFlux 加载器；
-  统一维度名（`valid_time`→`time`）、经度（0..360→−180..180）、纬度升序、时间戳 floor 到日；
-  `check_phase5_inputs()` 做开工前就位检查。实测 tmax(1 月) / d2m(全年) / sp 1.0°(全年) 均正常加载。
-- **★ 图版式逐像素校准（推翻 SPEC 两处描述）**：`TECHNICAL_SPEC_PHASE_B.md` §B.4 称图4 为"双对数"——
-  **实测 x 轴是 5/10/20/50/100 等距分类轴**；且 **§B.5 的图4 锚点（2.1/3.3/5.5/11.5/20.7 等）是图上
-  印刷的 CI 下界，不是柱高**（柱高 = 中位数，图中不印）。图3 为 **2×2**（a/b 欧岸、c/d 地中海&黑海），
-  x 上限上行 105、下行 100；PR 面板 b 为 1–1000 对数、d 为 1–100 对数；不确定带 alpha=0.40。
-- **文档**：新增根目录 **`待办.md`**（操作指引：下载 → 复核 → Phase 5 → Phase 6）与
-  **`docs/阶段计划.md`**（阶段计划、图号清单、验收锚点、阶段闸门）。
-
-**2026-09-23 第四批：Phase 6 归因管线正确性审计 + 修复（任务 D）**：Lead + 3 名独立审计员四路并行，逐项核验 `python/phase6_cesm.py`。**发现 2 个 P0 级检测层错误**——① `_pooled_threshold_t2m` 的 `axis` 崩溃使 206 个陆点共用一条全欧阈值曲线（阈值 mean\|Δ\| 8.26 °C）；② `_run_events` 是「先桥接后过滤」而 heatwaveR `proto_event` 是「先过滤后桥接」（450 例模糊测试 429/450 不一致）；另模型侧 MHW 阈值缺 11 天窗。**3 个 P0 级工程缺陷**：`--members 20` 静默只跑 3 个成员、阈值缓存无成员指纹、不支持 leave-one-out。已修复 9 项（F1–F9）并给出前后对比：THW 的 ALL/XGHG 事件比 1.73→3.01，`PR=48.0/FAR=0.98` **作废**（修复后该阈值下 P_fix=0），可判读阈值（20.7 天）下 PR=52.0/FAR=0.981。**观测链路（Phase 1–4）不受影响**（全部走 R heatwaveR）。详见 **`results/Phase6审计报告.md`**（6 份分报告已合并为一件：§1 汇总 / §2 修复对比 / §3–§6 四份分报告全文）。
-
-**2026-09-23 第五批：第三轮规划一致性审查（三路独立审计）**：发现 **3 项 Phase 6 全量开跑前的 P0 阻塞项**——① `gdex --members 20` 的产出命名（`{var}_{exp}_{mem}_2000-2021.nc`）与 `phase6_cesm.py` 的文件发现模式不匹配 ⇒ prepare 静默跳过新成员、detect 在成员 004 抛 `FileNotFoundError`（**全量实际只会跑 3 个成员**）；② `_load_sst_points` 未做 POP SST「物理日 +1」标签校正，MHW 掩码相对 THW 整体晚 1 天，而审计报告 §0.5 与 §四 C11 对此**给出相反结论**（C11 的"已否证"裁决被本轮实测推翻：CAM `date` 为区间左端、POP `time_bound` 为右端）；③ `_sweep_one` 不产出 FAR 置信区间，而 Table 1 验收锚点需要。另修正：SPEC §9.3 的 Phase 6 命令因 `--tag` 两端默认值不一致而**逐字不可执行**、`run_all.py` 已改走 `detect_events.R`（文档滞后）、D7 五项口径未进任何规格文档、CESM 全量体量与 E: 盘剩余空间（190 GB）自相矛盾（~750 GB 只适用于 raw 路径）。详见 `results/规划一致性审查.md`（第三轮）。
-
-> **第三轮代码修改（2026-09-23，用户指令"执行修改但不跑代码"）**：上述 3 项 P0 已在源码层修掉——
-> **F10** `_load_sst_points` 对 POP SST 时间轴回退 1 天（标签=物理日+1）；**F11** 文件发现兼容
-> gdex 命名 + `download_cesm1le.py` 保留 KMT/TLAT/TLONG、`_mask_sst_box` 不再空间裁剪；
-> **F12** `_sweep_one` 补 `FAR_lo/FAR_hi` 及区间列（Table 1 先决条件）；Phase 6 口径常量下沉
-> `python/config.py`；`results/phase6_selftest.py` 补 5 项断言 + 新命名测试节。
-> **⚠️ 未运行任何代码 ⇒ 未验证**：首次运行前先 `python -m py_compile python\phase6_cesm.py
-> python\download_cesm1le.py python\config.py` 与 `python results\phase6_selftest.py`；
-> 旧 `_x/_x2/_x3` 产物属未校正口径，需用新 `--tag` 重跑 `detect`+`compound`。
-> 细则见 `results/规划一致性审查.md` 第三轮·代码修改记录。
-
-**2026-09-23 第三批：下载脚本就绪 + 图1j/l 定稿**：① Phase 5/6 下载脚本全部编辑就绪并 dry-run 验证（**均未运行**）——新增 `python/download_era5_sp025.py`（0.25° sp 欧洲框，数据集 3b+），给 `download_era5_tmax.py` 补 `--dry-run`，新增两个一键入口 `run_phase5_downloads.bat` / `run_phase6_download.bat`；② 图1j/l 定稿为未复现项（THW 硬约束 23.2/35.1/48.3 天 ⇒ 共超标口径封顶；MHW 包络对区域框高度敏感；8 区域框扫描无一口径满足论文四约束）；③ 修正 `diagnose_subbasin.py` 的归一化（`Σwi·d/n` → `Σwi·d/Σwi`），并据此**撤销**复现报告与修订报告中不可复算的"西地中海弧 76.0/68.5 唯一全面命中"结论。详见 `results/复现报告.md` §6 与 `results/方法与证据.md §3`。
-
-**2026-09-23 规划文件一致性审查与修正**：对照论文 Methods/Results 全文审查全部规划文档，6 处实质性不一致已修正——① FAR 公式写反（SPEC §3.9 / PHASE_B，实际代码本正确）；② 归因统计单元改为"区域年暴露时间池化 440 模型年"（论文口径）；③ 新增 GEV 重现期规范（SPEC §3.9b + PHASE_B 步骤5；图4 marine/terrestrial/compound 三类，2.5–97.5% CI 与图3 的 5–95% 区分，config 新增 `GEV_RETURN_PERIODS`/`GEV_CI`）；④ `DATA_REQUIREMENTS` 立项 ERA5 sp 0.25° 欧洲框下载任务（数据集 3b+，现 sp 为 1.0° 偏差）；⑤ PHASE_A 图1 面板年份/区域、PHASE_C 蒸发/SST 验证锚点按论文更正；⑥ `docs/复现方案.md` 全面同步（E-OBS 1983–2023、复合定义方案 B、MHW 工具 R heatwaveR、XGHG=GHG 固定已实证 co2vmr 恒定 303 ppm）。详见 `results/规划一致性审查.md`（第一轮）。
-
-**2026-09-23 第二轮独立复核**：对第一轮结论做独立重核，发现第一轮有 3 处错误/过度声明（其中「100 km 海岸缓冲已在 config」实为**未实现**）、并遗漏 **5 项与论文实质不符**（陆地检测变量 tg vs tx 未论证、图6c 缺 JJA 季节与 22–28 °C 范围、图6 非复合年选取判据未定义、模型侧检测基准期在规划中缺失、论文 Supplementary Fig. S1 未复现）。随后执行"零风险批次"清理：过期文件名/盘符/CESM 命名、SPEC §5.2–5.4 图1/图2 面板、§3.13 run_all（原误编为 §3.11）、§3.8 WBT 迭代实现、三份 PHASE 文档的 MATLAB 残留、AGENTS.md 检测链路口径统一。**方法学新增项（100 km 缓冲、CESM 基准期、图6c 规格等）待用户拍板后再改。** 详见 `results/规划一致性审查.md`（第二轮）。
+**历史批次（2026-09-23 ~ 2026-10-15）已迁出 → `docs/批次历史.md`**（2026-11-08 迁出，为把本文件压回指令预算）。
+以下是那段时间**仍然有效、会反复用到**的硬结论摘要，细节与证据全在被迁出的文件里：
+- **CDS 三条硬约束**：① 单请求 ≤ **400 天**（1 年 OK、2 年被拒）⇒ `--chunk-months 12` 是上限；
+  ② 同数据集「排队中请求数」**上限实测 = 3**（`--jobs 6` 全被 `rejected`）；③ 耗时几乎全在排队、与请求大小无关
+  （一个年请求排过 3.1 h / 6.2 h）。被拒原文只有 `GET /jobs/<id>/results` 里才有：
+  `Number queued requests for this dataset is temporarily limited`。
+- **有在队任务时绝不要跑 `--clean-queue`**（会删 `accepted`/`running`）；关窗/关机不影响服务端任务。
+  恢复顺序永远是 `adopt`（先收割）→ 再启动引擎；台账 `logs\era5_pending_years.json` 记"已提交未出结果"的年份。
+- **CDS 在队任务能读回请求体**：`GET {url}/retrieve/v1/jobs/<id>?request=true&log=true` → `metadata.request.id
+s`；
+  相同请求重复提交直接回缓存（几乎免费）。
+- **CESM 走自写 DAP2 客户端**（`python/dap2.py` + `--engine dap2`）：本机 netCDF4 的 DAP 通道损坏、pydap 慢 40 倍。
+  四条坑：① 每个 `.dods` 有 30–60 s 固定延迟 ⇒ 时间轴绝不整条取；② 不解码 `_FillValue` ⇒ 陆地返回 9.97e36，
+  必须 `|v|>1e30 → NaN`；③ 响应里每数组前有 8 字节头 + 3 个 MAPS，不跳过就整体错位；
+  ④ **`.bat`/`.ps1` 里不许写中文**（`chcp 65001` 生效前已按 GBK 解析）。
+- **TDS 拥塞期**：10 流聚合 ≈300 kB/s 是上限（20 流更慢）；**小块请求成功率显著高于大块**（补件用 `--block-years 2`）。
+- **本机环境**：无 conda；Python 3.13（`python -m pip install -r requirements.txt`）；R 4.6.1 于 `C:\Program Files\R\R-4.6.1`
+  （= `config.RSCRIPT_PATH` 默认值），heatwaveR 0.5.5。**换机器/换对话先验环境**，别默认还能跑。
+- **检测口径**：D1 统一 R heatwaveR（先过滤后桥接）；D2 `smoothPercentile=FALSE`（偏离两包默认，影响 <5%）；
+  D3 观测侧复合日 = 逐日共超标（模型侧见 D7.1 包络）。**图1j/l 的绝对量级已定稿为"未复现项"，停止口径搜索**（见复现报告 §6）。
+- **OAFlux 唯一可用入口**：NSF NCAR GDEX/OSDF 匿名 HTTPS（WHOI/PSL/APDRC 四镜像全不可达）；1° 是其原生分辨率。
 
 ## 当前可运行文件
 
@@ -277,7 +366,7 @@
 - `python/run_all.py` — Phase 0–3 四阶段主控（预处理→检测→复合→年度指标/CHR/共现概率）
 - `python/figures.py` — 图1/图2/S1 出图；`python/fig_jkl_mhw_envelope.py` — S2
 - `python/detect_events.R` — **海陆统一热浪检测正式链路**（R heatwaveR）
-- `python/phase6_cesm.py` — Phase 6 归因管线（P0 验证版；**2026-09-23 审计修复 F1–F9**：
+- `python/phase6_cesm.py` — Phase 6 归因管线。**detect 的标定旋钮**：`--baseline {own,xghg,self,all}` + `--thresh-offset`（只 SST）/ `--thresh-offset-t2m`（双世界陆地）/ `--thresh-offset-xghg-t2m`（**只反事实世界陆地**，需配 `--baseline self`）；**gev 的映射内核**：`--mapping {gev,emp}`（默认 gev = 论文口径，emp = 经验分位 = `_v10` 起的诊断口径）。P0 验证版；**2026-09-23 审计修复 F1–F9**：
   检测端与 R heatwaveR 等价、阈值逐点、11 天窗、缓存带指纹、`--members` 作用于全量 20 人名单、
   `--loo`、doy=366 阈值行）
 - `python/coastal_buffer.py` — 图6 分析域：海岸向内 100 km 缓冲掩码（Phase 5 前置，已接入 `phase5_humid.py`）
@@ -333,9 +422,9 @@ Phase 5（湿热应力，2026-09-24 新增，数值链路已验证）：
   `--check-only --out <dir>` 可体检任意目录里的年度文件；`--format NETCDF3_CLASSIC` 可出更老的格式（单文件 <2 GB 时可行）。
   操作口径见 `待办.md` §「d2m 年度文件"GrADS 打不开"已修」。
 
-> **数据下载进度（2026-10-30 实测）**：ERA5 **tmax 480/480 ✅**、**sp 0.25° 204/480**（引擎
-> `python\download_era5_fast.py` 在跑，本轮计划 276 个月，卡在 CDS 队列，只能等）；
-> **CESM1-LE 80 件全齐 ✅**（6.2 GB）；OAFlux ✅。**唯一未齐的就是 sp**，图5b / 图6 / Table 1 等它。
+> **数据下载进度（2026-11-07 实测，全部完成）**：ERA5 **tmax 480/480 ✅**、**sp 0.25° 480/480 ✅**
+> （第 480 个月 2012-02 的卡点原因见第十九批：不是 CDS 拥塞，是自检上限写小）；
+> **CESM1-LE 80 件全齐 ✅**（6.2 GB）；OAFlux ✅。**四类输入零缺口**，图5b / 图6 / Table 1 可以出图。
 
 ## 目录结构（已建成；`data` 为 NTFS Junction → `E:\2607compound\data`）
 
@@ -382,7 +471,7 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
    ERA5 150.9 GB（含 d2m_yearly 67.3 GB 派生件）+ CESM1-LE 129.5 GB（raw 109.3 整文件 + proc 20.2 切片）+ OAFlux 0.1 GB。
    真正的计算瓶颈是 **40 个 CESM 模拟的逐格点热浪检测**（P0 实测 27 s/成员）；
    归因 bootstrap 本身很轻（样本是池化后的 440 个模型年标量）。**CESM 数据 2026-10-30 已全齐，不必再下**；
-   下载侧唯一未完成的是 ERA5 sp 0.25°（204/480）。
+   下载侧 **2026-11-07 已全部完成**：ERA5 sp 0.25° 补齐到 480/480（合并件 1.19 GB），四类输入零缺口。
 2. **路径硬编码**：`config.py` 中 `BASE_DIR = D:\2607compound`，`DATA_DIR = D:\2607compound\data`（NTFS Junction → `E:\2607compound\data`）；`translate_to_word.py` 使用工作区内的 `pdf_extract` 和 `results` 目录。已统一。
 3. **混合语言调用**：陆地/海洋热浪检测统一走 R，经 `subprocess.run([RSCRIPT_PATH, ...])` 调用
    `python/detect_events.R`（正式链路）；`RSCRIPT_PATH` 与 `DETECT_THW_R_SCRIPT` 定义在 `config.py`。
@@ -391,7 +480,7 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
    **CESM 侧另有一套**：POP gx1v6 → f09（实测 0.9424°×1.25°）KMT 湿点映射 + 4-连通海岸边缘 +
    KDTree cos 加权，上限 `MAX_PAIR_DIST_DEG = 1.0` 单位 ≈ **112.2 km**（观测侧 0.5 单位 ≈ 55.6 km，
    **模型侧允许分离约为观测侧 2.1×**），实测 **206 对 / 唯一陆点 206 / 唯一海点 191**。
-   `python/phase6_cesm.py` 的 `cmd_pairs`。
+   `python/phase6_cesm.py` 的 `cmd_pairs`。**⚠️ 改 `MAX_PAIR_DIST_DEG` 会让阈值缓存串味**：`_thresh_cache_path()` 的键 = 成员名单 + LOO + `clim_tag` + `pool_exp` + `THRESH_VERSION`，**不含配对集** ⇒ 换距离后 206 对算出的 `thresh_*.npz` 会被静默复用到不同规模的配对集上（产出看着正常但错的数据）。要做配对距离敏感性，必须先把配对指纹并进缓存键并作废全部缓存；只想回答域选择会不会改变结论，用 `logs/_diag_region_sens.py`（换区域，不动共享状态）。
 5. **WBT 计算输入已确认**：论文明确由 ERA5 的 **Tmax + 露点 + 地表气压**估算**日最高 WBT**；
    具体近似式未给，`TECHNICAL_SPEC.md` §3.8 提供 Stull / 牛顿迭代双实现待定稿。
    **图6 的 100 km 海岸缓冲已实现**：`python/coastal_buffer.py` + `config.COASTAL_BUFFER_KM`
@@ -414,14 +503,16 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
 | 下 ERA5 sp 0.25° | `python python\download_era5_sp025.py [--dry-run]`（数据集 3b+） |
 | 下 OAFlux | `python python\download_oaflux_evap.py [--probe]` |
 | 下 CESM1-LE | **已完成**；补件用 `run_cesm_dap2_atm.bat` / `run_cesm_dap2_ocn.bat`，或 `python python\download_cesm1le.py gdex --engine dap2 --member-ids 007 --only-comp ocn`（`aws` 路径 2026-10-20 起不可用） |
-| Phase 6 归因（全量，口径已定） | `pairs` → `prepare --members 20` → `detect --members 20 --baseline xghg --loo --tag _v4` → `compound --members 20 --tag _v4 --compound-def envelope` → `attrib --members 20 --tag _v4 --compound-def envelope` |
-| Phase 6 口径决策 | 复合=**MHW 包络**(D7.1)；归因=**阈值扫描+62/78/72 参考线**(D7.2)；主口径 **med_mean**(D7.3)；基准期 **XGHG+LOO**(D7.4)；bootstrap **indep**(D7.5) —— 见 `results/复现报告.md` §5 D7 |
+| Phase 6 归因（全量，口径已定） | `pairs` → `prepare --members 20` → `detect --members 20 --baseline self --loo --clim-period 1983-2012 --thresh-offset-xghg-t2m 0.5645 --tag _v12w50` → `compound --members 20 --tag _v12w50 --compound-def envelope` → `attrib --members 20 --tag _v12w50 --compound-def envelope --agg med_mean med_p90 med_max eur_mean eur_p90 eur_max` → `gev --members 20 --tag _v12w50 --mapping emp`。`_v7`（w=0）只能当端点敏感性，**别再当主口径** |
+| Phase 6 口径决策 | 复合=**MHW 包络**(D7.1/D7.6)；归因=**阈值扫描+62/78/72 参考线**(D7.2)；聚合 **med_mean**(D7.3rev)；基准期 **各实验自算 1983–2012 + LOO**(**D7.4rev 2026-11-08，取代 XGHG 共用基准**)；bootstrap **indep**(D7.5) —— 见 `results/复现报告.md` §5 D7 与 §5.2 |
+| **Phase 6 主口径全链（`_v12w50`：图3 + 图4 + Table 1 统一口径）** | ① `logs\_run_v12w50.ps1` 是单点全链模板（detect → compound → attrib 6 列 → gev `--mapping emp` → fig4 → table1，**5.7 min**）；② 关键参数 = `--baseline self --loo --clim-period 1983-2012 --thresh-offset-xghg-t2m 0.5645`（w=0.50）+ `gev --mapping emp`；⇒ **图4 三面板 15/15 全在论文 bootstrap CI 内**、Table 1 FAR MAE 0.0607，见第二十六批 |
+| Phase 6 图4 残差判定 | **先跑 `python logs\_cmp_ci.py [_tag…]`**：打印各 tag 五档 + **bootstrap CI** + 论文值 IN/out + `r100/r5` + FixGHG 五档水平与 100 年 CI ⇒ 判"噪声 vs 真残差"。全 tag 对照仍用 `python logs\_cmp_gev_tags.py`（往 `TAGS` 里加 `_v11t06 _v11t11 _v12w50 _v12w60 _v12w89`） |
 | Phase 6 逻辑自检（不读数据） | `python results\phase6_selftest.py` → `ALL SELFTESTS PASSED` |
 | **Phase 5 输入检查** | `python python\phase5_humid.py check`（明确列出缺哪一项） |
 | **Phase 5 全长链路** | `python python\coastal_buffer.py` → `python python\phase5_humid.py all`（逐日 WBT/SH + 图5 趋势 + 图6 统计） |
 | Phase 5 公式自检 | `python python\calc_wbt.py`（25 项）/ `python python\gev_return_period.py`（16 项） |
-| **图3（FAR/PR）** | `python python\fig3_attribution.py --tag _v4`（旧产物可 `--agg-eur eur_max`） |
-| **图4（重现期）** | `python python\fig4_return_period.py --tag _v4`；版式自检 `--demo` |
+| **图3（FAR/PR）** | `python python\fig3_attribution.py --tag _v12w50`（主口径）。⚠️ fig3 会把 `--agg-eur`/`--agg-med` 两列都画上，所以 **attrib 必须先跑全 6 列 agg**；3 条年份参考线 62/78/72 处的 FAR 应与 `table1_v12w50.csv` 逐位一致 |
+| **图4（重现期）** | `python python\fig4_return_period.py --tag _v12w50`；⚠️ **图4 必须配 `gev --mapping emp`**（GEV 外推会把复合面板百年水平推到 604 天/年，超出 365 天物理上界）；版式自检 `--demo` |
 | 检查数据完整性 | `python python\verify_data.py` |
 | 环境搭建 | 见 §技术栈；关键包 xarray/cartopy/heatwaveR(R)/cdsapi |
 
