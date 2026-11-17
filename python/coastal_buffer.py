@@ -18,8 +18,10 @@ coastal_buffer.py — 海岸向内缓冲区掩码（Phase 5 图6 分析域）
     - 海洋格点取自 OISST（NaN = 陆地/冰，与 coastal_mask.build_ocean_mask 同）；
     - 用 KDTree 在 **3D 单位球笛卡尔坐标** 上做最近邻（避免经度 ±180 环绕问题）；
     - 弦长换算回大圆距离：d = 2R·asin(chord / 2R)，R = 6371.0088 km；
-    - 默认区域 = 地中海（config.COASTAL_BUFFER_REGION），不含黑海
-      （论文图6 只写 "Mediterranean coast"，与图1/图3 的 "Mediterranean & Black Sea" 不同）。
+    - 默认区域 = 地中海（config.COASTAL_BUFFER_REGION），并按
+      config.COASTAL_BUFFER_EXCLUDE 剔除黑海 / 亚速海 —— 论文图6 只写
+      "Mediterranean coast"（Fig.6 caption / Methods），黑海只属于 Fig.1/3/4 的
+      "Mediterranean & Black Sea"；纳入西班牙东岸（Catalan 岸）的理由见 config 注释。
 
 用法：
     python python/coastal_buffer.py            # 打印掩码统计并落盘
@@ -33,9 +35,10 @@ from scipy.spatial import cKDTree
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import config as C
 from config import (
     EOBS_MERGED_FILE, OISST_MERGED_FILE,
-    COASTAL_BUFFER_KM, COASTAL_BUFFER_REGION,
+    COASTAL_BUFFER_KM, COASTAL_BUFFER_REGION, COASTAL_BUFFER_EXCLUDE,
     INTERMEDIATE_DIR,
 )
 
@@ -67,6 +70,7 @@ def build_coastal_buffer_mask(
     oisst_file: str = OISST_MERGED_FILE,
     buffer_km: float = COASTAL_BUFFER_KM,
     region: dict = None,
+    exclude: tuple = None,
     max_search_km: float = 400.0,
 ):
     """
@@ -77,6 +81,8 @@ def build_coastal_buffer_mask(
         oisst_file : OISST 合并件（变量 sst/SST，坐标 lat/lon）
         buffer_km  : 缓冲距离（论文 = 100 km）
         region     : {'lon': (w, e), 'lat': (s, n)}；默认地中海
+        exclude    : 要剔除的框元组，如 ({'lon': (27.5, 42.0), 'lat': (40.5, 47.0)},)
+                     （默认取 config.COASTAL_BUFFER_EXCLUDE = 黑海 / 亚速海）
         max_search_km : 允许的最远搜索距离（只在距海此范围内找最近海点，
                         用于把掩码限定在真正的"海岸带"）
 
@@ -86,6 +92,8 @@ def build_coastal_buffer_mask(
     """
     if region is None:
         region = COASTAL_BUFFER_REGION
+    if exclude is None:
+        exclude = COASTAL_BUFFER_EXCLUDE
     (w, e), (s, n) = region["lon"], region["lat"]
 
     # ── 陆地掩码（E-OBS：非 NaN 即陆地）──────────────────────────
@@ -128,15 +136,31 @@ def build_coastal_buffer_mask(
                            coords={"lat": lat_l, "lon": lon_l}, name="dist_to_ocean_km")
 
     mask = ((dist_km <= buffer_km) & land.values)
+
+    # ── 剔除框（黑海 / 亚速海）──────────────────────────────────
+    # ★ 2026-11-17：论文图6 的域只写 "Mediterranean coast"，黑海属于 Fig.1/3/4
+    #   的 "Mediterranean & Black Sea"；此处按 config.COASTAL_BUFFER_EXCLUDE 剔除。
+    n_before = int(mask.sum())
+    if exclude:
+        lon2d_g, lat2d_g = np.meshgrid(lon_l, lat_l)
+        keep = np.ones_like(mask, dtype=bool)
+        for box in exclude:
+            (x0, x1), (y0, y1) = box["lon"], box["lat"]
+            keep &= ~((lon2d_g >= x0) & (lon2d_g <= x1)
+                      & (lat2d_g >= y0) & (lat2d_g <= y1))
+        mask = mask & keep
+
     mask_da = xr.DataArray(mask, dims=("lat", "lon"),
                            coords={"lat": lat_l, "lon": lon_l}, name="coastal_buffer_mask")
 
     info = {
         "buffer_km": buffer_km,
         "region": region,
+        "exclude": list(exclude) if exclude else [],
         "land_cells_in_region": int(land.values.sum()),
         "ocean_cells_used": int(ocean_mask.sum()),
         "cells_within_buffer": int(mask.sum()),
+        "cells_within_buffer_before_exclude": n_before,
         "cells_within_search": int((dist_km <= max_search_km).sum()),
         "dist_km_min": float(np.nanmin(dist_km)),
         "dist_km_max_within": float(np.nanmax(dist_km[mask])) if mask.any() else None,
@@ -145,7 +169,9 @@ def build_coastal_buffer_mask(
 
 
 def main():
-    mask, dist, info = build_coastal_buffer_mask()
+    # 优先用 1.2 GB 的欧洲裁剪件：掩码只在地中海框内用海洋掩码，读 24.8 GB 全球件纯浪费
+    oisst = C.OISST_EUR_FILE if os.path.exists(C.OISST_EUR_FILE) else OISST_MERGED_FILE
+    mask, dist, info = build_coastal_buffer_mask(oisst_file=oisst)
     out_mask = os.path.join(INTERMEDIATE_DIR, "coastal_buffer100km_mask.nc")
     out_dist = os.path.join(INTERMEDIATE_DIR, "dist_to_ocean_km.nc")
     os.makedirs(INTERMEDIATE_DIR, exist_ok=True)
@@ -159,6 +185,8 @@ def main():
     print(f"  缓冲距离        : {info['buffer_km']} km")
     print(f"  区域内陆地格点  : {info['land_cells_in_region']}")
     print(f"  区域内海洋格点  : {info['ocean_cells_used']}")
+    print(f"  缓冲内(剔除前)  : {info['cells_within_buffer_before_exclude']}")
+    print(f"  剔除框          : {info['exclude']}")
     print(f"  落入缓冲区格点  : {info['cells_within_buffer']}")
     print(f"  最近海点距离    : min {info['dist_km_min']:.1f} km"
           f" / 缓冲内 max {info['dist_km_max_within']:.1f} km")

@@ -26,6 +26,9 @@ LOGS_DIR = os.path.join(BASE_DIR, "logs")
 # ──────────────────────────────────────────────
 OISST_RAW_PATTERN = os.path.join(OISST_DIR, "temp_raw", "oisst-avhrr-v02r01.*.nc")
 OISST_MERGED_FILE = os.path.join(OISST_DIR, "oisst_v2.1_1982_2023.nc")
+# 欧洲裁剪件（1.2 GB；同一份 OISST v2.1，仅供"只在地中海框内用海洋掩码"的场景，
+# 如 coastal_buffer.py）。读全球件 (24.8 GB) 会慢 10 倍以上。
+OISST_EUR_FILE = os.path.join(OISST_DIR, "oisst_v2.1_eur_1983_2023.nc")
 
 # ── ERA5（Phase 5 输入；实测结构见 results/规划一致性审查.md 第四轮 §数据探针）──
 # tmax   欧洲框 0.25° 日最高（CDS daily-statistics, daily_maximum），变量 mx2t，K，
@@ -149,16 +152,23 @@ SH_THRESHOLD = 19.0
 #          from the Mediterranean coast”（Methods / Fig.6 caption）
 # 实现见 python/coastal_buffer.py（KDTree 最近海洋格点距离，与 coastal_pairs 同口径）
 #
-# 区域口径说明：
-#   - 论文 Fig.6 只写 "Mediterranean coast"；但论文 Fig.1j caption 把黑海并入
-#     "the Mediterranean region (including the Black Sea)"。
-#   - 本项目 fig1j/k/l（fig1_compound_spatial.py:60、fig_jkl_mhw_envelope.py:29）
-#     统一使用 lat(30,47) / lon(5,42) 作为"地中海 & 黑海"框。
-#   - 此处沿用同一框，避免在工作区里出现第三套"地中海"定义。
-#   - 若要严格按 Fig.6 字面（仅地中海、不含黑海），把 lat 上限降到 46、
-#     lon 上限降到 30 即可（见 results/规划一致性审查.md（第二轮））。
+# 区域口径（★ 2026-11-17 第二十七批拍板：只算地中海，纳入西班牙东岸，剔除黑海）
+#   - 论文 Fig.6 caption / Methods 原文两处都只写 "land grid cells located up to
+#     100 km inland from the **Mediterranean** coast"（logs\_paper_main.txt L356、
+#     L396）⇒ 黑海不在图6 域内（黑海只出现在 Fig.1/3/4 的 "Mediterranean & Black Sea"）。
+#   - 论文正文点名 "The Mediterranean arc, spanning the **Catalan coast** to …"
+#     （L108–110）⇒ 西班牙地中海东岸必须在域内。原框 lon≥5 把整条西班牙东岸
+#     （Barcelona 2.2°E / Valencia −0.4°E）和法国 Gulf of Lion 排除在外。
+#   - 敏感性实测（logs\_diag_fig6_region.py / .log，同一批 wbt_daily.nc）：
+#     2023 年 WBT≥25.5 °C 的区域平均天数 base=1.83 → base_nBS=2.38 → cat=1.79
+#     → **cat_nBS=2.26**；6c 的 RP(26 °C) 由 q99 序列给 3.00 → 2.79 年。
+#     ⇒ 区域是**二阶**因素（最大 1.23×），解释不了论文的 40 天（见 fig6 残差说明）。
+#   - fig1j/k/l 仍用 lat(30,47)/lon(5,42) 的"地中海 & 黑海"框（那是另一张图的口径，
+#     不要跟着改）。
 COASTAL_BUFFER_KM = 100.0
-COASTAL_BUFFER_REGION = {"lon": (5.0, 42.0), "lat": (30.0, 47.0)}   # = fig1j 区域框
+COASTAL_BUFFER_REGION = {"lon": (0.0, 42.0), "lat": (30.0, 47.0)}
+# 从掩码中剔除的框（黑海 + 亚速海；lat>40.5 与 lon>27.5 的湾区）
+COASTAL_BUFFER_EXCLUDE = ({"lon": (27.5, 42.0), "lat": (40.5, 47.0)},)
 
 # ──────────────────────────────────────────────
 # Bootstrap 参数（归因分析阶段使用）

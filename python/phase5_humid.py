@@ -335,6 +335,7 @@ def stats_fig6(wbt: xr.DataArray, sh: xr.DataArray, verbose: bool = True) -> Dic
     mask = _buffer_mask()
     out: Dict = {"buffer": {
         "region": C.COASTAL_BUFFER_REGION, "buffer_km": C.COASTAL_BUFFER_KM,
+        "exclude": list(getattr(C, "COASTAL_BUFFER_EXCLUDE", ())),
         "n_cells": int(mask.sum()),
     }}
     # 图6 关心的年份 = 3 个复合年 + 论文 Fig.6c 图例列出的 11 个非复合年
@@ -483,18 +484,22 @@ def cmd_stats(args):
     _ensure_dirs()
 
     print("\n[1/3] 图 5 趋势场 ...")
-    tr = trends_fig5(save=True, verbose=not args.quiet)
-    fig5 = {k: (_field_summary(*v) if v is not None else None) for k, v in tr.items()}
-    fig5["_config"] = {
-        "sst_period": C.SST_TREND_PERIOD, "evap_period": C.EVAP_TREND_PERIOD,
-        "sh_period": C.SH_TREND_PERIOD, "months": list(C.TREND_MONTHS),
-    }
-    fig5["_anchor"] = {
-        "sst_trend_expect": "≈ +0.5 °C/decade（论文正文 up to 0.5；容差 ±0.15）",
-        "evap_trend_expect": "局部 > +10 cm/yr/decade（论文正文）",
-        "sh_trend_expect": "≈ +0.3 g/kg/decade（论文正文；容差 ±0.1）",
-    }
-    _write_json(FIG5_JSON, fig5)
+    if getattr(args, "skip_fig5", False):
+        print("  --skip-fig5：跳过（沿用已有 fig5_stats.json）")
+        fig5 = None
+    else:
+        tr = trends_fig5(save=True, verbose=not args.quiet)
+        fig5 = {k: (_field_summary(*v) if v is not None else None) for k, v in tr.items()}
+        fig5["_config"] = {
+            "sst_period": C.SST_TREND_PERIOD, "evap_period": C.EVAP_TREND_PERIOD,
+            "sh_period": C.SH_TREND_PERIOD, "months": list(C.TREND_MONTHS),
+        }
+        fig5["_anchor"] = {
+            "sst_trend_expect": "≈ +0.5 °C/decade（论文正文 up to 0.5；容差 ±0.15）",
+            "evap_trend_expect": "局部 > +10 cm/yr/decade（论文正文）",
+            "sh_trend_expect": "≈ +0.3 g/kg/decade（论文正文；容差 ±0.1）",
+        }
+        _write_json(FIG5_JSON, fig5)
 
     print("\n[2/3] 读取逐日 WBT/SH ...")
     wbt, sh = load_fields()
@@ -545,7 +550,10 @@ def build_parser():
 
     common(sub.add_parser("check", help="只检查输入是否就位"))
     common(sub.add_parser("fields", help="逐日 WBT/SH 场"))
-    common(sub.add_parser("stats", help="图5 趋势 + 图6 统计"))
+    stats_p = sub.add_parser("stats", help="图5 趋势 + 图6 统计")
+    common(stats_p)
+    stats_p.add_argument("--skip-fig5", action="store_true",
+                         help="跳过图5 趋势（只重算图6；区域/掩码口径改动后用它）")
     common(sub.add_parser("all", help="fields + stats"))
     return p
 
