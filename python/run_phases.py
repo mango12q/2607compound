@@ -13,7 +13,8 @@ run_phases.py — **全流程一键入口**（Phase 0 → Phase 7）：数据检
     python python\run_phases.py                 # 能跑的都跑（缺数据自动跳过）
     python python\run_phases.py --dry-run       # 只看计划
     python python\run_phases.py --phases 4      # 只跑 Phase 4（观测出图）
-    python python\run_phases.py --tag _v4       # Phase 6 用的产物后缀
+    python python\run_phases.py --tag _v12w50   # Phase 6 用的产物后缀（默认即主口径）
+    python python\run_phases.py --legacy        # 用已被推翻的 `_v4`/`_v5` 共用冷基准口径（仅作对照）
     python python\run_phases.py --skip-selftest # 跳过前置自检
 
 阶段与命令对照（与 `待办.md` / `docs/阶段计划.md` 完全一致）
@@ -27,6 +28,10 @@ run_phases.py — **全流程一键入口**（Phase 0 → Phase 7）：数据检
                python python\fig5_sst_trend.py
                python python\fig6_wbt.py
     Phase 6    python python\phase6_cesm.py pairs|prepare|detect|compound|attrib|gev
+               # detect: --baseline self --loo --clim-period 1983-2012 \
+               #         --thresh-offset-xghg-t2m 0.5645   （主口径 D7.7）
+               # attrib: --agg med_mean med_p90 med_max eur_mean eur_p90 eur_max
+               # gev   : --mapping emp
                python python\fig3_attribution.py --tag …
                python python\fig4_return_period.py --tag …
                python python\table1_attribution.py --tag …
@@ -51,13 +56,29 @@ RESULTS = []
 
 
 # ──────────────────────────────────────────────
+# Phase 6 主口径（决策 D7.7，2026-11-08 结案；理由与证据见 results/复现报告.md §5 / §5.2）
+# ──────────────────────────────────────────────
+# `_v12w50` = 阈值按**各实验自算**的 1983–2012 气候态（LOO），反事实世界（XGHG）的陆地阈值
+#   再 += 0.5645 °C（= w·δ，w≈0.50、δ=1.129 °C，即"两实验合并样本的 q90"）⇒ 图4 三面板 ×
+#   五档重现期 **15/15** 落在论文 bootstrap CI 内、Table 1 FAR MAE 0.0607。
+# 三点注意：① `--baseline self` 是前提（偏移只作用在 `pool_exp != exp` 的那一侧）；
+#   ② attrib **必须跑全 6 列聚合**，否则 fig3 会因缺 `eur_*` 列 exit=1；
+#   ③ gev **必须 `--mapping emp`**（GEV 外推会把复合面板百年水平推到 604 天/年 > 365 天物理上界）。
+MAIN_TAG = "_v12w50"
+MAIN_DETECT_ARGS = ["--baseline", "self", "--loo", "--clim-period", "1983-2012",
+                    "--thresh-offset-xghg-t2m", "0.5645"]
+MAIN_AGG = ["med_mean", "med_p90", "med_max", "eur_mean", "eur_p90", "eur_max"]
+MAIN_MAPPING = "emp"
+
+
+# ──────────────────────────────────────────────
 # 工具
 # ──────────────────────────────────────────────
 def _exists(*paths) -> bool:
     return all(os.path.exists(p) for p in paths)
 
 
-def _cesm_members(tag: str = "_v4") -> int:
+def _cesm_members(tag: str = MAIN_TAG) -> int:
     """
     可用的 CESM 成员数 = max(prepare 产物数, proc/ 源文件覆盖的成员数)。
 
@@ -147,6 +168,7 @@ def phase_5(args):
 
 def phase_6(args):
     tag = args.tag
+    legacy = bool(getattr(args, "legacy", False))
     n_cesm = _cesm_members(tag)
     if n_cesm == 0:
         skip("Phase 6", "proc/ 下没有 prepare 好的 CESM 成员（先跑 run_phase6_download.bat）")
@@ -155,19 +177,31 @@ def phase_6(args):
         print(f"  [提示] 只发现 {n_cesm} 个 CESM 成员 —— 结果仅用于验证流程，"
               f"不能作为归因结论（论文口径需要 20 成员/组）")
     P = [PY, os.path.join(_HERE, "phase6_cesm.py")]
+    if legacy:
+        det_args = ["--baseline", "xghg", "--loo"]
+        mapping = "gev"
+        print("  [口径] --legacy：共用 XGHG 冷基准 + GEV 外推 = `_v4`/`_v5` 时代的口径，"
+              "**已被推翻**（图4 差 5–10×），仅作对照，不要用它出结论")
+    else:
+        det_args = list(MAIN_DETECT_ARGS)
+        mapping = MAIN_MAPPING
+        print(f"  [口径] 主口径 D7.7（tag {tag}）：各实验自算 1983–2012 气候态 + LOO，"
+              f"XGHG 陆地阈值 +0.5645 °C（w≈0.50），gev 映射 = {mapping}")
     run("Phase 6 pairs", P + ["pairs"], args.dry_run, optional=True)
     run("Phase 6 prepare", P + ["prepare", "--members", str(n_cesm)],
         args.dry_run, optional=True)
     run("Phase 6 detect",
-        P + ["detect", "--members", str(n_cesm), "--baseline", "xghg", "--loo",
-             "--tag", tag], args.dry_run, optional=True)
+        P + ["detect", "--members", str(n_cesm), "--tag", tag] + det_args,
+        args.dry_run, optional=True)
     run("Phase 6 compound",
         P + ["compound", "--members", str(n_cesm), "--tag", tag,
              "--compound-def", C.COMPOUND_DEF], args.dry_run, optional=True)
     run("Phase 6 attrib",
         P + ["attrib", "--members", str(n_cesm), "--tag", tag,
-             "--compound-def", C.COMPOUND_DEF], args.dry_run, optional=True)
-    run("Phase 6 gev", P + ["gev", "--members", str(n_cesm), "--tag", tag],
+             "--compound-def", C.COMPOUND_DEF, "--agg"] + MAIN_AGG,
+        args.dry_run, optional=True)
+    run("Phase 6 gev", P + ["gev", "--members", str(n_cesm), "--tag", tag,
+                            "--mapping", mapping],
         args.dry_run, optional=True)
     run("Phase 6 图3", [PY, os.path.join(_HERE, "fig3_attribution.py"), "--tag", tag],
         args.dry_run, optional=True)
@@ -192,6 +226,7 @@ def phase_selftest(args):
 
 def phase_7(args):
     """Phase 7：汇总 —— 只做核对与提示，不改数据。"""
+    tag = getattr(args, "tag", MAIN_TAG)
     print(f"\n{'=' * 74}\n[Phase 7] 产物核对\n{'=' * 74}")
     figs = sorted(f for f in os.listdir(C.FIGURES_DIR)
                   if f.endswith((".png", ".pdf"))) if os.path.isdir(C.FIGURES_DIR) else []
@@ -204,12 +239,25 @@ def phase_7(args):
             "论文版S1": "figS1_paper_annual_maps", "Table1": None}
     for k, stem in want.items():
         if stem is None:
-            p = os.path.join(C.TABLES_DIR, "table1.csv")
-        else:
-            p = next((os.path.join(C.FIGURES_DIR, f) for f in figs
-                      if f.startswith(stem) and not f.endswith("_demo.pdf")
-                      and "_synthetic" not in f and not f.endswith("_demo.png")), None)
-        print(f"  [{'有' if p and os.path.exists(p) else '缺'}] {k}")
+            # 主口径表名带 tag（table1_v12w50.csv）；旧名 table1.csv 只是早期 _v7 口径的别名
+            cands = [os.path.join(C.TABLES_DIR, f"table1{tag}.csv"),
+                     os.path.join(C.TABLES_DIR, "table1.csv")]
+            p, hit = None, None
+            for c in cands:
+                if os.path.exists(c):
+                    p, hit = c, os.path.basename(c)
+                    break
+            print(f"  [{'有' if p else '缺'}] {k}" + (f"  ← {hit}" if hit else ""))
+            continue
+        # 优先选带 tag 的主口径图（如 fig3_attribution_v12w50.png），否则退回任意同名图
+        cands = [f for f in figs
+                 if f.startswith(stem) and not f.endswith("_demo.pdf")
+                 and "_synthetic" not in f and not f.endswith("_demo.png")]
+        preferred = next((f for f in cands if f.startswith(stem + tag)), None)
+        pick = preferred or (cands[0] if cands else None)
+        p = os.path.join(C.FIGURES_DIR, pick) if pick else None
+        print(f"  [{'有' if p and os.path.exists(p) else '缺'}] {k}"
+              + (f"  ← {os.path.basename(p)}" if p else ""))
     RESULTS.append(("Phase 7 核对", "完成", f"{len(figs)} 个图文件"))
 
 
@@ -221,7 +269,10 @@ def main(argv=None):
     p.add_argument("--phases", nargs="+", default=["0", "4", "5", "6", "7"],
                    choices=["0", "4", "5", "6", "7"],
                    help="要跑的阶段（0=Phase0-3；默认 0 4 5 6 7）")
-    p.add_argument("--tag", default="_v4", help="Phase 6 产物后缀（默认 _v4）")
+    p.add_argument("--tag", default=MAIN_TAG,
+                   help=f"Phase 6 产物后缀（默认 {MAIN_TAG} = 主口径 D7.7）")
+    p.add_argument("--legacy", action="store_true",
+                   help="Phase 6 改用已被推翻的共用 XGHG 冷基准 + GEV 外推（`_v4`/`_v5` 口径，仅作对照）")
     p.add_argument("--dry-run", action="store_true", help="只打印将执行的命令")
     p.add_argument("--skip-selftest", action="store_true")
     args = p.parse_args(argv)

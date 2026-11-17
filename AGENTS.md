@@ -4,6 +4,16 @@
 
 学术复现项目，非典型软件仓库。目标：复现论文 *Compound coastal marine–terrestrial heatwaves associated with humid-heat stress in Europe*（Scientific Reports 2025）。
 
+**2026-11-17 第二十八批：一键入口从"旧口径"改为"主口径 `_v12w50`" + 终版中文 Word 报告（Phase 7 结案）**：
+- **结论先行**：`python/run_phases.py` 此前是**旧口径的一键入口**（detect 硬写 `--baseline xghg --loo`、`--tag` 默认 `_v4`、
+  `attrib` 不带 `--agg` ⇒ fig3 必失败、`gev` 不带 `--mapping emp`）——"看起来正常但跑出错误口径"。现已改为**主口径**，
+  `python python\run_phases.py --phases 6 7 --skip-selftest` **实跑 exit=0、49 s**（detect 1 s 是因为事件表已在、走断点续跑），
+  产物经 `python logs\_cmp_ci.py _v12w50` 复核 **15/15 仍 IN**（terr 1.275/1.522/1.905/2.635/3.165、comp 1.956/2.667/3.860/5.116/8.000；r100/r5 terr 2.48 / comp 4.09；FixGHG 100 年水平 marine 186.38 [162.59,201.31] / terr 23.76 [20.48,25.96] / comp 103.07 [79.72,140.11]）。
+- **`run_phases.py` 改动**：模块级 `MAIN_TAG="_v12w50"`、`MAIN_DETECT_ARGS=["--baseline","self","--loo","--clim-period","1983-2012","--thresh-offset-xghg-t2m","0.5645"]`、`MAIN_AGG`（6 列）、`MAIN_MAPPING="emp"`；`phase_6()` 走 MAIN_*，新增 `--legacy` 才回退旧口径并打印"已被推翻、仅作对照"；`phase_7()` 改为 `table1{tag}.csv` 优先、图 `startswith(stem + tag)` 优先（改前会命中文档里的 `_p0chk` 图）。
+- **终版报告**：`python scripts\build_final_report.py`（python-docx，700 行）→ **`results\复现报告_终版.docx`（3.7 MB、105 段、12 表、25 标题、6 张内嵌主图）**；章节 = 结论摘要 / 阶段状态 / 数据规模 / D1–D7 / 锚点核对 / 逐图结果（含图4 五档表与 Table 1 表）/ 未复现项 / 13 条差异 / 复现方式 / 产物清单 / 口径演化表。
+- **⚠️ 版式未经目视校验**：本机**没有** LibreOffice skill 脚本（`...\resources\runtime\office-skills\...` 与 `@deepseek-ai/libreoffice-kit` 均不存在）⇒ 只能做结构核对（`logs\_check_final_report.py`：zip ok、12 表、6 图、关键串全中）。
+- **文档同步**：`待办.md` Phase 7 → ✅ 且"重跑 Phase 6 全链"改推荐 `run_phases.py --phases 6` / `logs\_run_v12w50.ps1`（`_run_v8_all.ps1` 标注为 w=1 已证伪）；`results\复现报告.md` 文首/§2/§2.2 第 6 条/§9 四处同步。**Phase 7 至此完成，全项目 0 个未开工阶段。**
+
 **2026-11-17 第二十七批：图6 区域口径拍板并重出图 —— 地中海 + 西班牙东岸、剔除黑海，残差已量化并登记为未复现项**：
 - **结论先行**：图6 的域定为 **地中海 100 km 缓冲、剔除黑海/亚速海、纳入西班牙东岸（Catalan 岸）**，掩码 **1637** 格点
   （原 1952）。敏感性实测证明**区域是二阶因素**：2023 年 WBT≥25.5 的区域平均天数旧框 1952 = **1.83**、旧框去黑海 1457 = 2.38、
@@ -418,6 +428,8 @@ D:\2607compound\        ← 工作区根目录（代码、文档、结果）
 | 下 CESM1-LE | **已完成**；补件用 `run_cesm_dap2_atm.bat` / `run_cesm_dap2_ocn.bat`，或 `python python\download_cesm1le.py gdex --engine dap2 --member-ids 007 --only-comp ocn`（`aws` 路径 2026-10-20 起不可用） |
 | Phase 6 归因（全量，口径已定） | `pairs` → `prepare --members 20` → `detect --members 20 --baseline self --loo --clim-period 1983-2012 --thresh-offset-xghg-t2m 0.5645 --tag _v12w50` → `compound --members 20 --tag _v12w50 --compound-def envelope` → `attrib --members 20 --tag _v12w50 --compound-def envelope --agg med_mean med_p90 med_max eur_mean eur_p90 eur_max` → `gev --members 20 --tag _v12w50 --mapping emp`。`_v7`（w=0）只能当端点敏感性，**别再当主口径** |
 | Phase 6 口径决策 | 复合=**MHW 包络**(D7.1/D7.6)；归因=**阈值扫描+62/78/72 参考线**(D7.2)；聚合 **med_mean**(D7.3rev)；基准期 **各实验自算 1983–2012 + LOO**(**D7.4rev 2026-11-08，取代 XGHG 共用基准**)；bootstrap **indep**(D7.5) —— 见 `results/复现报告.md` §5 D7 与 §5.2 |
+| **一键跑 Phase 5–7** | `python python\run_phases.py --phases 5 6 7`（默认主口径 `_v12w50`；`--dry-run` 看计划、`--legacy` 回退旧口径、`--skip-selftest` 跳过前置自检） |
+| **终版中文报告** | `results\复现报告_终版.docx`（3.7 MB，10 章 + 6 图 + 12 表）；重建 = `python scripts\build_final_report.py` |
 | **Phase 6 主口径全链（`_v12w50`：图3 + 图4 + Table 1 统一口径）** | ① `logs\_run_v12w50.ps1` 是单点全链模板（detect → compound → attrib 6 列 → gev `--mapping emp` → fig4 → table1，**5.7 min**）；② 关键参数 = `--baseline self --loo --clim-period 1983-2012 --thresh-offset-xghg-t2m 0.5645`（w=0.50）+ `gev --mapping emp`；⇒ **图4 三面板 15/15 全在论文 bootstrap CI 内**、Table 1 FAR MAE 0.0607，见第二十六批 |
 | Phase 6 图4 残差判定 | **先跑 `python logs\_cmp_ci.py [_tag…]`**：打印各 tag 五档 + **bootstrap CI** + 论文值 IN/out + `r100/r5` + FixGHG 五档水平与 100 年 CI ⇒ 判"噪声 vs 真残差"。全 tag 对照仍用 `python logs\_cmp_gev_tags.py`（往 `TAGS` 里加 `_v11t06 _v11t11 _v12w50 _v12w60 _v12w89`） |
 | Phase 6 逻辑自检（不读数据） | `python results\phase6_selftest.py` → `ALL SELFTESTS PASSED` |
